@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: khushfus
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - infrastructure/postgres.yaml
+  - infrastructure/redis.yaml
+  - infrastructure/elasticsearch.yaml
+  - services/gateway.yaml
+  - services/core.yaml
+  - services/enterprise.yaml
+  - services/parity.yaml
+  - services/differentiation.yaml
+  - services/frontend.yaml
+  - ingress.yaml
+  - hpa.yaml

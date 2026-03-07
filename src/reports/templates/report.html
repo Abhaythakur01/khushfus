@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ project_name }} - {{ report_type|capitalize }} Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; padding: 40px; }
+
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header .subtitle { opacity: 0.9; font-size: 14px; }
+
+        .section { margin-bottom: 25px; page-break-inside: avoid; }
+        .section h2 { font-size: 18px; color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 8px; margin-bottom: 15px; }
+
+        .grid { display: flex; gap: 15px; flex-wrap: wrap; }
+        .stat-card { background: #f8f9ff; border-radius: 8px; padding: 20px; flex: 1; min-width: 150px; text-align: center; }
+        .stat-card .value { font-size: 32px; font-weight: bold; color: #667eea; }
+        .stat-card .label { font-size: 12px; color: #666; margin-top: 5px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #667eea; color: white; padding: 10px; text-align: left; font-size: 13px; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        tr:nth-child(even) { background: #f8f9ff; }
+
+        .sentiment-positive { color: #27ae60; font-weight: bold; }
+        .sentiment-negative { color: #e74c3c; font-weight: bold; }
+        .sentiment-neutral { color: #95a5a6; }
+        .sentiment-mixed { color: #f39c12; }
+
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 11px; color: #999; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ project_name }}</h1>
+        <div class="subtitle">{{ report_type|capitalize }} Report | {{ report.period.start[:10] }} to {{ report.period.end[:10] }} | Generated: {{ generated_at }}</div>
+    </div>
+
+    <!-- Overview Stats -->
+    <div class="section">
+        <h2>Overview</h2>
+        <div class="grid">
+            <div class="stat-card">
+                <div class="value">{{ report.total_mentions }}</div>
+                <div class="label">Total Mentions</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ report.sentiment.average_score }}</div>
+                <div class="label">Avg Sentiment Score</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ report.engagement.total_likes }}</div>
+                <div class="label">Total Likes</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ report.engagement.total_shares }}</div>
+                <div class="label">Total Shares</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ report.flagged_mentions }}</div>
+                <div class="label">Flagged Items</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sentiment Breakdown -->
+    <div class="section">
+        <h2>Sentiment Analysis</h2>
+        <div class="grid">
+            {% for sentiment, count in report.sentiment.breakdown.items() %}
+            <div class="stat-card">
+                <div class="value sentiment-{{ sentiment }}">{{ count }}</div>
+                <div class="label">{{ sentiment|capitalize }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Platform Breakdown -->
+    {% if report.platforms %}
+    <div class="section">
+        <h2>Conversation Source Mapping</h2>
+        <table>
+            <thead><tr><th>Platform</th><th>Mentions</th></tr></thead>
+            <tbody>
+                {% for platform, count in report.platforms.items() %}
+                <tr><td>{{ platform|capitalize }}</td><td>{{ count }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Top Contributors -->
+    {% if report.top_contributors %}
+    <div class="section">
+        <h2>Top Contributors</h2>
+        <table>
+            <thead><tr><th>Name</th><th>Handle</th><th>Platform</th><th>Followers</th><th>Mentions</th></tr></thead>
+            <tbody>
+                {% for c in report.top_contributors[:10] %}
+                <tr>
+                    <td>{{ c.name }}</td>
+                    <td>{{ c.handle }}</td>
+                    <td>{{ c.platform|capitalize if c.platform else '-' }}</td>
+                    <td>{{ c.followers or 0 }}</td>
+                    <td>{{ c.mentions }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Keyword Analysis -->
+    {% if report.keyword_frequency %}
+    <div class="section">
+        <h2>Keyword Frequency</h2>
+        <table>
+            <thead><tr><th>Keyword</th><th>Mentions</th></tr></thead>
+            <tbody>
+                {% for kw, count in report.keyword_frequency.items() %}
+                <tr><td>{{ kw }}</td><td>{{ count }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Influencers -->
+    {% if report.influencers %}
+    <div class="section">
+        <h2>Identified Probable Influencers</h2>
+        <table>
+            <thead><tr><th>Name</th><th>Handle</th><th>Platform</th><th>Followers</th></tr></thead>
+            <tbody>
+                {% for inf in report.influencers %}
+                <tr>
+                    <td>{{ inf.name }}</td>
+                    <td>{{ inf.handle }}</td>
+                    <td>{{ inf.platform|capitalize if inf.platform else '-' }}</td>
+                    <td>{{ inf.followers or 0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="footer">
+        Generated by KhushFus Social Listening Platform | Confidential
+    </div>
+</body>
+</html>

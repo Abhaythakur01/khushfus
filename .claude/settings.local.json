@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(for f in /d/Downloads/AIML/KhushFus/services/*/requirements.txt)",
+      "Bash(do echo \"=== $f ===\")",
+      "Read(//d/Downloads/AIML/KhushFus/**)",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "Bash(wc:*)"
+    ]
+  }
+}

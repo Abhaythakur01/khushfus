@@ -1,0 +1,329 @@
+# Competitive Service - competitive intelligence
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: competitive
+  namespace: khushfus
+  labels:
+    app: competitive
+    tier: differentiation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: competitive
+  template:
+    metadata:
+      labels:
+        app: competitive
+        tier: differentiation
+    spec:
+      containers:
+        - name: competitive
+          image: registry.gitlab.com/khushfus/khushfus/competitive:latest
+          ports:
+            - containerPort: 8016
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8016
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8016
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: competitive
+  namespace: khushfus
+  labels:
+    app: competitive
+    tier: differentiation
+spec:
+  selector:
+    app: competitive
+  ports:
+    - port: 8016
+      targetPort: 8016
+  type: ClusterIP
+---
+# Scheduler Service - task scheduling
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: khushfus
+  labels:
+    app: scheduler
+    tier: differentiation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+        tier: differentiation
+    spec:
+      containers:
+        - name: scheduler
+          image: registry.gitlab.com/khushfus/khushfus/scheduler:latest
+          ports:
+            - containerPort: 8017
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8017
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8017
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler
+  namespace: khushfus
+  labels:
+    app: scheduler
+    tier: differentiation
+spec:
+  selector:
+    app: scheduler
+  ports:
+    - port: 8017
+      targetPort: 8017
+  type: ClusterIP
+---
+# Audit Service - audit logging
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit
+  namespace: khushfus
+  labels:
+    app: audit
+    tier: differentiation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit
+  template:
+    metadata:
+      labels:
+        app: audit
+        tier: differentiation
+    spec:
+      containers:
+        - name: audit
+          image: registry.gitlab.com/khushfus/khushfus/audit:latest
+          ports:
+            - containerPort: 8018
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8018
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8018
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit
+  namespace: khushfus
+  labels:
+    app: audit
+    tier: differentiation
+spec:
+  selector:
+    app: audit
+  ports:
+    - port: 8018
+      targetPort: 8018
+  type: ClusterIP
+---
+# Realtime Service - WebSocket connections for real-time updates
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime
+  namespace: khushfus
+  labels:
+    app: realtime
+    tier: differentiation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime
+  template:
+    metadata:
+      labels:
+        app: realtime
+        tier: differentiation
+    spec:
+      containers:
+        - name: realtime
+          image: registry.gitlab.com/khushfus/khushfus/realtime:latest
+          ports:
+            - containerPort: 8019
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8019
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8019
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: realtime
+  namespace: khushfus
+  labels:
+    app: realtime
+    tier: differentiation
+spec:
+  selector:
+    app: realtime
+  ports:
+    - port: 8019
+      targetPort: 8019
+  type: ClusterIP
+---
+# Project Service - project management
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project
+  namespace: khushfus
+  labels:
+    app: project
+    tier: differentiation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: project
+  template:
+    metadata:
+      labels:
+        app: project
+        tier: differentiation
+    spec:
+      containers:
+        - name: project
+          image: registry.gitlab.com/khushfus/khushfus/project:latest
+          ports:
+            - containerPort: 8020
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8020
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8020
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project
+  namespace: khushfus
+  labels:
+    app: project
+    tier: differentiation
+spec:
+  selector:
+    app: project
+  ports:
+    - port: 8020
+      targetPort: 8020
+  type: ClusterIP

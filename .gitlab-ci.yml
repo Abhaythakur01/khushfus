@@ -1,0 +1,255 @@
+# =============================================================================
+# KhushFus GitLab CI/CD Pipeline
+# =============================================================================
+# Multi-stage pipeline: lint -> test -> security -> build -> deploy
+# =============================================================================
+
+stages:
+  - lint
+  - test
+  - security
+  - build
+  - deploy-staging
+  - deploy-production
+
+# ---------------------------------------------------------------------------
+# Global variables
+# ---------------------------------------------------------------------------
+variables:
+  DOCKER_REGISTRY: $CI_REGISTRY
+  DOCKER_IMAGE_PREFIX: $CI_REGISTRY_IMAGE
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+  POSTGRES_DB: khushfus_test
+  POSTGRES_USER: khushfus
+  POSTGRES_PASSWORD: khushfus_test
+  DATABASE_URL: "postgresql+asyncpg://khushfus:khushfus_test@postgres:5432/khushfus_test"
+  REDIS_URL: "redis://redis:6379/0"
+
+# ---------------------------------------------------------------------------
+# Cache pip downloads and node_modules
+# ---------------------------------------------------------------------------
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .pip-cache/
+    - frontend/node_modules/
+
+# =============================================================================
+# Stage: lint
+# =============================================================================
+
+lint-python:
+  stage: lint
+  image: python:3.11-slim
+  before_script:
+    - pip install --cache-dir $PIP_CACHE_DIR ruff
+  script:
+    - ruff check src/ services/ shared/ tests/
+    - ruff format --check src/ services/ shared/ tests/
+
+lint-frontend:
+  stage: lint
+  image: node:20-alpine
+  script:
+    - cd frontend && npm ci && npm run lint
+
+# =============================================================================
+# Stage: test
+# =============================================================================
+
+test-python:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:16-alpine
+    - redis:7-alpine
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR -r requirements.txt
+    - pip install --cache-dir $PIP_CACHE_DIR pytest pytest-asyncio pytest-cov httpx
+  script:
+    - pytest tests/ -v --cov=src --cov=services --cov=shared --cov-report=xml --cov-report=term
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 30 days
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+test-frontend:
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd frontend && npm ci && npm run build
+    # Add: npm test -- when test suite exists
+
+test-migrations:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:16-alpine
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR alembic asyncpg sqlalchemy psycopg2-binary
+  script:
+    - alembic upgrade head
+    - alembic downgrade base
+    - alembic upgrade head
+
+# =============================================================================
+# Stage: security
+# =============================================================================
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
+dependency-scan:
+  stage: security
+  image: python:3.11-slim
+  allow_failure: true
+  before_script:
+    - pip install --cache-dir $PIP_CACHE_DIR pip-audit
+  script:
+    - pip-audit -r requirements.txt || true
+    - |
+      for svc_dir in services/*/; do
+        if [ -f "${svc_dir}requirements.txt" ]; then
+          echo "--- Auditing ${svc_dir}requirements.txt ---"
+          pip-audit -r "${svc_dir}requirements.txt" || true
+        fi
+      done
+
+container-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  allow_failure: true
+  variables:
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivy-cache"
+  script:
+    - trivy image --exit-code 0 --severity HIGH,CRITICAL $DOCKER_IMAGE_PREFIX/gateway:${CI_COMMIT_SHA}
+  only:
+    - main
+    - develop
+    - tags
+  needs:
+    - build-services
+
+# =============================================================================
+# Stage: build
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Build all backend services via parallel matrix
+# ---------------------------------------------------------------------------
+build-services:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  parallel:
+    matrix:
+      - SERVICE:
+          - gateway
+          - collector_service
+          - analyzer_service
+          - query_service
+          - report_service
+          - notification_service
+          - identity_service
+          - tenant_service
+          - media_service
+          - search_service
+          - publishing_service
+          - rate_limiter_service
+          - enrichment_service
+          - export_service
+          - competitive_service
+          - scheduler_service
+          - audit_service
+          - realtime_service
+          - project_service
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - SERVICE_NAME=$(echo $SERVICE | sed 's/_service//')
+    - |
+      docker build \
+        -t $DOCKER_IMAGE_PREFIX/${SERVICE_NAME}:${CI_COMMIT_SHA} \
+        -t $DOCKER_IMAGE_PREFIX/${SERVICE_NAME}:latest \
+        -f services/${SERVICE}/Dockerfile .
+    - docker push $DOCKER_IMAGE_PREFIX/${SERVICE_NAME}:${CI_COMMIT_SHA}
+    - docker push $DOCKER_IMAGE_PREFIX/${SERVICE_NAME}:latest
+  only:
+    - main
+    - develop
+    - tags
+
+# ---------------------------------------------------------------------------
+# Build frontend
+# ---------------------------------------------------------------------------
+build-frontend:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      docker build \
+        -t $DOCKER_IMAGE_PREFIX/frontend:${CI_COMMIT_SHA} \
+        -t $DOCKER_IMAGE_PREFIX/frontend:latest \
+        -f frontend/Dockerfile ./frontend
+    - docker push $DOCKER_IMAGE_PREFIX/frontend:${CI_COMMIT_SHA}
+    - docker push $DOCKER_IMAGE_PREFIX/frontend:latest
+  only:
+    - main
+    - develop
+    - tags
+
+# =============================================================================
+# Stage: deploy-staging
+# =============================================================================
+
+deploy-staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  environment:
+    name: staging
+    url: https://staging.khushfus.com
+  before_script:
+    - kubectl config use-context $KUBE_CONTEXT_STAGING
+  script:
+    - chmod +x deploy/deploy.sh
+    - ./deploy/deploy.sh staging
+  only:
+    - develop
+  when: manual
+
+# =============================================================================
+# Stage: deploy-production
+# =============================================================================
+
+deploy-production:
+  stage: deploy-production
+  image: bitnami/kubectl:latest
+  environment:
+    name: production
+    url: https://app.khushfus.com
+  before_script:
+    - kubectl config use-context $KUBE_CONTEXT_PRODUCTION
+  script:
+    - chmod +x deploy/deploy.sh
+    - ./deploy/deploy.sh production
+  only:
+    - main
+    - tags
+  when: manual

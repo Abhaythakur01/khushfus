@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: khushfus-config
+  namespace: khushfus
+data:
+  REDIS_URL: "redis://redis:6379/0"
+  ELASTICSEARCH_URL: "http://elasticsearch:9200"
+  COLLECTION_INTERVAL: "3600"
+  SENTIMENT_MODEL: "hybrid"
+  USE_GPU: "false"
+  ANALYZER_BATCH_SIZE: "20"
+  HIGH_ENGAGEMENT_THRESHOLD: "100"

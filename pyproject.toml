@@ -1,0 +1,71 @@
+[project]
+name = "khushfus"
+version = "0.1.0"
+description = "Enterprise Social Listening Platform"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.14.0",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.0",
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "vaderSentiment>=3.3.2",
+    "transformers>=4.47.0",
+    "torch>=2.5.0",
+    "spacy>=3.8.0",
+    "elasticsearch>=8.17.0",
+    "apscheduler>=3.11.0",
+    "weasyprint>=63.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.18",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "tweepy>=4.14.0",
+    "praw>=7.8.0",
+    "google-api-python-client>=2.160.0",
+    "beautifulsoup4>=4.12.0",
+    "playwright>=1.49.0",
+    "feedparser>=6.0.0",
+    "langdetect>=1.0.9",
+    "pandas>=2.2.0",
+    "matplotlib>=3.10.0",
+    "wordcloud>=1.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-timeout>=2.3.0",
+    "aiosqlite>=0.20.0",
+    "factory-boy>=3.3.0",
+    "ruff>=0.8.0",
+    "mypy>=1.14.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (require database/redis)",
+    "slow: Slow tests (ML models, large data)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

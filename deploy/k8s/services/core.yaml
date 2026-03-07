@@ -1,0 +1,179 @@
+# Collector - background worker for data collection
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: khushfus
+  labels:
+    app: collector
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: collector
+  template:
+    metadata:
+      labels:
+        app: collector
+        tier: core
+    spec:
+      containers:
+        - name: collector
+          image: registry.gitlab.com/khushfus/khushfus/collector:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+---
+# Analyzer - background worker for sentiment analysis (ML workload)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analyzer
+  namespace: khushfus
+  labels:
+    app: analyzer
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analyzer
+  template:
+    metadata:
+      labels:
+        app: analyzer
+        tier: core
+    spec:
+      containers:
+        - name: analyzer
+          image: registry.gitlab.com/khushfus/khushfus/analyzer:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+---
+# Query - background worker for query processing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query
+  namespace: khushfus
+  labels:
+    app: query
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: query
+  template:
+    metadata:
+      labels:
+        app: query
+        tier: core
+    spec:
+      containers:
+        - name: query
+          image: registry.gitlab.com/khushfus/khushfus/query:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+---
+# Report - background worker for report generation
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: khushfus
+  labels:
+    app: report
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report
+  template:
+    metadata:
+      labels:
+        app: report
+        tier: core
+    spec:
+      containers:
+        - name: report
+          image: registry.gitlab.com/khushfus/khushfus/report:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+---
+# Notification - background worker for sending notifications
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification
+  namespace: khushfus
+  labels:
+    app: notification
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification
+  template:
+    metadata:
+      labels:
+        app: notification
+        tier: core
+    spec:
+      containers:
+        - name: notification
+          image: registry.gitlab.com/khushfus/khushfus/notification:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"

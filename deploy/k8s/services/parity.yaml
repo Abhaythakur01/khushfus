@@ -1,0 +1,233 @@
+# Publishing Service - social media publishing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: publishing
+  namespace: khushfus
+  labels:
+    app: publishing
+    tier: parity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: publishing
+  template:
+    metadata:
+      labels:
+        app: publishing
+        tier: parity
+    spec:
+      containers:
+        - name: publishing
+          image: registry.gitlab.com/khushfus/khushfus/publishing:latest
+          ports:
+            - containerPort: 8013
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8013
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8013
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: publishing
+  namespace: khushfus
+  labels:
+    app: publishing
+    tier: parity
+spec:
+  selector:
+    app: publishing
+  ports:
+    - port: 8013
+      targetPort: 8013
+  type: ClusterIP
+---
+# Rate Limiter Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rate-limiter
+  namespace: khushfus
+  labels:
+    app: rate-limiter
+    tier: parity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rate-limiter
+  template:
+    metadata:
+      labels:
+        app: rate-limiter
+        tier: parity
+    spec:
+      containers:
+        - name: rate-limiter
+          image: registry.gitlab.com/khushfus/khushfus/rate-limiter:latest
+          ports:
+            - containerPort: 8014
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8014
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8014
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rate-limiter
+  namespace: khushfus
+  labels:
+    app: rate-limiter
+    tier: parity
+spec:
+  selector:
+    app: rate-limiter
+  ports:
+    - port: 8014
+      targetPort: 8014
+  type: ClusterIP
+---
+# Enrichment Service - background worker for data enrichment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enrichment
+  namespace: khushfus
+  labels:
+    app: enrichment
+    tier: parity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enrichment
+  template:
+    metadata:
+      labels:
+        app: enrichment
+        tier: parity
+    spec:
+      containers:
+        - name: enrichment
+          image: registry.gitlab.com/khushfus/khushfus/enrichment:latest
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+---
+# Export Service - data export functionality
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: export
+  namespace: khushfus
+  labels:
+    app: export
+    tier: parity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: export
+  template:
+    metadata:
+      labels:
+        app: export
+        tier: parity
+    spec:
+      containers:
+        - name: export
+          image: registry.gitlab.com/khushfus/khushfus/export:latest
+          ports:
+            - containerPort: 8015
+          envFrom:
+            - configMapRef:
+                name: khushfus-config
+            - secretRef:
+                name: khushfus-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8015
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8015
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: export
+  namespace: khushfus
+  labels:
+    app: export
+    tier: parity
+spec:
+  selector:
+    app: export
+  ports:
+    - port: 8015
+      targetPort: 8015
+  type: ClusterIP
