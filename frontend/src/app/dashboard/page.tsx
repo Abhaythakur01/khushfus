@@ -340,7 +340,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <Select
               value={selectedProject}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedProject(e.target.value)}
+              onValueChange={setSelectedProject}
               className="h-9 w-48 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300"
             >
               <option value="proj-1">Acme Corp</option>

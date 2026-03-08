@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 
@@ -128,7 +128,7 @@ async def _acquire_rate_limit(platform: str, endpoint: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
-                f"{RATE_LIMITER_URL}/acquire",
+                f"{RATE_LIMITER_URL}/api/v1/acquire",
                 json={"platform": platform, "endpoint": endpoint},
             )
             if resp.status_code == 200:
@@ -481,6 +481,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 @app.get(
     "/health",
@@ -503,7 +505,7 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@app.post(
+@v1_router.post(
     "/posts",
     response_model=PostOut,
     status_code=201,
@@ -554,7 +556,7 @@ async def create_post(body: PostCreate):
         return PostOut.model_validate(post)
 
 
-@app.get(
+@v1_router.get(
     "/posts",
     response_model=list[PostOut],
     tags=["Posts"],
@@ -583,7 +585,7 @@ async def list_posts(
         return [PostOut.model_validate(p) for p in posts]
 
 
-@app.patch(
+@v1_router.patch(
     "/posts/{post_id}/approve",
     response_model=PostOut,
     tags=["Posts"],
@@ -629,7 +631,7 @@ async def approve_post(post_id: int, body: ApproveRequest):
         return PostOut.model_validate(post)
 
 
-@app.delete(
+@v1_router.delete(
     "/posts/{post_id}",
     status_code=204,
     tags=["Posts"],
@@ -673,7 +675,7 @@ async def delete_post(post_id: int):
     return None
 
 
-@app.post(
+@v1_router.post(
     "/posts/{post_id}/publish-now",
     response_model=PostOut,
     tags=["Posts"],
@@ -710,7 +712,7 @@ async def publish_now(post_id: int):
         return PostOut.model_validate(updated)
 
 
-@app.post(
+@v1_router.post(
     "/reply",
     response_model=PostOut,
     status_code=201,
@@ -740,6 +742,8 @@ async def create_reply(body: ReplyCreate):
     )
     return await create_post(create_body)
 
+
+app.include_router(v1_router)
 
 # ---------------------------------------------------------------------------
 # Entrypoint

@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,6 +185,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 async def get_db():
     async with app.state.db_session() as session:
@@ -212,7 +214,7 @@ async def health():
     return await build_health_response("scheduler", checks=checks)
 
 
-@app.post(
+@v1_router.post(
     "/workflows",
     response_model=WorkflowOut,
     status_code=201,
@@ -246,7 +248,7 @@ async def create_workflow(
     return _workflow_to_out(workflow)
 
 
-@app.get(
+@v1_router.get(
     "/workflows",
     response_model=list[WorkflowOut],
     tags=["Workflows"],
@@ -269,7 +271,7 @@ async def list_workflows(
     return [_workflow_to_out(w) for w in rows]
 
 
-@app.patch(
+@v1_router.patch(
     "/workflows/{workflow_id}",
     response_model=WorkflowOut,
     tags=["Workflows"],
@@ -301,7 +303,7 @@ async def update_workflow(
     return _workflow_to_out(workflow)
 
 
-@app.delete(
+@v1_router.delete(
     "/workflows/{workflow_id}",
     status_code=204,
     tags=["Workflows"],
@@ -322,7 +324,7 @@ async def delete_workflow(
     logger.info(f"Deleted workflow {workflow_id}")
 
 
-@app.get(
+@v1_router.get(
     "/workflows/{workflow_id}/stats",
     response_model=WorkflowStatsOut,
     tags=["Workflows"],
@@ -354,7 +356,7 @@ async def workflow_stats(
 # ---------------------------------------------------------------------------
 
 
-@app.post(
+@v1_router.post(
     "/report-schedules",
     response_model=ReportScheduleOut,
     status_code=201,
@@ -370,7 +372,7 @@ async def create_report_schedule(payload: ReportScheduleCreate):
     return ReportScheduleOut(**entry)
 
 
-@app.get(
+@v1_router.get(
     "/report-schedules",
     response_model=list[ReportScheduleOut],
     tags=["Report Schedules"],
@@ -383,7 +385,7 @@ async def list_report_schedules(project_id: int = Query(...)):
     return [ReportScheduleOut(**e) for e in entries]
 
 
-@app.delete(
+@v1_router.delete(
     "/report-schedules/{project_id}",
     status_code=204,
     tags=["Report Schedules"],
@@ -393,6 +395,9 @@ async def list_report_schedules(project_id: int = Query(...)):
 async def delete_report_schedules(project_id: int):
     """Delete all custom report schedules for a project."""
     _report_schedules.pop(project_id, None)
+
+
+app.include_router(v1_router)
 
 
 # ---------------------------------------------------------------------------

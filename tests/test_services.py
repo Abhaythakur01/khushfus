@@ -140,7 +140,7 @@ class TestCheckRedis:
 
 
 class TestCheckElasticsearch:
-    """Tests for check_elasticsearch — mock httpx."""
+    """Tests for check_elasticsearch (OpenSearch) — mock httpx."""
 
     @pytest.mark.asyncio
     async def test_up(self):

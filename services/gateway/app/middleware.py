@@ -17,7 +17,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from shared.circuit_breaker import CircuitBreaker, CircuitBreakerError
+
 logger = logging.getLogger(__name__)
+
+# Circuit breaker for the rate limiter service — fail-open when tripped
+_rate_limiter_breaker = CircuitBreaker(
+    name="rate-limiter",
+    failure_threshold=5,
+    recovery_timeout=30.0,
+)
 
 RATE_LIMITER_URL = os.getenv("RATE_LIMITER_URL", "http://rate-limiter:8014")
 # Default per-minute limits (configurable via env)
@@ -101,7 +110,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # "platform" = the client identifier, "endpoint" = "gateway".
             # The rate limiter will look up quota config; if none exists it
             # returns 404, which we treat as "no limit configured" (allow).
-            resp = await client.post(
+            resp = await _rate_limiter_breaker.call(
+                client.post,
                 "/acquire",
                 json={
                     "platform": identifier,
@@ -136,6 +146,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     identifier,
                 )
 
+        except CircuitBreakerError:
+            # Circuit is open — rate limiter has been failing; fail open
+            logger.warning(
+                "Rate limiter circuit breaker is OPEN for %s; allowing request (fail-open)",
+                identifier,
+            )
         except (httpx.HTTPError, Exception) as exc:
             # Fail open: if the rate limiter is unreachable, allow the request
             logger.warning(

@@ -84,9 +84,9 @@ down:
 # Docker — Phased Startup
 # =============================================================================
 
-## dev-phase1: Start Phase 1 — Core Pipeline (postgres, redis, elasticsearch, gateway, collector, analyzer, query, report, notification)
+## dev-phase1: Start Phase 1 — Core Pipeline (postgres, redis, opensearch, gateway, collector, analyzer, query, report, notification)
 dev-phase1:
-	docker-compose up -d postgres redis elasticsearch gateway collector analyzer query report notification
+	docker-compose up -d postgres redis opensearch gateway collector analyzer query report notification
 
 ## dev-phase2: Start Phase 2 — Enterprise-Ready (identity, tenant, media, search)
 dev-phase2:

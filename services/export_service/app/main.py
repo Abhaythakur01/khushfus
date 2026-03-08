@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -1023,6 +1023,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 # ============================================================
 # Health Check
@@ -1050,7 +1052,7 @@ async def health():
 # ============================================================
 
 
-@app.post(
+@v1_router.post(
     "/exports",
     response_model=ExportJobOut,
     status_code=201,
@@ -1110,7 +1112,7 @@ async def create_export(payload: ExportCreate, request: Request):
         )
 
 
-@app.get(
+@v1_router.get(
     "/exports",
     response_model=list[ExportJobOut],
     tags=["Exports"],
@@ -1143,7 +1145,7 @@ async def list_exports(request: Request, project_id: int = Query(...)):
         ]
 
 
-@app.get(
+@v1_router.get(
     "/exports/{export_id}/status",
     tags=["Exports"],
     summary="Check export status",
@@ -1169,7 +1171,7 @@ async def get_export_status(export_id: int, request: Request):
         }
 
 
-@app.get(
+@v1_router.get(
     "/exports/{export_id}/download",
     tags=["Exports"],
     summary="Download export file",
@@ -1218,7 +1220,7 @@ async def download_export(export_id: int, request: Request):
 # ============================================================
 
 
-@app.post(
+@v1_router.post(
     "/integrations",
     response_model=IntegrationOut,
     status_code=201,
@@ -1260,7 +1262,7 @@ async def create_integration(payload: IntegrationCreate, request: Request):
         )
 
 
-@app.get(
+@v1_router.get(
     "/integrations",
     response_model=list[IntegrationOut],
     tags=["Integrations"],
@@ -1291,7 +1293,7 @@ async def list_integrations(request: Request, org_id: int = Query(...)):
         ]
 
 
-@app.post(
+@v1_router.post(
     "/integrations/{integration_id}/sync",
     response_model=IntegrationSyncResult,
     tags=["Integrations"],
@@ -1310,7 +1312,7 @@ async def trigger_sync(integration_id: int, request: Request, project_id: int = 
     return result
 
 
-@app.delete(
+@v1_router.delete(
     "/integrations/{integration_id}",
     status_code=204,
     tags=["Integrations"],
@@ -1330,3 +1332,6 @@ async def delete_integration(integration_id: int, request: Request):
         await db.commit()
 
     return None
+
+
+app.include_router(v1_router)

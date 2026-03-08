@@ -1,12 +1,12 @@
 """
-Search Service — FastAPI service for full-text search across mentions via Elasticsearch.
+Search Service — FastAPI service for full-text search across mentions via OpenSearch.
 
 Port: 8012
 ES index: 'khushfus-mentions' (created by Query Service)
 
 Endpoints:
   POST /search              — full-text search with filters
-  POST /search/advanced     — raw Elasticsearch DSL query
+  POST /search/advanced     — raw OpenSearch DSL query
   GET  /search/suggest      — autocomplete for keywords/authors
   POST /saved-searches      — create a saved search
   GET  /saved-searches      — list saved searches for a project
@@ -22,9 +22,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
-from elasticsearch import AsyncElasticsearch
-from elasticsearch import NotFoundError as ESNotFoundError
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query
+from opensearchpy import AsyncOpenSearch
+from opensearchpy import NotFoundError as ESNotFoundError
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
@@ -48,7 +48,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus",
 )
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
+ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://opensearch:9200")
 ES_INDEX = "khushfus-mentions"
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ ES_INDEX = "khushfus-mentions"
 class SearchRequest(BaseModel):
     """Standard search with filters."""
 
-    query: str = Field("", description="Full-text search query (supports Elasticsearch simple_query_string syntax)")
+    query: str = Field("", description="Full-text search query (supports OpenSearch simple_query_string syntax)")
     project_id: int | None = Field(None, description="Filter by project")
     platform: str | None = Field(None, description="Filter by platform (e.g. twitter)")
     sentiment: str | None = Field(None, description="Filter by sentiment (positive/negative/neutral/mixed)")
@@ -87,7 +87,7 @@ class SearchResponse(BaseModel):
 
 
 class AdvancedSearchRequest(BaseModel):
-    """Raw Elasticsearch DSL query body."""
+    """Raw OpenSearch DSL query body."""
 
     body: dict[str, Any] = Field(..., description="Full ES query DSL")
     index: str = Field(ES_INDEX, description="ES index to query")
@@ -144,7 +144,7 @@ class FacetsResponse(BaseModel):
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
     await init_tables(engine)
-    es = AsyncElasticsearch(ELASTICSEARCH_URL)
+    es = AsyncOpenSearch(hosts=[ELASTICSEARCH_URL])
 
     app.state.db_session = session_factory
     app.state.es = es
@@ -164,7 +164,7 @@ app = FastAPI(
     contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
     license_info={"name": "Proprietary"},
     openapi_tags=[
-        {"name": "Search", "description": "Full-text and advanced Elasticsearch queries."},
+        {"name": "Search", "description": "Full-text and advanced OpenSearch queries."},
         {"name": "Suggest", "description": "Autocomplete and suggestion endpoints."},
         {"name": "Analytics", "description": "Trending topics and faceted counts."},
         {"name": "Saved Searches", "description": "CRUD for saved search configurations."},
@@ -180,6 +180,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,7 +189,7 @@ except ImportError:
 
 
 def _build_es_query(req: SearchRequest) -> dict:
-    """Translate a SearchRequest into an Elasticsearch query body."""
+    """Translate a SearchRequest into an OpenSearch query body."""
     must: list[dict] = []
     filters: list[dict] = []
 
@@ -275,7 +277,7 @@ async def health():
 # ---- Full-text search ----
 
 
-@app.post(
+@v1_router.post(
     "/search",
     response_model=SearchResponse,
     tags=["Search"],
@@ -284,7 +286,7 @@ async def health():
 )
 async def search(req: SearchRequest):
     """Full-text search with filters across mentions."""
-    es: AsyncElasticsearch = app.state.es
+    es: AsyncOpenSearch = app.state.es
     body = _build_es_query(req)
 
     try:
@@ -293,7 +295,7 @@ async def search(req: SearchRequest):
         raise HTTPException(status_code=503, detail=f"Index '{ES_INDEX}' not found — has the query service created it?")
     except Exception as exc:
         logger.error("ES search error: %s", exc)
-        raise HTTPException(status_code=502, detail="Elasticsearch query failed")
+        raise HTTPException(status_code=502, detail="OpenSearch query failed")
 
     total = resp["hits"]["total"]["value"] if isinstance(resp["hits"]["total"], dict) else resp["hits"]["total"]
     hits = [
@@ -310,15 +312,15 @@ async def search(req: SearchRequest):
 # ---- Advanced (raw DSL) search ----
 
 
-@app.post(
+@v1_router.post(
     "/search/advanced",
     tags=["Search"],
     summary="Advanced DSL search",
-    description="Execute a raw Elasticsearch DSL query for maximum flexibility.",
+    description="Execute a raw OpenSearch DSL query for maximum flexibility.",
 )
 async def search_advanced(req: AdvancedSearchRequest):
-    """Execute a raw Elasticsearch DSL query."""
-    es: AsyncElasticsearch = app.state.es
+    """Execute a raw OpenSearch DSL query."""
+    es: AsyncOpenSearch = app.state.es
     try:
         resp = await es.search(index=req.index, body=req.body)
         return resp.body
@@ -326,13 +328,13 @@ async def search_advanced(req: AdvancedSearchRequest):
         raise HTTPException(status_code=503, detail=f"Index '{req.index}' not found")
     except Exception as exc:
         logger.error("ES advanced search error: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Elasticsearch query failed: {exc}")
+        raise HTTPException(status_code=502, detail=f"OpenSearch query failed: {exc}")
 
 
 # ---- Autocomplete / suggest ----
 
 
-@app.get(
+@v1_router.get(
     "/search/suggest",
     response_model=SuggestResponse,
     tags=["Suggest"],
@@ -346,7 +348,7 @@ async def suggest(
     size: int = Query(10, ge=1, le=50),
 ):
     """Autocomplete suggestions for keywords or authors."""
-    es: AsyncElasticsearch = app.state.es
+    es: AsyncOpenSearch = app.state.es
 
     allowed_fields = {"text", "author_name", "author_handle", "topics", "matched_keywords"}
     if field not in allowed_fields:
@@ -371,7 +373,7 @@ async def suggest(
         return SuggestResponse(suggestions=[])
     except Exception as exc:
         logger.error("ES suggest error: %s", exc)
-        raise HTTPException(status_code=502, detail="Elasticsearch suggest failed")
+        raise HTTPException(status_code=502, detail="OpenSearch suggest failed")
 
     seen: set[str] = set()
     suggestions: list[str] = []
@@ -386,12 +388,12 @@ async def suggest(
 # ---- Trending topics ----
 
 
-@app.get(
+@v1_router.get(
     "/search/trending",
     response_model=TrendingResponse,
     tags=["Analytics"],
     summary="Trending topics",
-    description="Trending topics and keywords via Elasticsearch significant_terms aggregation.",
+    description="Trending topics and keywords via OpenSearch significant_terms aggregation.",
 )
 async def trending(
     project_id: int | None = Query(None),
@@ -399,7 +401,7 @@ async def trending(
     size: int = Query(20, ge=1, le=100),
 ):
     """Trending topics/keywords in a given time window using ES significant_terms aggregation."""
-    es: AsyncElasticsearch = app.state.es
+    es: AsyncOpenSearch = app.state.es
 
     filters: list[dict] = [
         {"range": {"published_at": {"gte": (datetime.utcnow() - timedelta(hours=hours)).isoformat()}}},
@@ -432,7 +434,7 @@ async def trending(
         return TrendingResponse(window_hours=hours, items=[])
     except Exception as exc:
         logger.error("ES trending error: %s", exc)
-        raise HTTPException(status_code=502, detail="Elasticsearch trending query failed")
+        raise HTTPException(status_code=502, detail="OpenSearch trending query failed")
 
     # Merge both aggregation results
     items_map: dict[str, int] = {}
@@ -455,7 +457,7 @@ async def trending(
 # ---- Faceted counts ----
 
 
-@app.get(
+@v1_router.get(
     "/search/facets",
     response_model=FacetsResponse,
     tags=["Analytics"],
@@ -469,7 +471,7 @@ async def facets(
     date_to: datetime | None = Query(None),
 ):
     """Faceted counts by platform, sentiment, and language for a query."""
-    es: AsyncElasticsearch = app.state.es
+    es: AsyncOpenSearch = app.state.es
 
     must: list[dict] = []
     filters: list[dict] = []
@@ -509,7 +511,7 @@ async def facets(
         return FacetsResponse(platform=[], sentiment=[], language=[])
     except Exception as exc:
         logger.error("ES facets error: %s", exc)
-        raise HTTPException(status_code=502, detail="Elasticsearch facets query failed")
+        raise HTTPException(status_code=502, detail="OpenSearch facets query failed")
 
     def _extract_buckets(agg_name: str) -> list[FacetBucket]:
         return [
@@ -527,7 +529,7 @@ async def facets(
 # ---- Saved searches (CRUD) ----
 
 
-@app.post(
+@v1_router.post(
     "/saved-searches",
     response_model=SavedSearchOut,
     status_code=201,
@@ -551,7 +553,7 @@ async def create_saved_search(req: SavedSearchCreate):
         return obj
 
 
-@app.get(
+@v1_router.get(
     "/saved-searches",
     response_model=list[SavedSearchOut],
     tags=["Saved Searches"],
@@ -570,7 +572,7 @@ async def list_saved_searches(
         return result.scalars().all()
 
 
-@app.delete(
+@v1_router.delete(
     "/saved-searches/{search_id}",
     status_code=204,
     tags=["Saved Searches"],
@@ -588,3 +590,6 @@ async def delete_saved_search(search_id: int):
         await db.execute(delete(SavedSearch).where(SavedSearch.id == search_id))
         await db.commit()
     return None
+
+
+app.include_router(v1_router)

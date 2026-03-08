@@ -18,7 +18,7 @@ from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,6 +165,8 @@ try:
     Instrumentator().instrument(app).expose(app)
 except ImportError:
     pass
+
+v1_router = APIRouter(prefix="/api/v1")
 
 
 async def get_db():
@@ -325,7 +327,7 @@ async def health():
     return await build_health_response("competitive-intelligence", checks=checks)
 
 
-@app.get(
+@v1_router.get(
     "/benchmark/{project_id}",
     response_model=BenchmarkResponse,
     tags=["Benchmarks"],
@@ -373,7 +375,7 @@ async def get_benchmark(
     )
 
 
-@app.get(
+@v1_router.get(
     "/benchmark/{project_id}/share-of-voice",
     response_model=SOVResponse,
     tags=["Benchmarks"],
@@ -436,7 +438,7 @@ async def share_of_voice(
     )
 
 
-@app.get(
+@v1_router.get(
     "/benchmark/{project_id}/sentiment-comparison",
     response_model=SentimentComparisonResponse,
     tags=["Benchmarks"],
@@ -500,7 +502,7 @@ async def sentiment_comparison(
     )
 
 
-@app.get(
+@v1_router.get(
     "/benchmark/{project_id}/trending",
     response_model=TrendingComparisonResponse,
     tags=["Benchmarks"],
@@ -569,7 +571,7 @@ async def trending_comparison(
     return TrendingComparisonResponse(project_id=project_id, brands=brands)
 
 
-@app.post(
+@v1_router.post(
     "/benchmark/{project_id}/generate",
     response_model=GenerateResponse,
     tags=["Benchmarks"],
@@ -652,7 +654,7 @@ async def generate_benchmark(
     )
 
 
-@app.get(
+@v1_router.get(
     "/benchmark/{project_id}/history",
     response_model=list[BenchmarkRecordOut],
     tags=["Benchmarks"],
@@ -694,3 +696,6 @@ async def benchmark_history(
         )
         for r in rows
     ]
+
+
+app.include_router(v1_router)

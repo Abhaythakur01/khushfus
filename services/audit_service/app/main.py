@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -55,6 +55,8 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+RETENTION_CHECK_INTERVAL = int(os.getenv("RETENTION_CHECK_INTERVAL_SECONDS", str(24 * 60 * 60)))  # default: daily
+DEFAULT_RETENTION_DAYS = int(os.getenv("DEFAULT_RETENTION_DAYS", "90"))
 
 GROUP_NAME = "audit-service"
 CONSUMER_NAME = f"audit-{os.getpid()}"
@@ -196,6 +198,137 @@ async def audit_consumer(bus: EventBus, session_factory):
 
 
 # ============================================================
+# Retention Enforcement
+# ============================================================
+
+
+class RetentionEnforcementOut(BaseModel):
+    organizations_processed: int
+    total_audit_logs_deleted: int
+    total_mentions_deleted: int
+    total_reports_deleted: int
+    details: list[dict]
+
+
+async def enforce_retention_cleanup(session_factory) -> dict:
+    """Delete audit logs (and related records) older than each org's retention policy.
+
+    Organizations without an explicit policy use DEFAULT_RETENTION_DAYS for audit logs.
+    Returns a summary dict of what was purged.
+    """
+    summary: dict = {
+        "organizations_processed": 0,
+        "total_audit_logs_deleted": 0,
+        "total_mentions_deleted": 0,
+        "total_reports_deleted": 0,
+        "details": [],
+    }
+    now = datetime.utcnow()
+
+    async with session_factory() as db:
+        # Fetch all retention policies
+        result = await db.execute(select(RetentionPolicy))
+        policies = result.scalars().all()
+
+        for policy in policies:
+            org_id = policy.organization_id
+            org_detail: dict = {
+                "organization_id": org_id, "audit_logs_deleted": 0,
+                "mentions_deleted": 0, "reports_deleted": 0,
+            }
+
+            # Delete old audit logs
+            audit_cutoff = now - timedelta(days=policy.audit_logs_retention_days)
+            del_audit = delete(AuditLog).where(
+                AuditLog.organization_id == org_id,
+                AuditLog.created_at < audit_cutoff,
+            )
+            audit_result = await db.execute(del_audit)
+            org_detail["audit_logs_deleted"] = audit_result.rowcount
+
+            # Delete old mentions and reports via project IDs
+            project_q = select(Project.id).where(Project.organization_id == org_id)
+            project_result = await db.execute(project_q)
+            project_ids = [r[0] for r in project_result]
+
+            if project_ids:
+                mention_cutoff = now - timedelta(days=policy.mentions_retention_days)
+                del_mentions = delete(Mention).where(
+                    Mention.project_id.in_(project_ids),
+                    Mention.collected_at < mention_cutoff,
+                )
+                mention_result = await db.execute(del_mentions)
+                org_detail["mentions_deleted"] = mention_result.rowcount
+
+                report_cutoff = now - timedelta(days=policy.reports_retention_days)
+                del_reports = delete(Report).where(
+                    Report.project_id.in_(project_ids),
+                    Report.created_at < report_cutoff,
+                )
+                report_result = await db.execute(del_reports)
+                org_detail["reports_deleted"] = report_result.rowcount
+
+            summary["organizations_processed"] += 1
+            summary["total_audit_logs_deleted"] += org_detail["audit_logs_deleted"]
+            summary["total_mentions_deleted"] += org_detail["mentions_deleted"]
+            summary["total_reports_deleted"] += org_detail["reports_deleted"]
+            summary["details"].append(org_detail)
+
+        # For orgs without a policy, apply default retention to audit logs only
+        policy_org_ids_q = select(RetentionPolicy.organization_id)
+        policy_org_ids_result = await db.execute(policy_org_ids_q)
+        policy_org_ids = {r[0] for r in policy_org_ids_result}
+
+        default_cutoff = now - timedelta(days=DEFAULT_RETENTION_DAYS)
+        if policy_org_ids:
+            del_default = delete(AuditLog).where(
+                AuditLog.organization_id.notin_(policy_org_ids),
+                AuditLog.created_at < default_cutoff,
+            )
+        else:
+            del_default = delete(AuditLog).where(
+                AuditLog.created_at < default_cutoff,
+            )
+        default_result = await db.execute(del_default)
+        default_deleted = default_result.rowcount
+        if default_deleted > 0:
+            summary["total_audit_logs_deleted"] += default_deleted
+            summary["details"].append({
+                "organization_id": None,
+                "note": "default retention policy applied",
+                "audit_logs_deleted": default_deleted,
+            })
+
+        await db.commit()
+
+    logger.info(
+        "Retention enforcement complete: orgs=%d, audit_logs=%d, mentions=%d, reports=%d",
+        summary["organizations_processed"],
+        summary["total_audit_logs_deleted"],
+        summary["total_mentions_deleted"],
+        summary["total_reports_deleted"],
+    )
+    return summary
+
+
+async def retention_enforcement_loop(session_factory):
+    """Background loop that enforces retention on a configurable interval."""
+    logger.info(
+        "Retention enforcement loop started (interval=%ds, default_days=%d)",
+        RETENTION_CHECK_INTERVAL, DEFAULT_RETENTION_DAYS,
+    )
+    while True:
+        try:
+            await asyncio.sleep(RETENTION_CHECK_INTERVAL)
+            await enforce_retention_cleanup(session_factory)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Retention enforcement error: %s", e)
+            await asyncio.sleep(60)
+
+
+# ============================================================
 # FastAPI Application
 # ============================================================
 
@@ -212,14 +345,17 @@ async def lifespan(app: FastAPI):
 
     # Start background consumer
     consumer_task = asyncio.create_task(audit_consumer(bus, session_factory))
+    retention_task = asyncio.create_task(retention_enforcement_loop(session_factory))
 
     yield
 
+    retention_task.cancel()
     consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    for task in (consumer_task, retention_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await bus.close()
     await engine.dispose()
 
@@ -255,6 +391,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 async def get_db():
     """FastAPI dependency for database sessions."""
@@ -288,7 +426,7 @@ async def health():
 # ============================================================
 
 
-@app.get(
+@v1_router.get(
     "/audit-logs",
     response_model=AuditLogListOut,
     tags=["Audit Logs"],
@@ -337,7 +475,7 @@ async def list_audit_logs(
     )
 
 
-@app.get(
+@v1_router.get(
     "/audit-logs/summary",
     response_model=AuditSummaryOut,
     tags=["Audit Logs"],
@@ -400,7 +538,7 @@ async def audit_summary(
     )
 
 
-@app.get(
+@v1_router.get(
     "/audit-logs/{log_id}",
     response_model=AuditLogOut,
     tags=["Audit Logs"],
@@ -423,7 +561,7 @@ async def get_audit_log(
 # ============================================================
 
 
-@app.post(
+@v1_router.post(
     "/data-retention",
     response_model=RetentionPolicyOut,
     tags=["Data Retention"],
@@ -458,7 +596,7 @@ async def configure_retention(
     return RetentionPolicyOut.model_validate(policy)
 
 
-@app.get(
+@v1_router.get(
     "/data-retention",
     response_model=RetentionPolicyOut,
     tags=["Data Retention"],
@@ -480,7 +618,7 @@ async def get_retention(
     return RetentionPolicyOut.model_validate(policy)
 
 
-@app.post(
+@v1_router.post(
     "/data-retention/execute",
     response_model=RetentionExecuteOut,
     tags=["Data Retention"],
@@ -562,7 +700,7 @@ async def execute_retention(
 # ============================================================
 
 
-@app.get(
+@v1_router.get(
     "/compliance/export",
     response_model=GDPRExportOut,
     tags=["GDPR"],
@@ -650,7 +788,7 @@ async def gdpr_export(
     )
 
 
-@app.delete(
+@v1_router.delete(
     "/compliance/purge",
     response_model=GDPRPurgeOut,
     tags=["GDPR"],
@@ -724,6 +862,29 @@ async def gdpr_purge(
         records_purged=records_purged,
         purged_at=datetime.utcnow().isoformat(),
     )
+
+
+# ============================================================
+# Admin: Manual Retention Enforcement
+# ============================================================
+
+
+@v1_router.post(
+    "/admin/enforce-retention",
+    response_model=RetentionEnforcementOut,
+    tags=["Data Retention"],
+    summary="Manually enforce retention cleanup",
+    description="Trigger retention enforcement across all organizations. "
+    "Deletes audit logs, mentions, and reports older than each org's configured retention policy. "
+    "Organizations without an explicit policy use the default retention period.",
+)
+async def admin_enforce_retention():
+    """Manually trigger retention enforcement across all organizations."""
+    result = await enforce_retention_cleanup(app.state.db_session)
+    return RetentionEnforcementOut(**result)
+
+
+app.include_router(v1_router)
 
 
 if __name__ == "__main__":

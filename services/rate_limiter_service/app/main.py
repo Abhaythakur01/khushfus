@@ -18,7 +18,7 @@ import time
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 
@@ -344,6 +344,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 @app.get(
     "/health",
@@ -366,7 +368,7 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@app.post(
+@v1_router.post(
     "/acquire",
     response_model=AcquireResponse,
     tags=["Rate Limiting"],
@@ -398,7 +400,7 @@ async def acquire(body: AcquireRequest):
     return result
 
 
-@app.get(
+@v1_router.get(
     "/quotas",
     response_model=list[QuotaOut],
     tags=["Quotas"],
@@ -415,7 +417,7 @@ async def list_quotas():
         return [QuotaOut.model_validate(q) for q in quotas]
 
 
-@app.post(
+@v1_router.post(
     "/quotas",
     response_model=QuotaOut,
     status_code=201,
@@ -467,7 +469,7 @@ async def configure_quota(body: QuotaConfigRequest):
             return QuotaOut.model_validate(quota)
 
 
-@app.get(
+@v1_router.get(
     "/quotas/{platform}/status",
     response_model=list[QuotaStatusOut],
     tags=["Rate Limiting"],
@@ -518,6 +520,8 @@ async def platform_status(platform: str):
 
     return statuses
 
+
+app.include_router(v1_router)
 
 # ---------------------------------------------------------------------------
 # Entrypoint

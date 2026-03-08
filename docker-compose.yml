@@ -31,18 +31,18 @@ services:
       timeout: 5s
       retries: 5
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
     volumes:
-      - es_data:/usr/share/elasticsearch/data
+      - es_data:/usr/share/opensearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health"]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -71,8 +71,10 @@ services:
     environment: &common-env
       DATABASE_URL: postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus
       REDIS_URL: redis://redis:6379/0
-      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_URL: http://opensearch:9200
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-dev-webhook-secret}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -146,7 +148,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      elasticsearch: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
 
   report:
     build:
@@ -237,7 +239,7 @@ services:
     environment:
       <<: *common-env
     depends_on:
-      elasticsearch: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 

@@ -1,10 +1,10 @@
 """
-Query Service — stores analyzed mentions and indexes them in Elasticsearch.
+Query Service — stores analyzed mentions and indexes them in OpenSearch.
 
 Consumes from 'mentions:analyzed' stream:
 1. Deduplicates by (source_id, platform, project_id)
 2. Stores in PostgreSQL
-3. Indexes in Elasticsearch for full-text search
+3. Indexes in OpenSearch for full-text search
 4. Emits alert events if anomalies detected (volume spikes, negative surges)
 """
 
@@ -13,7 +13,7 @@ import logging
 import os
 from datetime import datetime
 
-from elasticsearch import AsyncElasticsearch
+from opensearchpy import AsyncOpenSearch
 from sqlalchemy import select
 
 from shared.database import create_db
@@ -28,15 +28,15 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
+ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://opensearch:9200")
 
 GROUP_NAME = "query-service"
 CONSUMER_NAME = f"query-{os.getpid()}"
 ES_INDEX = "khushfus-mentions"
 
 
-async def init_elasticsearch(es: AsyncElasticsearch):
-    """Create the Elasticsearch index with proper mappings."""
+async def init_elasticsearch(es: AsyncOpenSearch):
+    """Create the OpenSearch index with proper mappings."""
     if not await es.indices.exists(index=ES_INDEX):
         await es.indices.create(
             index=ES_INDEX,
@@ -63,11 +63,11 @@ async def init_elasticsearch(es: AsyncElasticsearch):
                 }
             },
         )
-        logger.info(f"Created Elasticsearch index: {ES_INDEX}")
+        logger.info(f"Created OpenSearch index: {ES_INDEX}")
 
 
-async def store_mention(db_session, es: AsyncElasticsearch, data: dict) -> bool:
-    """Store an analyzed mention in PostgreSQL and Elasticsearch. Returns True if new."""
+async def store_mention(db_session, es: AsyncOpenSearch, data: dict) -> bool:
+    """Store an analyzed mention in PostgreSQL and OpenSearch. Returns True if new."""
     project_id = int(data.get("project_id", 0))
     source_id = data.get("source_id", "")
     platform = data.get("platform", "other")
@@ -119,7 +119,7 @@ async def store_mention(db_session, es: AsyncElasticsearch, data: dict) -> bool:
         await db.commit()
         await db.refresh(mention)
 
-        # Index in Elasticsearch
+        # Index in OpenSearch
         try:
             await es.index(
                 index=ES_INDEX,
@@ -149,7 +149,7 @@ async def store_mention(db_session, es: AsyncElasticsearch, data: dict) -> bool:
         return True
 
 
-async def process_loop(bus: EventBus, db_session, es: AsyncElasticsearch):
+async def process_loop(bus: EventBus, db_session, es: AsyncOpenSearch):
     """Main loop: consume analyzed mentions, store, index."""
     await bus.ensure_group(STREAM_ANALYZED_MENTIONS, GROUP_NAME)
     logger.info("Query Service listening for analyzed mentions...")
@@ -191,7 +191,7 @@ async def main():
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
-    es = AsyncElasticsearch(ELASTICSEARCH_URL)
+    es = AsyncOpenSearch(hosts=[ELASTICSEARCH_URL])
     await init_elasticsearch(es)
 
     logger.info("Query Service started")

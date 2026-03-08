@@ -1,41 +1,41 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: elasticsearch
+  name: opensearch
   namespace: khushfus
   labels:
-    app: elasticsearch
+    app: opensearch
     tier: infrastructure
 spec:
-  serviceName: elasticsearch
+  serviceName: opensearch
   replicas: 1
   selector:
     matchLabels:
-      app: elasticsearch
+      app: opensearch
   template:
     metadata:
       labels:
-        app: elasticsearch
+        app: opensearch
         tier: infrastructure
     spec:
       initContainers:
         - name: fix-permissions
           image: busybox
-          command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+          command: ["sh", "-c", "chown -R 1000:1000 /usr/share/opensearch/data"]
           volumeMounts:
             - name: es-data
-              mountPath: /usr/share/elasticsearch/data
+              mountPath: /usr/share/opensearch/data
       containers:
-        - name: elasticsearch
-          image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+        - name: opensearch
+          image: opensearchproject/opensearch:2.12.0
           ports:
             - containerPort: 9200
           env:
             - name: discovery.type
               value: single-node
-            - name: xpack.security.enabled
-              value: "false"
-            - name: ES_JAVA_OPTS
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "true"
+            - name: OPENSEARCH_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
           resources:
             requests:
@@ -60,7 +60,7 @@ spec:
             timeoutSeconds: 5
           volumeMounts:
             - name: es-data
-              mountPath: /usr/share/elasticsearch/data
+              mountPath: /usr/share/opensearch/data
   volumeClaimTemplates:
     - metadata:
         name: es-data
@@ -73,14 +73,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: elasticsearch
+  name: opensearch
   namespace: khushfus
   labels:
-    app: elasticsearch
+    app: opensearch
     tier: infrastructure
 spec:
   selector:
-    app: elasticsearch
+    app: opensearch
   ports:
     - port: 9200
       targetPort: 9200

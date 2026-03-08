@@ -27,7 +27,7 @@ from datetime import datetime
 from enum import Enum
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -419,6 +419,8 @@ try:
 except ImportError:
     pass
 
+v1_router = APIRouter(prefix="/api/v1")
+
 
 # ============================================================
 # Health
@@ -451,7 +453,7 @@ async def health():
 # ============================================================
 
 
-@app.websocket("/ws/mentions/{project_id}")
+@v1_router.websocket("/ws/mentions/{project_id}")
 async def ws_mentions(websocket: WebSocket, project_id: int):
     """Real-time mention feed. Pushes new mentions as they arrive for the project."""
     await manager.connect(websocket, project_id, "mentions")
@@ -492,7 +494,7 @@ async def ws_mentions(websocket: WebSocket, project_id: int):
         await manager.disconnect(websocket, project_id, "mentions")
 
 
-@app.websocket("/ws/dashboard/{project_id}")
+@v1_router.websocket("/ws/dashboard/{project_id}")
 async def ws_dashboard(websocket: WebSocket, project_id: int):
     """Real-time dashboard updates: mention counts, sentiment counters, engagement."""
     await manager.connect(websocket, project_id, "dashboard")
@@ -530,7 +532,7 @@ async def ws_dashboard(websocket: WebSocket, project_id: int):
         await manager.disconnect(websocket, project_id, "dashboard")
 
 
-@app.websocket("/ws/alerts/{project_id}")
+@v1_router.websocket("/ws/alerts/{project_id}")
 async def ws_alerts(websocket: WebSocket, project_id: int):
     """Real-time alert notifications for a project."""
     await manager.connect(websocket, project_id, "alerts")
@@ -580,7 +582,7 @@ async def ws_alerts(websocket: WebSocket, project_id: int):
 # ============================================================
 
 
-@app.get(
+@v1_router.get(
     "/sse/mentions/{project_id}",
     tags=["SSE"],
     summary="SSE mention stream",
@@ -623,7 +625,7 @@ async def sse_mentions(project_id: int):
 # ============================================================
 
 
-@app.get(
+@v1_router.get(
     "/stats",
     tags=["Stats"],
     summary="Connection statistics",
@@ -650,7 +652,7 @@ async def connection_stats():
 # ============================================================
 
 
-@app.post(
+@v1_router.post(
     "/publish/{project_id}",
     tags=["Publish"],
     summary="Publish a message",
@@ -695,6 +697,9 @@ async def publish_message(project_id: int, payload: dict):
         + manager.count(project_id, "dashboard")
         + manager.count(project_id, "alerts"),
     }
+
+
+app.include_router(v1_router)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # Elasticsearch
+    # OpenSearch (env var kept as ELASTICSEARCH_URL for backward compatibility)
     elasticsearch_url: str = "http://localhost:9200"
 
     # Social Media API Keys

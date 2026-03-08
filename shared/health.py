@@ -1,7 +1,7 @@
 """Shared health check utilities for KhushFus services.
 
 Provides dependency-aware health checks that verify database, Redis,
-and Elasticsearch connectivity instead of just returning {"status": "ok"}.
+and OpenSearch connectivity instead of just returning {"status": "ok"}.
 """
 
 import logging
@@ -48,7 +48,7 @@ async def check_redis(redis_url: str) -> dict[str, Any]:
 
 
 async def check_elasticsearch(es_url: str) -> dict[str, Any]:
-    """Check Elasticsearch connectivity."""
+    """Check OpenSearch connectivity (function name kept for backward compatibility)."""
     try:
         import httpx
 
@@ -57,7 +57,7 @@ async def check_elasticsearch(es_url: str) -> dict[str, Any]:
             data = resp.json()
             return {"status": "up", "cluster_status": data.get("status", "unknown")}
     except Exception as e:
-        logger.warning(f"Elasticsearch health check failed: {e}")
+        logger.warning(f"OpenSearch health check failed: {e}")
         return {"status": "down", "error": str(e)}
 
 
