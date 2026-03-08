@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.events import EventBus, ReportRequestEvent, STREAM_REPORT_REQUESTS
+from shared.events import STREAM_REPORT_REQUESTS, EventBus, ReportRequestEvent
 from shared.models import Report
 from shared.schemas import ReportOut
 

@@ -19,15 +19,13 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import func, select
 
 from shared.database import create_db
-from shared.events import EventBus, STREAM_REPORT_REQUESTS, STREAM_REPORT_READY
+from shared.events import STREAM_REPORT_READY, STREAM_REPORT_REQUESTS, EventBus
 from shared.models import Mention, Platform, Project, ProjectStatus, Report, ReportType, Sentiment
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "report-service"
@@ -55,27 +53,40 @@ async def build_report_data(db, project_id: int, start: datetime, end: datetime)
         if c > 0:
             platform_counts[p.value] = c
 
-    eng = (await db.execute(
-        select(func.sum(Mention.likes), func.sum(Mention.shares),
-               func.sum(Mention.comments), func.sum(Mention.reach)).where(*base)
-    )).one()
+    eng = (
+        await db.execute(
+            select(
+                func.sum(Mention.likes), func.sum(Mention.shares), func.sum(Mention.comments), func.sum(Mention.reach)
+            ).where(*base)
+        )
+    ).one()
 
     top = await db.execute(
-        select(Mention.author_name, Mention.author_handle, Mention.author_followers,
-               Mention.platform, func.count(Mention.id).label("cnt"))
+        select(
+            Mention.author_name,
+            Mention.author_handle,
+            Mention.author_followers,
+            Mention.platform,
+            func.count(Mention.id).label("cnt"),
+        )
         .where(*base)
         .group_by(Mention.author_handle, Mention.author_name, Mention.author_followers, Mention.platform)
-        .order_by(func.count(Mention.id).desc()).limit(20)
+        .order_by(func.count(Mention.id).desc())
+        .limit(20)
     )
     top_contributors = [
-        {"name": r.author_name, "handle": r.author_handle, "followers": r.author_followers,
-         "platform": r.platform, "mentions": r.cnt} for r in top
+        {
+            "name": r.author_name,
+            "handle": r.author_handle,
+            "followers": r.author_followers,
+            "platform": r.platform,
+            "mentions": r.cnt,
+        }
+        for r in top
     ]
 
     # Keyword frequency
-    kw_result = await db.execute(
-        select(Mention.matched_keywords).where(*base, Mention.matched_keywords.isnot(None))
-    )
+    kw_result = await db.execute(select(Mention.matched_keywords).where(*base, Mention.matched_keywords.isnot(None)))
     keyword_freq: dict[str, int] = {}
     for row in kw_result.scalars():
         for kw in row.split(","):
@@ -83,16 +94,22 @@ async def build_report_data(db, project_id: int, start: datetime, end: datetime)
             if kw:
                 keyword_freq[kw] = keyword_freq.get(kw, 0) + 1
 
-    flagged = (await db.execute(
-        select(func.count(Mention.id)).where(*base, Mention.is_flagged.is_(True))
-    )).scalar() or 0
+    flagged = (
+        await db.execute(select(func.count(Mention.id)).where(*base, Mention.is_flagged.is_(True)))
+    ).scalar() or 0
 
     influencers = await db.execute(
-        select(Mention.author_name, Mention.author_handle, Mention.author_followers,
-               Mention.author_profile_url, Mention.platform)
+        select(
+            Mention.author_name,
+            Mention.author_handle,
+            Mention.author_followers,
+            Mention.author_profile_url,
+            Mention.platform,
+        )
         .where(*base, Mention.author_followers > 1000)
         .distinct(Mention.author_handle)
-        .order_by(Mention.author_handle, Mention.author_followers.desc()).limit(10)
+        .order_by(Mention.author_handle, Mention.author_followers.desc())
+        .limit(10)
     )
 
     return {
@@ -102,14 +119,21 @@ async def build_report_data(db, project_id: int, start: datetime, end: datetime)
         "platforms": platform_counts,
         "top_contributors": top_contributors,
         "engagement": {
-            "total_likes": eng[0] or 0, "total_shares": eng[1] or 0,
-            "total_comments": eng[2] or 0, "total_reach": eng[3] or 0,
+            "total_likes": eng[0] or 0,
+            "total_shares": eng[1] or 0,
+            "total_comments": eng[2] or 0,
+            "total_reach": eng[3] or 0,
         },
         "keyword_frequency": keyword_freq,
         "flagged_mentions": flagged,
         "influencers": [
-            {"name": r.author_name, "handle": r.author_handle, "followers": r.author_followers,
-             "profile_url": r.author_profile_url, "platform": r.platform}
+            {
+                "name": r.author_name,
+                "handle": r.author_handle,
+                "followers": r.author_followers,
+                "profile_url": r.author_profile_url,
+                "platform": r.platform,
+            }
             for r in influencers
         ],
     }
@@ -159,7 +183,8 @@ def generate_pdf(report_data: dict, report_type: str, project_name: str) -> str 
         env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
         template = env.get_template("report.html")
         html = template.render(
-            report=report_data, report_type=report_type,
+            report=report_data,
+            report_type=report_type,
             project_name=project_name,
             generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
         )
@@ -169,6 +194,7 @@ def generate_pdf(report_data: dict, report_type: str, project_name: str) -> str 
 
         try:
             from weasyprint import HTML
+
             HTML(string=html).write_pdf(str(filepath))
             return str(filepath)
         except ImportError:
@@ -187,18 +213,20 @@ async def listen_for_requests(bus: EventBus, session_factory):
 
     while True:
         try:
-            messages = await bus.consume(
-                STREAM_REPORT_REQUESTS, GROUP_NAME, CONSUMER_NAME, block_ms=3000
-            )
+            messages = await bus.consume(STREAM_REPORT_REQUESTS, GROUP_NAME, CONSUMER_NAME, block_ms=3000)
             for msg_id, data in messages:
                 project_id = int(data.get("project_id", 0))
                 report_type = data.get("report_type", "daily")
                 report_id = await generate_report(session_factory, project_id, report_type)
                 if report_id:
-                    await bus.publish(STREAM_REPORT_READY, {
-                        "project_id": project_id, "report_id": report_id,
-                        "report_type": report_type,
-                    })
+                    await bus.publish(
+                        STREAM_REPORT_READY,
+                        {
+                            "project_id": project_id,
+                            "report_id": report_id,
+                            "report_type": report_type,
+                        },
+                    )
                 await bus.ack(STREAM_REPORT_REQUESTS, GROUP_NAME, msg_id)
         except Exception as e:
             logger.error(f"Report request processing error: {e}")
@@ -221,9 +249,7 @@ async def scheduled_reports(bus: EventBus, session_factory):
 
         if tasks:
             async with session_factory() as db:
-                result = await db.execute(
-                    select(Project).where(Project.status == ProjectStatus.ACTIVE)
-                )
+                result = await db.execute(select(Project).where(Project.status == ProjectStatus.ACTIVE))
                 projects = result.scalars().all()
 
             for report_type in tasks:

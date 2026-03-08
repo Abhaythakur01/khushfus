@@ -66,9 +66,7 @@ async def _collect_all_projects_async():
 
     session_factory = _get_async_session()
     async with session_factory() as db:
-        result = await db.execute(
-            select(Project).where(Project.status == ProjectStatus.ACTIVE)
-        )
+        result = await db.execute(select(Project).where(Project.status == ProjectStatus.ACTIVE))
         projects = result.scalars().all()
 
         since = datetime.utcnow() - timedelta(hours=1)
@@ -117,9 +115,7 @@ async def _generate_reports_async(report_type: str):
 
     session_factory = _get_async_session()
     async with session_factory() as db:
-        result = await db.execute(
-            select(Project).where(Project.status == ProjectStatus.ACTIVE)
-        )
+        result = await db.execute(select(Project).where(Project.status == ProjectStatus.ACTIVE))
         projects = result.scalars().all()
 
         for project in projects:

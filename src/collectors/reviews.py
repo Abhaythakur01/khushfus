@@ -17,28 +17,16 @@ class ReviewSiteCollector(BaseCollector):
     def __init__(self):
         self.trustpilot_api_key = os.getenv("TRUSTPILOT_API_KEY", "")
         self.trustpilot_business_ids = [
-            bid.strip()
-            for bid in os.getenv("TRUSTPILOT_BUSINESS_IDS", "").split(",")
-            if bid.strip()
+            bid.strip() for bid in os.getenv("TRUSTPILOT_BUSINESS_IDS", "").split(",") if bid.strip()
         ]
         self.yelp_api_key = os.getenv("YELP_API_KEY", "")
-        self.yelp_business_ids = [
-            bid.strip()
-            for bid in os.getenv("YELP_BUSINESS_IDS", "").split(",")
-            if bid.strip()
-        ]
-        self.g2_product_urls = [
-            url.strip()
-            for url in os.getenv("G2_PRODUCT_URLS", "").split(",")
-            if url.strip()
-        ]
+        self.yelp_business_ids = [bid.strip() for bid in os.getenv("YELP_BUSINESS_IDS", "").split(",") if bid.strip()]
+        self.g2_product_urls = [url.strip() for url in os.getenv("G2_PRODUCT_URLS", "").split(",") if url.strip()]
 
     async def validate_credentials(self) -> bool:
         return bool(self.trustpilot_api_key or self.yelp_api_key or self.g2_product_urls)
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions: list[CollectedMention] = []
 
         # Trustpilot
@@ -59,9 +47,7 @@ class ReviewSiteCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} review site mentions for keywords: {keywords}")
         return mentions
 
-    async def _collect_trustpilot(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_trustpilot(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         mentions = []
 
         for business_id in self.trustpilot_business_ids:
@@ -90,9 +76,7 @@ class ReviewSiteCollector(BaseCollector):
 
                     published = None
                     if review.get("createdAt"):
-                        published = datetime.fromisoformat(
-                            review["createdAt"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(review["createdAt"].replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue
@@ -121,9 +105,7 @@ class ReviewSiteCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_yelp(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_yelp(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         mentions = []
 
         for business_id in self.yelp_business_ids:
@@ -184,9 +166,7 @@ class ReviewSiteCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_g2(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_g2(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         """Scrape public G2 reviews using BeautifulSoup."""
         mentions = []
 

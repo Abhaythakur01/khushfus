@@ -43,14 +43,8 @@ class LLMInsights:
             platform = m.get("platform", "")
             sentiment = m.get("sentiment", "")
             text = (m.get("text") or "")[:300]
-            engagement = (
-                int(m.get("likes", 0))
-                + int(m.get("shares", 0))
-                + int(m.get("comments", 0))
-            )
-            lines.append(
-                f"- [{platform}] @{author} (engagement={engagement}, sentiment={sentiment}): {text}"
-            )
+            engagement = int(m.get("likes", 0)) + int(m.get("shares", 0)) + int(m.get("comments", 0))
+            lines.append(f"- [{platform}] @{author} (engagement={engagement}, sentiment={sentiment}): {text}")
         truncated = ""
         if len(mentions) > max_mentions:
             truncated = f"\n... and {len(mentions) - max_mentions} more mentions."
@@ -75,9 +69,7 @@ class LLMInsights:
     # Public methods
     # ------------------------------------------------------------------
 
-    async def summarize_mentions(
-        self, mentions: list[dict], context: str = ""
-    ) -> str:
+    async def summarize_mentions(self, mentions: list[dict], context: str = "") -> str:
         """Generate a natural-language summary of a batch of mentions."""
         if self.client is None:
             return _UNAVAILABLE_MSG
@@ -97,9 +89,7 @@ class LLMInsights:
         result = self._call_claude(prompt, max_tokens=1500)
         return result if result else _UNAVAILABLE_MSG
 
-    async def answer_question(
-        self, question: str, mentions: list[dict]
-    ) -> str:
+    async def answer_question(self, question: str, mentions: list[dict]) -> str:
         """Answer ad-hoc questions about mention data."""
         if self.client is None:
             return _UNAVAILABLE_MSG
@@ -114,9 +104,7 @@ class LLMInsights:
         result = self._call_claude(prompt, max_tokens=1024)
         return result if result else _UNAVAILABLE_MSG
 
-    async def detect_crisis(
-        self, mentions: list[dict], baseline: dict
-    ) -> dict:
+    async def detect_crisis(self, mentions: list[dict], baseline: dict) -> dict:
         """Analyze if current mentions indicate a PR crisis.
 
         Args:

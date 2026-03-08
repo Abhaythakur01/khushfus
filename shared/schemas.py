@@ -4,10 +4,10 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-
 # ============================================================
 # Auth & Identity
 # ============================================================
+
 
 class RegisterRequest(BaseModel):
     email: str
@@ -48,6 +48,7 @@ class SSOConfigRequest(BaseModel):
 # ============================================================
 # Organization / Tenant
 # ============================================================
+
 
 class OrgCreate(BaseModel):
     name: str
@@ -110,12 +111,14 @@ class ApiKeyOut(BaseModel):
 
 class ApiKeyCreated(ApiKeyOut):
     """Returned only on creation — includes the full key (not stored)."""
+
     key: str
 
 
 # ============================================================
 # Project & Keywords
 # ============================================================
+
 
 class KeywordCreate(BaseModel):
     term: str
@@ -165,6 +168,7 @@ class ProjectOut(BaseModel):
 # Mention
 # ============================================================
 
+
 class MentionOut(BaseModel):
     id: int
     platform: str
@@ -204,6 +208,7 @@ class MentionListOut(BaseModel):
 # Report
 # ============================================================
 
+
 class ReportOut(BaseModel):
     id: int
     report_type: str
@@ -217,6 +222,7 @@ class ReportOut(BaseModel):
 # ============================================================
 # Alert
 # ============================================================
+
 
 class AlertRuleCreate(BaseModel):
     name: str
@@ -254,6 +260,7 @@ class AlertLogOut(BaseModel):
 # Search
 # ============================================================
 
+
 class SearchRequest(BaseModel):
     project_id: int
     query: str
@@ -285,6 +292,7 @@ class SavedSearchOut(BaseModel):
 # Publishing
 # ============================================================
 
+
 class ScheduledPostCreate(BaseModel):
     project_id: int
     platform: str
@@ -310,6 +318,7 @@ class ScheduledPostOut(BaseModel):
 # ============================================================
 # Export
 # ============================================================
+
 
 class ExportCreate(BaseModel):
     project_id: int
@@ -347,6 +356,7 @@ class IntegrationOut(BaseModel):
 # Competitive Intelligence
 # ============================================================
 
+
 class BenchmarkOut(BaseModel):
     project_id: int
     competitor_project_id: int
@@ -359,6 +369,7 @@ class BenchmarkOut(BaseModel):
 # ============================================================
 # Workflow
 # ============================================================
+
 
 class WorkflowCreate(BaseModel):
     project_id: int
@@ -382,6 +393,7 @@ class WorkflowOut(BaseModel):
 # Audit
 # ============================================================
 
+
 class AuditLogOut(BaseModel):
     id: int
     organization_id: int
@@ -398,6 +410,7 @@ class AuditLogOut(BaseModel):
 # ============================================================
 # Common
 # ============================================================
+
 
 class CollectRequest(BaseModel):
     hours_back: int = 24

@@ -17,29 +17,27 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database import create_db, init_tables
 from shared.events import (
-    EventBus,
-    ReportRequestEvent,
     STREAM_ANALYZED_MENTIONS,
     STREAM_REPORT_REQUESTS,
     STREAM_WORKFLOW,
+    EventBus,
+    ReportRequestEvent,
     WorkflowTriggerEvent,
 )
 from shared.models import (
     Mention,
     Project,
     ProjectStatus,
-    Report,
-    ReportType,
     Workflow,
     WorkflowStatus,
 )
@@ -47,9 +45,7 @@ from shared.models import (
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "scheduler-service"
@@ -60,11 +56,12 @@ CONSUMER_NAME = f"scheduler-{os.getpid()}"
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class WorkflowCreate(BaseModel):
     project_id: int
     name: str
     trigger_json: dict | list  # e.g. {"type": "sentiment_below", "score": -0.5}
-    actions_json: list[dict]   # e.g. [{"type": "notify_slack", "webhook_url": "..."}]
+    actions_json: list[dict]  # e.g. [{"type": "notify_slack", "webhook_url": "..."}]
 
 
 class WorkflowUpdate(BaseModel):
@@ -98,7 +95,7 @@ class WorkflowStatsOut(BaseModel):
 class ReportScheduleCreate(BaseModel):
     project_id: int
     report_type: str = "custom"  # daily, weekly, monthly, custom
-    cron_hours: int = 6          # hour of day (0-23) to run
+    cron_hours: int = 6  # hour of day (0-23) to run
     cron_weekday: int | None = None  # 0=Monday, None=every day
     cron_monthday: int | None = None  # 1-28, None=ignore
     is_active: bool = True
@@ -134,6 +131,7 @@ _last_trigger_times: dict[int, datetime] = {}  # workflow_id -> datetime
 # App lifespan & dependencies
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
@@ -147,12 +145,8 @@ async def lifespan(app: FastAPI):
     await init_tables(engine)
 
     # Start background tasks
-    consumer_task = asyncio.create_task(
-        mention_consumer_loop(bus, session_factory)
-    )
-    scheduler_task = asyncio.create_task(
-        report_scheduler_loop(bus, session_factory)
-    )
+    consumer_task = asyncio.create_task(mention_consumer_loop(bus, session_factory))
+    scheduler_task = asyncio.create_task(report_scheduler_loop(bus, session_factory))
     app.state._bg_tasks = [consumer_task, scheduler_task]
 
     logger.info("Scheduler/Workflow Service started with background tasks")
@@ -182,6 +176,7 @@ async def get_db():
 # ---------------------------------------------------------------------------
 # Workflow CRUD endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
@@ -298,6 +293,7 @@ async def workflow_stats(
 # Report schedule endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.post("/report-schedules", response_model=ReportScheduleOut, status_code=201)
 async def create_report_schedule(payload: ReportScheduleCreate):
     """Create a custom report schedule for a project."""
@@ -324,6 +320,7 @@ async def delete_report_schedules(project_id: int):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _workflow_to_out(w: Workflow) -> WorkflowOut:
     return WorkflowOut(
         id=w.id,
@@ -340,6 +337,7 @@ def _workflow_to_out(w: Workflow) -> WorkflowOut:
 # ---------------------------------------------------------------------------
 # Trigger evaluation engine
 # ---------------------------------------------------------------------------
+
 
 def _evaluate_trigger(trigger: dict, mention_data: dict) -> bool:
     """
@@ -419,6 +417,7 @@ def _evaluate_triggers(trigger_json_str: str, mention_data: dict) -> bool:
 # Action execution engine
 # ---------------------------------------------------------------------------
 
+
 async def _execute_action(
     action: dict,
     mention_data: dict,
@@ -445,31 +444,34 @@ async def _execute_action(
         if webhook_url:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(webhook_url, json={
-                        "text": f"*Workflow Triggered: {workflow.name}*",
-                        "blocks": [
-                            {
-                                "type": "header",
-                                "text": {
-                                    "type": "plain_text",
-                                    "text": f"Workflow: {workflow.name}",
+                    await client.post(
+                        webhook_url,
+                        json={
+                            "text": f"*Workflow Triggered: {workflow.name}*",
+                            "blocks": [
+                                {
+                                    "type": "header",
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": f"Workflow: {workflow.name}",
+                                    },
                                 },
-                            },
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": (
-                                        f"*Author:* {author}\n"
-                                        f"*Platform:* {mention_data.get('platform', 'N/A')}\n"
-                                        f"*Sentiment:* {mention_data.get('sentiment', 'N/A')} "
-                                        f"({mention_data.get('sentiment_score', 'N/A')})\n"
-                                        f"*Text:* {mention_text}"
-                                    ),
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": (
+                                            f"*Author:* {author}\n"
+                                            f"*Platform:* {mention_data.get('platform', 'N/A')}\n"
+                                            f"*Sentiment:* {mention_data.get('sentiment', 'N/A')} "
+                                            f"({mention_data.get('sentiment_score', 'N/A')})\n"
+                                            f"*Text:* {mention_text}"
+                                        ),
+                                    },
                                 },
-                            },
-                        ],
-                    })
+                            ],
+                        },
+                    )
                 logger.info(f"Slack notification sent for workflow {workflow.id}")
             except Exception as e:
                 logger.error(f"Slack notification failed for workflow {workflow.id}: {e}")
@@ -502,9 +504,7 @@ async def _execute_action(
                     )
                     await db.execute(stmt)
                     await db.commit()
-                logger.info(
-                    f"Flagged mention source_id={source_id} for workflow {workflow.id}"
-                )
+                logger.info(f"Flagged mention source_id={source_id} for workflow {workflow.id}")
             except Exception as e:
                 logger.error(f"Failed to flag mention: {e}")
 
@@ -522,24 +522,26 @@ async def _execute_action(
         if escalation_url:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(escalation_url, json={
-                        "workflow_id": workflow.id,
-                        "workflow_name": workflow.name,
-                        "escalation_level": level,
-                        "project_id": project_id,
-                        "author": author,
-                        "sentiment": mention_data.get("sentiment"),
-                        "sentiment_score": mention_data.get("sentiment_score"),
-                        "text": mention_text,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    })
+                    await client.post(
+                        escalation_url,
+                        json={
+                            "workflow_id": workflow.id,
+                            "workflow_name": workflow.name,
+                            "escalation_level": level,
+                            "project_id": project_id,
+                            "author": author,
+                            "sentiment": mention_data.get("sentiment"),
+                            "sentiment_score": mention_data.get("sentiment_score"),
+                            "text": mention_text,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        },
+                    )
                 logger.info(f"Escalation sent for workflow {workflow.id} to level={level}")
             except Exception as e:
                 logger.error(f"Escalation failed for workflow {workflow.id}: {e}")
         else:
             logger.info(
-                f"Escalation (logged) for workflow {workflow.id}: "
-                f"level={level}, project={project_id}, author={author}"
+                f"Escalation (logged) for workflow {workflow.id}: level={level}, project={project_id}, author={author}"
             )
 
     else:
@@ -566,18 +568,12 @@ async def _execute_workflow_actions(
         try:
             await _execute_action(action, mention_data, workflow, session_factory)
         except Exception as e:
-            logger.error(
-                f"Action '{action.get('type')}' failed in workflow {workflow.id}: {e}"
-            )
+            logger.error(f"Action '{action.get('type')}' failed in workflow {workflow.id}: {e}")
 
     # Increment execution counter
     try:
         async with session_factory() as db:
-            stmt = (
-                update(Workflow)
-                .where(Workflow.id == workflow.id)
-                .values(executions=Workflow.executions + 1)
-            )
+            stmt = update(Workflow).where(Workflow.id == workflow.id).values(executions=Workflow.executions + 1)
             await db.execute(stmt)
             await db.commit()
     except Exception as e:
@@ -593,11 +589,13 @@ async def _execute_workflow_actions(
                 workflow_id=workflow.id,
                 project_id=int(mention_data.get("project_id", 0)),
                 mention_id=0,  # source_id based; mention_id may not be available yet
-                trigger_data=json.dumps({
-                    "source_id": mention_data.get("source_id"),
-                    "author": mention_data.get("author_handle"),
-                    "sentiment": mention_data.get("sentiment"),
-                }),
+                trigger_data=json.dumps(
+                    {
+                        "source_id": mention_data.get("source_id"),
+                        "author": mention_data.get("author_handle"),
+                        "sentiment": mention_data.get("sentiment"),
+                    }
+                ),
             ),
         )
     except Exception as e:
@@ -607,6 +605,7 @@ async def _execute_workflow_actions(
 # ---------------------------------------------------------------------------
 # Background consumer: listen for analyzed mentions and evaluate workflows
 # ---------------------------------------------------------------------------
+
 
 async def mention_consumer_loop(bus: EventBus, session_factory):
     """
@@ -649,14 +648,10 @@ async def mention_consumer_loop(bus: EventBus, session_factory):
                                 f"Workflow '{wf.name}' (id={wf.id}) triggered by mention "
                                 f"source_id={mention_data.get('source_id')}"
                             )
-                            await _execute_workflow_actions(
-                                wf, mention_data, session_factory, bus
-                            )
+                            await _execute_workflow_actions(wf, mention_data, session_factory, bus)
 
                 except Exception as e:
-                    logger.error(
-                        f"Error evaluating workflows for project {project_id}: {e}"
-                    )
+                    logger.error(f"Error evaluating workflows for project {project_id}: {e}")
                 finally:
                     await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
 
@@ -671,6 +666,7 @@ async def mention_consumer_loop(bus: EventBus, session_factory):
 # ---------------------------------------------------------------------------
 # Background scheduler: custom report schedules
 # ---------------------------------------------------------------------------
+
 
 async def report_scheduler_loop(bus: EventBus, session_factory):
     """
@@ -695,11 +691,7 @@ async def report_scheduler_loop(bus: EventBus, session_factory):
 
             if default_tasks:
                 async with session_factory() as db:
-                    result = await db.execute(
-                        select(Project.id).where(
-                            Project.status == ProjectStatus.ACTIVE
-                        )
-                    )
+                    result = await db.execute(select(Project.id).where(Project.status == ProjectStatus.ACTIVE))
                     project_ids = [r[0] for r in result]
 
                 for report_type in default_tasks:
@@ -713,13 +705,9 @@ async def report_scheduler_loop(bus: EventBus, session_factory):
                                     requested_by="scheduler-service",
                                 ),
                             )
-                            logger.info(
-                                f"Scheduled {report_type} report request for project {pid}"
-                            )
+                            logger.info(f"Scheduled {report_type} report request for project {pid}")
                         except Exception as e:
-                            logger.error(
-                                f"Failed to schedule {report_type} report for project {pid}: {e}"
-                            )
+                            logger.error(f"Failed to schedule {report_type} report for project {pid}: {e}")
 
             # --- Custom schedules ---
             for project_id, schedules in _report_schedules.items():
@@ -749,13 +737,9 @@ async def report_scheduler_loop(bus: EventBus, session_factory):
                                 requested_by="scheduler-service-custom",
                             ),
                         )
-                        logger.info(
-                            f"Custom scheduled {report_type} report for project {project_id}"
-                        )
+                        logger.info(f"Custom scheduled {report_type} report for project {project_id}")
                     except Exception as e:
-                        logger.error(
-                            f"Custom schedule report failed for project {project_id}: {e}"
-                        )
+                        logger.error(f"Custom schedule report failed for project {project_id}: {e}")
 
             await asyncio.sleep(300)  # check every 5 minutes
 

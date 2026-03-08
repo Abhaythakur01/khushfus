@@ -9,7 +9,6 @@ Consumes from 'mentions:analyzed' stream:
 """
 
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
@@ -19,19 +18,15 @@ from sqlalchemy import select
 
 from shared.database import create_db
 from shared.events import (
-    AlertEvent,
-    EventBus,
-    STREAM_ALERTS,
     STREAM_ANALYZED_MENTIONS,
+    EventBus,
 )
 from shared.models import Mention, Platform, Sentiment
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
 
@@ -43,28 +38,31 @@ ES_INDEX = "khushfus-mentions"
 async def init_elasticsearch(es: AsyncElasticsearch):
     """Create the Elasticsearch index with proper mappings."""
     if not await es.indices.exists(index=ES_INDEX):
-        await es.indices.create(index=ES_INDEX, body={
-            "mappings": {
-                "properties": {
-                    "project_id": {"type": "integer"},
-                    "platform": {"type": "keyword"},
-                    "text": {"type": "text", "analyzer": "standard"},
-                    "author_name": {"type": "keyword"},
-                    "author_handle": {"type": "keyword"},
-                    "sentiment": {"type": "keyword"},
-                    "sentiment_score": {"type": "float"},
-                    "language": {"type": "keyword"},
-                    "matched_keywords": {"type": "text"},
-                    "topics": {"type": "keyword"},
-                    "likes": {"type": "integer"},
-                    "shares": {"type": "integer"},
-                    "comments": {"type": "integer"},
-                    "reach": {"type": "integer"},
-                    "published_at": {"type": "date"},
-                    "collected_at": {"type": "date"},
+        await es.indices.create(
+            index=ES_INDEX,
+            body={
+                "mappings": {
+                    "properties": {
+                        "project_id": {"type": "integer"},
+                        "platform": {"type": "keyword"},
+                        "text": {"type": "text", "analyzer": "standard"},
+                        "author_name": {"type": "keyword"},
+                        "author_handle": {"type": "keyword"},
+                        "sentiment": {"type": "keyword"},
+                        "sentiment_score": {"type": "float"},
+                        "language": {"type": "keyword"},
+                        "matched_keywords": {"type": "text"},
+                        "topics": {"type": "keyword"},
+                        "likes": {"type": "integer"},
+                        "shares": {"type": "integer"},
+                        "comments": {"type": "integer"},
+                        "reach": {"type": "integer"},
+                        "published_at": {"type": "date"},
+                        "collected_at": {"type": "date"},
+                    }
                 }
-            }
-        })
+            },
+        )
         logger.info(f"Created Elasticsearch index: {ES_INDEX}")
 
 
@@ -123,24 +121,28 @@ async def store_mention(db_session, es: AsyncElasticsearch, data: dict) -> bool:
 
         # Index in Elasticsearch
         try:
-            await es.index(index=ES_INDEX, id=str(mention.id), document={
-                "project_id": mention.project_id,
-                "platform": mention.platform.value,
-                "text": mention.text,
-                "author_name": mention.author_name,
-                "author_handle": mention.author_handle,
-                "sentiment": mention.sentiment.value,
-                "sentiment_score": mention.sentiment_score,
-                "language": mention.language,
-                "matched_keywords": mention.matched_keywords,
-                "topics": mention.topics,
-                "likes": mention.likes,
-                "shares": mention.shares,
-                "comments": mention.comments,
-                "reach": mention.reach,
-                "published_at": mention.published_at.isoformat() if mention.published_at else None,
-                "collected_at": mention.collected_at.isoformat() if mention.collected_at else None,
-            })
+            await es.index(
+                index=ES_INDEX,
+                id=str(mention.id),
+                document={
+                    "project_id": mention.project_id,
+                    "platform": mention.platform.value,
+                    "text": mention.text,
+                    "author_name": mention.author_name,
+                    "author_handle": mention.author_handle,
+                    "sentiment": mention.sentiment.value,
+                    "sentiment_score": mention.sentiment_score,
+                    "language": mention.language,
+                    "matched_keywords": mention.matched_keywords,
+                    "topics": mention.topics,
+                    "likes": mention.likes,
+                    "shares": mention.shares,
+                    "comments": mention.comments,
+                    "reach": mention.reach,
+                    "published_at": mention.published_at.isoformat() if mention.published_at else None,
+                    "collected_at": mention.collected_at.isoformat() if mention.collected_at else None,
+                },
+            )
         except Exception as e:
             logger.warning(f"ES indexing failed for mention {mention.id}: {e}")
 
@@ -155,8 +157,11 @@ async def process_loop(bus: EventBus, db_session, es: AsyncElasticsearch):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_ANALYZED_MENTIONS, GROUP_NAME, CONSUMER_NAME,
-                count=50, block_ms=3000,
+                STREAM_ANALYZED_MENTIONS,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=50,
+                block_ms=3000,
             )
 
             if not messages:

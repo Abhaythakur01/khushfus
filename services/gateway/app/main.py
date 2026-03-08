@@ -10,7 +10,6 @@ Responsibilities:
 
 import os
 from contextlib import asynccontextmanager
-from functools import partial
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +19,7 @@ from shared.events import EventBus
 
 from .routes import alerts, auth, dashboard, mentions, projects, reports
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 

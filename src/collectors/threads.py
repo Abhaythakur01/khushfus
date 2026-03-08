@@ -19,11 +19,7 @@ class ThreadsCollector(BaseCollector):
     def __init__(self):
         self.access_token = os.getenv("THREADS_ACCESS_TOKEN", "")
         # Comma-separated user IDs to monitor
-        self.user_ids = [
-            uid.strip()
-            for uid in os.getenv("THREADS_USER_IDS", "me").split(",")
-            if uid.strip()
-        ]
+        self.user_ids = [uid.strip() for uid in os.getenv("THREADS_USER_IDS", "me").split(",") if uid.strip()]
 
     async def validate_credentials(self) -> bool:
         if not self.access_token:
@@ -38,9 +34,7 @@ class ThreadsCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("THREADS_ACCESS_TOKEN not configured, skipping collection")
             return []
@@ -58,9 +52,7 @@ class ThreadsCollector(BaseCollector):
 
                     published = None
                     if thread.get("timestamp"):
-                        published = datetime.fromisoformat(
-                            thread["timestamp"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(thread["timestamp"].replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue

@@ -18,9 +18,7 @@ class RedditCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # Public API, no credentials needed
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions = []
 
         for keyword in keywords:

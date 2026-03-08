@@ -17,26 +17,22 @@ import hashlib
 import json
 import logging
 import os
-import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database import create_db, init_tables
-from shared.events import AuditEvent, EventBus, STREAM_AUDIT
+from shared.events import STREAM_AUDIT, AuditEvent, EventBus
 from shared.models import (
     ApiKey,
-    AuditLog,
-    Mention,
     Organization,
     OrgMember,
     OrgRole,
@@ -65,10 +61,10 @@ security = HTTPBearer(auto_error=False)
 
 # Plan defaults
 PLAN_DEFAULTS: dict[str, dict] = {
-    "free":          {"mention_quota": 10_000,   "max_projects": 3,   "max_users": 5},
-    "starter":       {"mention_quota": 50_000,   "max_projects": 10,  "max_users": 15},
-    "professional":  {"mention_quota": 250_000,  "max_projects": 50,  "max_users": 50},
-    "enterprise":    {"mention_quota": 1_000_000,"max_projects": 500, "max_users": 500},
+    "free": {"mention_quota": 10_000, "max_projects": 3, "max_users": 5},
+    "starter": {"mention_quota": 50_000, "max_projects": 10, "max_users": 15},
+    "professional": {"mention_quota": 250_000, "max_projects": 50, "max_users": 50},
+    "enterprise": {"mention_quota": 1_000_000, "max_projects": 500, "max_users": 500},
 }
 
 # ---------------------------------------------------------------------------
@@ -161,6 +157,7 @@ class ApiKeyOut(BaseModel):
 
 class ApiKeyCreatedOut(ApiKeyOut):
     """Returned only at creation time -- includes the raw key."""
+
     raw_key: str
 
 
@@ -382,9 +379,14 @@ async def create_org(
     await db.refresh(org)
 
     await _audit(
-        bus, user.id, "org.create", "organization", org.id,
+        bus,
+        user.id,
+        "org.create",
+        "organization",
+        org.id,
         details=json.dumps({"name": org.name, "slug": org.slug, "plan": plan_key}),
-        ip=_client_ip(request), org_id=org.id,
+        ip=_client_ip(request),
+        org_id=org.id,
     )
     return org
 
@@ -411,9 +413,8 @@ async def list_orgs(
     else:
         # Only orgs the user is a member of
         member_org_ids = select(OrgMember.organization_id).where(OrgMember.user_id == user.id)
-        count_q = (
-            select(func.count(Organization.id))
-            .where(Organization.id.in_(member_org_ids), Organization.is_active.is_(True))
+        count_q = select(func.count(Organization.id)).where(
+            Organization.id.in_(member_org_ids), Organization.is_active.is_(True)
         )
         total = (await db.execute(count_q)).scalar() or 0
         result = await db.execute(
@@ -494,8 +495,14 @@ async def update_org(
     await db.refresh(org)
 
     await _audit(
-        bus, user.id, "org.update", "organization", org.id,
-        details=json.dumps(changes), ip=_client_ip(request), org_id=org.id,
+        bus,
+        user.id,
+        "org.update",
+        "organization",
+        org.id,
+        details=json.dumps(changes),
+        ip=_client_ip(request),
+        org_id=org.id,
     )
     return org
 
@@ -518,7 +525,9 @@ async def list_members(
 
     # Any member can list other members
     await _require_org_role(
-        db, user.id, org_id,
+        db,
+        user.id,
+        org_id,
         [OrgRole.OWNER, OrgRole.ADMIN, OrgRole.MANAGER, OrgRole.ANALYST, OrgRole.VIEWER],
     )
 
@@ -531,16 +540,18 @@ async def list_members(
     rows = result.all()
     members = []
     for mem, u in rows:
-        members.append(MemberOut(
-            id=mem.id,
-            organization_id=mem.organization_id,
-            user_id=mem.user_id,
-            role=mem.role.value,
-            invited_by=mem.invited_by,
-            joined_at=mem.joined_at,
-            user_email=u.email,
-            user_name=u.full_name,
-        ))
+        members.append(
+            MemberOut(
+                id=mem.id,
+                organization_id=mem.organization_id,
+                user_id=mem.user_id,
+                role=mem.role.value,
+                invited_by=mem.invited_by,
+                joined_at=mem.joined_at,
+                user_email=u.email,
+                user_name=u.full_name,
+            )
+        )
     return members
 
 
@@ -571,9 +582,9 @@ async def invite_member(
         await _require_org_role(db, user.id, org_id, [OrgRole.OWNER])
 
     # Check max_users
-    member_count = (await db.execute(
-        select(func.count(OrgMember.id)).where(OrgMember.organization_id == org_id)
-    )).scalar() or 0
+    member_count = (
+        await db.execute(select(func.count(OrgMember.id)).where(OrgMember.organization_id == org_id))
+    ).scalar() or 0
     if member_count >= org.max_users:
         raise HTTPException(status_code=409, detail=f"Organization has reached its user limit ({org.max_users})")
 
@@ -585,7 +596,8 @@ async def invite_member(
     # Check not already a member
     existing = await db.execute(
         select(OrgMember).where(
-            OrgMember.organization_id == org_id, OrgMember.user_id == data.user_id,
+            OrgMember.organization_id == org_id,
+            OrgMember.user_id == data.user_id,
         )
     )
     if existing.scalar_one_or_none():
@@ -602,9 +614,14 @@ async def invite_member(
     await db.refresh(member)
 
     await _audit(
-        bus, user.id, "org.member_invite", "org_member", member.id,
+        bus,
+        user.id,
+        "org.member_invite",
+        "org_member",
+        member.id,
         details=json.dumps({"target_user_id": data.user_id, "role": role.value}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
 
     return MemberOut(
@@ -642,7 +659,8 @@ async def update_member_role(
 
     result = await db.execute(
         select(OrgMember).where(
-            OrgMember.organization_id == org_id, OrgMember.user_id == member_user_id,
+            OrgMember.organization_id == org_id,
+            OrgMember.user_id == member_user_id,
         )
     )
     member = result.scalar_one_or_none()
@@ -651,11 +669,14 @@ async def update_member_role(
 
     # Cannot demote the last owner
     if member.role == OrgRole.OWNER and new_role != OrgRole.OWNER:
-        owner_count = (await db.execute(
-            select(func.count(OrgMember.id)).where(
-                OrgMember.organization_id == org_id, OrgMember.role == OrgRole.OWNER,
+        owner_count = (
+            await db.execute(
+                select(func.count(OrgMember.id)).where(
+                    OrgMember.organization_id == org_id,
+                    OrgMember.role == OrgRole.OWNER,
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
         if owner_count <= 1:
             raise HTTPException(status_code=409, detail="Cannot demote the last owner")
 
@@ -668,9 +689,14 @@ async def update_member_role(
     target_user = await db.get(User, member_user_id)
 
     await _audit(
-        bus, user.id, "org.member_role_update", "org_member", member.id,
+        bus,
+        user.id,
+        "org.member_role_update",
+        "org_member",
+        member.id,
         details=json.dumps({"target_user_id": member_user_id, "old_role": old_role, "new_role": new_role.value}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
 
     return MemberOut(
@@ -701,7 +727,8 @@ async def remove_member(
 
     result = await db.execute(
         select(OrgMember).where(
-            OrgMember.organization_id == org_id, OrgMember.user_id == member_user_id,
+            OrgMember.organization_id == org_id,
+            OrgMember.user_id == member_user_id,
         )
     )
     member = result.scalar_one_or_none()
@@ -710,11 +737,14 @@ async def remove_member(
 
     # Cannot remove the last owner
     if member.role == OrgRole.OWNER:
-        owner_count = (await db.execute(
-            select(func.count(OrgMember.id)).where(
-                OrgMember.organization_id == org_id, OrgMember.role == OrgRole.OWNER,
+        owner_count = (
+            await db.execute(
+                select(func.count(OrgMember.id)).where(
+                    OrgMember.organization_id == org_id,
+                    OrgMember.role == OrgRole.OWNER,
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
         if owner_count <= 1:
             raise HTTPException(status_code=409, detail="Cannot remove the last owner")
 
@@ -722,9 +752,14 @@ async def remove_member(
     await db.commit()
 
     await _audit(
-        bus, user.id, "org.member_remove", "org_member", 0,
+        bus,
+        user.id,
+        "org.member_remove",
+        "org_member",
+        0,
         details=json.dumps({"target_user_id": member_user_id}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
     return Response(status_code=204)
 
@@ -764,6 +799,7 @@ async def create_api_key(
     expires_at = None
     if data.expires_in_days:
         from datetime import timedelta
+
         expires_at = datetime.now(timezone.utc) + timedelta(days=data.expires_in_days)
 
     api_key = ApiKey(
@@ -781,9 +817,14 @@ async def create_api_key(
     await db.refresh(api_key)
 
     await _audit(
-        bus, user.id, "org.api_key_create", "api_key", api_key.id,
+        bus,
+        user.id,
+        "org.api_key_create",
+        "api_key",
+        api_key.id,
         details=json.dumps({"name": data.name, "prefix": prefix, "scopes": data.scopes}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
 
     return ApiKeyCreatedOut(
@@ -814,11 +855,7 @@ async def list_api_keys(
 
     await _require_org_role(db, user.id, org_id, [OrgRole.OWNER, OrgRole.ADMIN])
 
-    result = await db.execute(
-        select(ApiKey)
-        .where(ApiKey.organization_id == org_id)
-        .order_by(ApiKey.created_at.desc())
-    )
+    result = await db.execute(select(ApiKey).where(ApiKey.organization_id == org_id).order_by(ApiKey.created_at.desc()))
     return result.scalars().all()
 
 
@@ -842,9 +879,14 @@ async def revoke_api_key(
     await db.commit()
 
     await _audit(
-        bus, user.id, "org.api_key_revoke", "api_key", key_id,
+        bus,
+        user.id,
+        "org.api_key_revoke",
+        "api_key",
+        key_id,
         details=json.dumps({"prefix": api_key.prefix}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
     return Response(status_code=204)
 
@@ -864,9 +906,7 @@ async def validate_api_key(
     Used internally by the gateway for API-key-authenticated requests.
     """
     key_hash = _hash_api_key(key)
-    result = await db.execute(
-        select(ApiKey).where(ApiKey.key_hash == key_hash)
-    )
+    result = await db.execute(select(ApiKey).where(ApiKey.key_hash == key_hash))
     api_key = result.scalar_one_or_none()
 
     if not api_key or not api_key.is_active:
@@ -933,10 +973,21 @@ async def update_plan(
     await db.refresh(org)
 
     await _audit(
-        bus, user.id, "org.plan_update", "organization", org.id,
-        details=json.dumps({"old_plan": old_plan, "new_plan": new_plan.value,
-                            "mention_quota": org.mention_quota, "max_projects": org.max_projects}),
-        ip=_client_ip(request), org_id=org_id,
+        bus,
+        user.id,
+        "org.plan_update",
+        "organization",
+        org.id,
+        details=json.dumps(
+            {
+                "old_plan": old_plan,
+                "new_plan": new_plan.value,
+                "mention_quota": org.mention_quota,
+                "max_projects": org.max_projects,
+            }
+        ),
+        ip=_client_ip(request),
+        org_id=org_id,
     )
     return org
 
@@ -991,9 +1042,14 @@ async def reset_mentions_used(
     await db.commit()
 
     await _audit(
-        bus, user.id, "org.mentions_reset", "organization", org.id,
+        bus,
+        user.id,
+        "org.mentions_reset",
+        "organization",
+        org.id,
         details=json.dumps({"old_mentions_used": old_used}),
-        ip=_client_ip(request), org_id=org_id,
+        ip=_client_ip(request),
+        org_id=org_id,
     )
     return {"organization_id": org_id, "mentions_used": 0}
 
@@ -1011,9 +1067,9 @@ async def check_project_quota(
     if not org or not org.is_active:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    project_count = (await db.execute(
-        select(func.count(Project.id)).where(Project.organization_id == org_id)
-    )).scalar() or 0
+    project_count = (
+        await db.execute(select(func.count(Project.id)).where(Project.organization_id == org_id))
+    ).scalar() or 0
 
     return {
         "organization_id": org_id,
@@ -1044,17 +1100,19 @@ async def get_usage(
 
     if not user.is_superadmin:
         await _require_org_role(
-            db, user.id, org_id,
+            db,
+            user.id,
+            org_id,
             [OrgRole.OWNER, OrgRole.ADMIN, OrgRole.MANAGER, OrgRole.ANALYST, OrgRole.VIEWER],
         )
 
-    project_count = (await db.execute(
-        select(func.count(Project.id)).where(Project.organization_id == org_id)
-    )).scalar() or 0
+    project_count = (
+        await db.execute(select(func.count(Project.id)).where(Project.organization_id == org_id))
+    ).scalar() or 0
 
-    user_count = (await db.execute(
-        select(func.count(OrgMember.id)).where(OrgMember.organization_id == org_id)
-    )).scalar() or 0
+    user_count = (
+        await db.execute(select(func.count(OrgMember.id)).where(OrgMember.organization_id == org_id))
+    ).scalar() or 0
 
     remaining = max(0, org.mention_quota - org.mentions_used)
     pct = (org.mentions_used / org.mention_quota * 100) if org.mention_quota > 0 else 0.0

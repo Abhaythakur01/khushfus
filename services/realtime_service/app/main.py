@@ -22,14 +22,12 @@ import asyncio
 import json
 import logging
 import os
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
-from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -46,6 +44,7 @@ CHANNEL_PREFIX = "realtime"
 # ============================================================
 # Message Types
 # ============================================================
+
 
 class MessageType(str, Enum):
     MENTION = "mention"
@@ -67,6 +66,7 @@ class RealtimeMessage(BaseModel):
 # Connection Manager
 # ============================================================
 
+
 class ConnectionManager:
     """Manages WebSocket connections per project and message type."""
 
@@ -75,9 +75,7 @@ class ConnectionManager:
         self._connections: dict[int, dict[str, set[WebSocket]]] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(
-        self, websocket: WebSocket, project_id: int, channel_type: str
-    ):
+    async def connect(self, websocket: WebSocket, project_id: int, channel_type: str):
         """Accept and register a WebSocket connection."""
         await websocket.accept()
         async with self._lock:
@@ -105,15 +103,10 @@ class ConnectionManager:
             },
         )
 
-    async def disconnect(
-        self, websocket: WebSocket, project_id: int, channel_type: str
-    ):
+    async def disconnect(self, websocket: WebSocket, project_id: int, channel_type: str):
         """Remove a WebSocket connection."""
         async with self._lock:
-            if (
-                project_id in self._connections
-                and channel_type in self._connections[project_id]
-            ):
+            if project_id in self._connections and channel_type in self._connections[project_id]:
                 self._connections[project_id][channel_type].discard(websocket)
                 # Clean up empty sets/dicts
                 if not self._connections[project_id][channel_type]:
@@ -121,15 +114,11 @@ class ConnectionManager:
                 if not self._connections[project_id]:
                     del self._connections[project_id]
 
-        logger.info(
-            "WS disconnected: project=%d type=%s", project_id, channel_type
-        )
+        logger.info("WS disconnected: project=%d type=%s", project_id, channel_type)
 
     def count(self, project_id: int, channel_type: str) -> int:
         """Count active connections for a project and channel type."""
-        return len(
-            self._connections.get(project_id, {}).get(channel_type, set())
-        )
+        return len(self._connections.get(project_id, {}).get(channel_type, set()))
 
     def total_connections(self) -> int:
         """Total number of active connections across all projects."""
@@ -143,13 +132,9 @@ class ConnectionManager:
         """Set of project IDs that have at least one active connection."""
         return set(self._connections.keys())
 
-    async def broadcast(
-        self, project_id: int, channel_type: str, message: dict
-    ):
+    async def broadcast(self, project_id: int, channel_type: str, message: dict):
         """Send a message to all connections for a project and channel type."""
-        connections = (
-            self._connections.get(project_id, {}).get(channel_type, set()).copy()
-        )
+        connections = self._connections.get(project_id, {}).get(channel_type, set()).copy()
         if not connections:
             return
 
@@ -165,9 +150,7 @@ class ConnectionManager:
 
     async def broadcast_to_project(self, project_id: int, message: dict):
         """Send a message to ALL channel types for a given project."""
-        channel_types = list(
-            self._connections.get(project_id, {}).keys()
-        )
+        channel_types = list(self._connections.get(project_id, {}).keys())
         for ct in channel_types:
             await self.broadcast(project_id, ct, message)
 
@@ -196,6 +179,7 @@ class ConnectionManager:
 # ============================================================
 # SSE Connection Tracker
 # ============================================================
+
 
 class SSEManager:
     """Manages SSE client queues per project."""
@@ -252,6 +236,7 @@ sse_manager = SSEManager()
 # Redis Pub/Sub Subscriber
 # ============================================================
 
+
 async def redis_subscriber(redis_url: str):
     """Subscribe to Redis pub/sub channels and fan out messages to WebSocket/SSE clients.
 
@@ -268,9 +253,7 @@ async def redis_subscriber(redis_url: str):
     try:
         while True:
             try:
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message is None:
                     await asyncio.sleep(0.01)
                     continue
@@ -295,9 +278,7 @@ async def redis_subscriber(redis_url: str):
                     data = {"raw": raw_data}
 
                 msg_type = data.get("type", MessageType.MENTION.value)
-                timestamp = data.get(
-                    "timestamp", datetime.utcnow().isoformat()
-                )
+                timestamp = data.get("timestamp", datetime.utcnow().isoformat())
 
                 envelope = {
                     "type": msg_type,
@@ -321,9 +302,7 @@ async def redis_subscriber(redis_url: str):
                         "data": _extract_dashboard_data(data),
                         "timestamp": timestamp,
                     }
-                    await manager.broadcast(
-                        project_id, "dashboard", dashboard_update
-                    )
+                    await manager.broadcast(project_id, "dashboard", dashboard_update)
 
                 # Also push to SSE clients
                 await sse_manager.publish(project_id, envelope)
@@ -363,6 +342,7 @@ def _extract_dashboard_data(mention_data: dict) -> dict:
 # Heartbeat Task
 # ============================================================
 
+
 async def heartbeat_loop():
     """Send periodic heartbeat pings to all connected clients."""
     while True:
@@ -379,6 +359,7 @@ async def heartbeat_loop():
 # ============================================================
 # FastAPI Application
 # ============================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -422,6 +403,7 @@ app.add_middleware(
 # Health
 # ============================================================
 
+
 @app.get("/health")
 async def health():
     return {
@@ -437,6 +419,7 @@ async def health():
 # WebSocket Endpoints
 # ============================================================
 
+
 @app.websocket("/ws/mentions/{project_id}")
 async def ws_mentions(websocket: WebSocket, project_id: int):
     """Real-time mention feed. Pushes new mentions as they arrive for the project."""
@@ -445,9 +428,7 @@ async def ws_mentions(websocket: WebSocket, project_id: int):
         while True:
             # Keep the connection alive by reading (client can send ping/pong)
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10
-                )
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10)
                 # Client can send filter updates as JSON
                 try:
                     client_msg = json.loads(data)
@@ -487,9 +468,7 @@ async def ws_dashboard(websocket: WebSocket, project_id: int):
     try:
         while True:
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10
-                )
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10)
                 try:
                     client_msg = json.loads(data)
                     if client_msg.get("type") == "ping":
@@ -527,9 +506,7 @@ async def ws_alerts(websocket: WebSocket, project_id: int):
     try:
         while True:
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10
-                )
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL + 10)
                 try:
                     client_msg = json.loads(data)
                     if client_msg.get("type") == "ping":
@@ -571,6 +548,7 @@ async def ws_alerts(websocket: WebSocket, project_id: int):
 # SSE Fallback Endpoint
 # ============================================================
 
+
 @app.get("/sse/mentions/{project_id}")
 async def sse_mentions(project_id: int):
     """Server-Sent Events stream of new mentions for a project.
@@ -608,6 +586,7 @@ async def sse_mentions(project_id: int):
 # Stats Endpoint
 # ============================================================
 
+
 @app.get("/stats")
 async def connection_stats():
     """Return current connection statistics."""
@@ -628,6 +607,7 @@ async def connection_stats():
 # ============================================================
 # Publish Endpoint (internal, for testing or direct integration)
 # ============================================================
+
 
 @app.post("/publish/{project_id}")
 async def publish_message(project_id: int, payload: dict):

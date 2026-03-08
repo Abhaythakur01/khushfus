@@ -1,4 +1,5 @@
 """Advanced NLP tests for sarcasm detection, emotion, and aspect-based sentiment."""
+
 import pytest
 
 from src.nlp.analyzer import SentimentAnalyzer, detect_sarcasm
@@ -115,10 +116,12 @@ class TestRegexAspects:
 @pytest.mark.slow
 class TestEmotionDetection:
     """Test emotion classification (requires model download)."""
+
     pass  # These tests require the transformer model to be downloaded
 
 
 @pytest.mark.slow
 class TestAspectSentiment:
     """Test aspect-based sentiment extraction."""
+
     pass  # These tests require API key or model availability

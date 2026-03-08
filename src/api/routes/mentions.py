@@ -66,6 +66,7 @@ async def get_mention(mention_id: int, db: AsyncSession = Depends(get_db)):
     mention = await db.get(Mention, mention_id)
     if not mention:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Mention not found")
     return mention
 
@@ -75,6 +76,7 @@ async def toggle_flag(mention_id: int, db: AsyncSession = Depends(get_db)):
     mention = await db.get(Mention, mention_id)
     if not mention:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Mention not found")
 
     mention.is_flagged = not mention.is_flagged

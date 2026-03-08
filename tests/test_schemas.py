@@ -1,6 +1,8 @@
 """Tests for shared Pydantic schemas."""
-import pytest
+
 from datetime import datetime
+
+import pytest
 
 from shared.schemas import (
     AlertRuleCreate,

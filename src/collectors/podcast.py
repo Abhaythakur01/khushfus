@@ -25,9 +25,7 @@ class PodcastCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return bool(self.listen_notes_api_key or self.podcast_index_key)
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if self.listen_notes_api_key:
             return await self._collect_listen_notes(keywords, since)
         elif self.podcast_index_key:
@@ -36,9 +34,7 @@ class PodcastCollector(BaseCollector):
             logger.warning("No podcast API key configured (LISTEN_NOTES_API_KEY or PODCAST_INDEX_API_KEY), skipping")
             return []
 
-    async def _collect_listen_notes(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_listen_notes(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         mentions: list[CollectedMention] = []
 
         for keyword in keywords:
@@ -102,9 +98,7 @@ class PodcastCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} podcast mentions for keywords: {keywords}")
         return mentions
 
-    async def _collect_podcast_index(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_podcast_index(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         import hashlib
         import time
 

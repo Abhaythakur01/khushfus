@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -39,9 +39,7 @@ class WebScraperCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # No credentials needed
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions = []
 
         # Scrape configured target URLs
@@ -84,9 +82,16 @@ class WebScraperCollector(BaseCollector):
 
             # Try to find article/post content
             content_selectors = [
-                "article", ".post-content", ".entry-content", ".article-body",
-                ".blog-post", ".forum-post", ".thread-content", "main",
-                "#content", ".content",
+                "article",
+                ".post-content",
+                ".entry-content",
+                ".article-body",
+                ".blog-post",
+                ".forum-post",
+                ".thread-content",
+                "main",
+                "#content",
+                ".content",
             ]
 
             articles = []
@@ -233,13 +238,15 @@ class WebScraperCollector(BaseCollector):
         try:
             parsed = urlparse(url)
             skip_domains = [
-                "google.com", "youtube.com", "twitter.com", "facebook.com",
-                "instagram.com", "linkedin.com", "reddit.com",  # already covered by other collectors
+                "google.com",
+                "youtube.com",
+                "twitter.com",
+                "facebook.com",
+                "instagram.com",
+                "linkedin.com",
+                "reddit.com",  # already covered by other collectors
             ]
-            return (
-                parsed.scheme in ("http", "https")
-                and not any(d in parsed.netloc for d in skip_domains)
-            )
+            return parsed.scheme in ("http", "https") and not any(d in parsed.netloc for d in skip_domains)
         except Exception:
             return False
 

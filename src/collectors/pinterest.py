@@ -32,9 +32,7 @@ class PinterestCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("PINTEREST_ACCESS_TOKEN not configured, skipping collection")
             return []
@@ -64,9 +62,7 @@ class PinterestCollector(BaseCollector):
 
                     published = None
                     if pin.get("created_at"):
-                        published = datetime.fromisoformat(
-                            pin["created_at"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(pin["created_at"].replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue

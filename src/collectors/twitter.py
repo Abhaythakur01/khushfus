@@ -30,9 +30,7 @@ class TwitterCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.bearer_token:
             logger.warning("Twitter bearer token not configured, skipping collection")
             return []
@@ -77,17 +75,13 @@ class TwitterCollector(BaseCollector):
                         text=tweet["text"],
                         author_name=author.get("name", ""),
                         author_handle=author.get("username", ""),
-                        author_followers=author.get("public_metrics", {}).get(
-                            "followers_count", 0
-                        ),
+                        author_followers=author.get("public_metrics", {}).get("followers_count", 0),
                         author_profile_url=f"https://twitter.com/{author.get('username', '')}",
                         likes=metrics.get("like_count", 0),
                         shares=metrics.get("retweet_count", 0),
                         comments=metrics.get("reply_count", 0),
                         reach=metrics.get("impression_count", 0),
-                        published_at=datetime.fromisoformat(
-                            tweet["created_at"].replace("Z", "+00:00")
-                        ),
+                        published_at=datetime.fromisoformat(tweet["created_at"].replace("Z", "+00:00")),
                         raw_data=tweet,
                     )
                 )

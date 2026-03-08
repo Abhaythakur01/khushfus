@@ -27,7 +27,6 @@ from shared.database import create_db, init_tables
 from shared.models import (
     CompetitorBenchmark,
     Mention,
-    Platform,
     Project,
     Sentiment,
 )
@@ -35,14 +34,13 @@ from shared.models import (
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
+
 
 class BrandMetrics(BaseModel):
     project_id: int
@@ -134,6 +132,7 @@ class HealthResponse(BaseModel):
 # App setup
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
@@ -159,6 +158,7 @@ async def get_db():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_competitor_ids(project: Project) -> list[int]:
     """Parse comma-separated competitor_ids string into list of ints."""
@@ -194,24 +194,18 @@ async def _aggregate_brand_metrics(
     ]
 
     # Mention count
-    mention_count = (
-        await db.execute(select(func.count(Mention.id)).where(*base_filters))
-    ).scalar() or 0
+    mention_count = (await db.execute(select(func.count(Mention.id)).where(*base_filters))).scalar() or 0
 
     # Sentiment breakdown
     sentiment_breakdown: dict[str, int] = {}
     for s in Sentiment:
         cnt = (
-            await db.execute(
-                select(func.count(Mention.id)).where(*base_filters, Mention.sentiment == s)
-            )
+            await db.execute(select(func.count(Mention.id)).where(*base_filters, Mention.sentiment == s))
         ).scalar() or 0
         sentiment_breakdown[s.value] = cnt
 
     # Average sentiment score
-    avg_score = (
-        await db.execute(select(func.avg(Mention.sentiment_score)).where(*base_filters))
-    ).scalar() or 0.0
+    avg_score = (await db.execute(select(func.avg(Mention.sentiment_score)).where(*base_filters))).scalar() or 0.0
 
     # Engagement totals
     eng = (
@@ -227,9 +221,7 @@ async def _aggregate_brand_metrics(
 
     # Keyword frequency (top 20)
     kw_rows = await db.execute(
-        select(Mention.matched_keywords).where(
-            *base_filters, Mention.matched_keywords.isnot(None)
-        )
+        select(Mention.matched_keywords).where(*base_filters, Mention.matched_keywords.isnot(None))
     )
     kw_counter: Counter = Counter()
     for row in kw_rows.scalars():
@@ -237,25 +229,17 @@ async def _aggregate_brand_metrics(
             kw = kw.strip()
             if kw:
                 kw_counter[kw] += 1
-    trending_keywords = [
-        {kw: cnt} for kw, cnt in kw_counter.most_common(20)
-    ]
+    trending_keywords = [{kw: cnt} for kw, cnt in kw_counter.most_common(20)]
 
     # Topics frequency (top 20)
-    topic_rows = await db.execute(
-        select(Mention.topics).where(
-            *base_filters, Mention.topics.isnot(None)
-        )
-    )
+    topic_rows = await db.execute(select(Mention.topics).where(*base_filters, Mention.topics.isnot(None)))
     topic_counter: Counter = Counter()
     for row in topic_rows.scalars():
         for t in row.split(","):
             t = t.strip()
             if t:
                 topic_counter[t] += 1
-    trending_topics = [
-        {t: cnt} for t, cnt in topic_counter.most_common(20)
-    ]
+    trending_topics = [{t: cnt} for t, cnt in topic_counter.most_common(20)]
 
     return {
         "project_id": project_id,
@@ -285,9 +269,7 @@ async def _collect_all_brand_metrics(
     # Pre-fetch competitor project names
     name_map: dict[int, str] = {project.id: project.name}
     if competitor_ids:
-        result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(competitor_ids))
-        )
+        result = await db.execute(select(Project.id, Project.name).where(Project.id.in_(competitor_ids)))
         for row in result:
             name_map[row.id] = row.name
 
@@ -311,6 +293,7 @@ async def _collect_all_brand_metrics(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
@@ -377,9 +360,7 @@ async def share_of_voice(
     # Fetch project names
     name_map: dict[int, str] = {project.id: project.name}
     if competitor_ids:
-        result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(competitor_ids))
-        )
+        result = await db.execute(select(Project.id, Project.name).where(Project.id.in_(competitor_ids)))
         for row in result:
             name_map[row.id] = row.name
 
@@ -439,9 +420,7 @@ async def sentiment_comparison(
     # Pre-fetch names
     name_map: dict[int, str] = {project.id: project.name}
     if competitor_ids:
-        result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(competitor_ids))
-        )
+        result = await db.execute(select(Project.id, Project.name).where(Project.id.in_(competitor_ids)))
         for row in result:
             name_map[row.id] = row.name
 
@@ -456,17 +435,11 @@ async def sentiment_comparison(
         sentiment_counts: dict[str, int] = {}
         for s in Sentiment:
             cnt = (
-                await db.execute(
-                    select(func.count(Mention.id)).where(*base_filters, Mention.sentiment == s)
-                )
+                await db.execute(select(func.count(Mention.id)).where(*base_filters, Mention.sentiment == s))
             ).scalar() or 0
             sentiment_counts[s.value] = cnt
 
-        avg_score = (
-            await db.execute(
-                select(func.avg(Mention.sentiment_score)).where(*base_filters)
-            )
-        ).scalar() or 0.0
+        avg_score = (await db.execute(select(func.avg(Mention.sentiment_score)).where(*base_filters))).scalar() or 0.0
 
         brands.append(
             SentimentComparisonEntry(
@@ -509,9 +482,7 @@ async def trending_comparison(
     # Pre-fetch names
     name_map: dict[int, str] = {project.id: project.name}
     if competitor_ids:
-        result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(competitor_ids))
-        )
+        result = await db.execute(select(Project.id, Project.name).where(Project.id.in_(competitor_ids)))
         for row in result:
             name_map[row.id] = row.name
 
@@ -525,9 +496,7 @@ async def trending_comparison(
 
         # Keywords
         kw_rows = await db.execute(
-            select(Mention.matched_keywords).where(
-                *base_filters, Mention.matched_keywords.isnot(None)
-            )
+            select(Mention.matched_keywords).where(*base_filters, Mention.matched_keywords.isnot(None))
         )
         kw_counter: Counter = Counter()
         for row in kw_rows.scalars():
@@ -537,11 +506,7 @@ async def trending_comparison(
                     kw_counter[kw] += 1
 
         # Topics
-        topic_rows = await db.execute(
-            select(Mention.topics).where(
-                *base_filters, Mention.topics.isnot(None)
-            )
-        )
+        topic_rows = await db.execute(select(Mention.topics).where(*base_filters, Mention.topics.isnot(None)))
         topic_counter: Counter = Counter()
         for row in topic_rows.scalars():
             for t in row.split(","):
@@ -631,9 +596,7 @@ async def generate_benchmark(
 
     await db.commit()
 
-    logger.info(
-        f"Generated {len(benchmark_ids)} benchmark records for project {project_id}"
-    )
+    logger.info(f"Generated {len(benchmark_ids)} benchmark records for project {project_id}")
     return GenerateResponse(
         benchmark_ids=benchmark_ids,
         message=f"Generated {len(benchmark_ids)} benchmark records for {days}-day period.",

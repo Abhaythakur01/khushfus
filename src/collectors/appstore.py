@@ -19,16 +19,10 @@ class AppStoreCollector(BaseCollector):
 
     def __init__(self):
         # Comma-separated app IDs for Apple App Store
-        self.apple_app_ids = [
-            aid.strip()
-            for aid in os.getenv("APPLE_APP_IDS", "").split(",")
-            if aid.strip()
-        ]
+        self.apple_app_ids = [aid.strip() for aid in os.getenv("APPLE_APP_IDS", "").split(",") if aid.strip()]
         # Comma-separated package names for Google Play Store
         self.play_store_packages = [
-            pkg.strip()
-            for pkg in os.getenv("PLAY_STORE_PACKAGES", "").split(",")
-            if pkg.strip()
+            pkg.strip() for pkg in os.getenv("PLAY_STORE_PACKAGES", "").split(",") if pkg.strip()
         ]
         self.country = os.getenv("APPSTORE_COUNTRY", "us")
 
@@ -36,9 +30,7 @@ class AppStoreCollector(BaseCollector):
         # iTunes API is free, no auth. Play scraper needs no auth either.
         return bool(self.apple_app_ids or self.play_store_packages)
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions: list[CollectedMention] = []
 
         # Collect Apple App Store reviews
@@ -54,9 +46,7 @@ class AppStoreCollector(BaseCollector):
                     published = None
                     if review.get("updated"):
                         try:
-                            published = datetime.fromisoformat(
-                                review["updated"].replace("Z", "+00:00")
-                            )
+                            published = datetime.fromisoformat(review["updated"].replace("Z", "+00:00"))
                         except (ValueError, TypeError):
                             pass
 
@@ -110,27 +100,28 @@ class AppStoreCollector(BaseCollector):
             # Skip the app metadata entry (first entry)
             if "im:rating" not in entry:
                 continue
-            reviews.append({
-                "id": entry.get("id", {}).get("label", ""),
-                "title": entry.get("title", {}).get("label", ""),
-                "content": entry.get("content", {}).get("label", ""),
-                "author": entry.get("author", {}).get("name", {}).get("label", ""),
-                "rating": int(entry.get("im:rating", {}).get("label", "0")),
-                "vote_count": int(entry.get("im:voteCount", {}).get("label", "0")),
-                "updated": entry.get("updated", {}).get("label"),
-            })
+            reviews.append(
+                {
+                    "id": entry.get("id", {}).get("label", ""),
+                    "title": entry.get("title", {}).get("label", ""),
+                    "content": entry.get("content", {}).get("label", ""),
+                    "author": entry.get("author", {}).get("name", {}).get("label", ""),
+                    "rating": int(entry.get("im:rating", {}).get("label", "0")),
+                    "vote_count": int(entry.get("im:voteCount", {}).get("label", "0")),
+                    "updated": entry.get("updated", {}).get("label"),
+                }
+            )
         return reviews
 
-    async def _fetch_play_reviews(
-        self, package: str, keywords: list[str]
-    ) -> list[CollectedMention]:
+    async def _fetch_play_reviews(self, package: str, keywords: list[str]) -> list[CollectedMention]:
         """Fetch Google Play reviews using google-play-scraper."""
         mentions = []
         try:
-            from google_play_scraper import Sort, reviews as gplay_reviews
-
             # google-play-scraper is synchronous; run in default executor
             import asyncio
+
+            from google_play_scraper import Sort
+            from google_play_scraper import reviews as gplay_reviews
 
             loop = asyncio.get_event_loop()
             result, _ = await loop.run_in_executor(

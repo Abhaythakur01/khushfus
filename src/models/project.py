@@ -20,16 +20,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     client_name: Mapped[str] = mapped_column(String(255))
-    status: Mapped[ProjectStatus] = mapped_column(
-        Enum(ProjectStatus), default=ProjectStatus.ACTIVE
-    )
-    platforms: Mapped[str] = mapped_column(
-        Text, default="twitter,facebook,instagram,linkedin,youtube"
-    )
+    status: Mapped[ProjectStatus] = mapped_column(Enum(ProjectStatus), default=ProjectStatus.ACTIVE)
+    platforms: Mapped[str] = mapped_column(Text, default="twitter,facebook,instagram,linkedin,youtube")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     keywords: Mapped[list["Keyword"]] = relationship(back_populates="project", cascade="all, delete-orphan")  # noqa: F821
     mentions: Mapped[list["Mention"]] = relationship(back_populates="project", cascade="all, delete-orphan")  # noqa: F821

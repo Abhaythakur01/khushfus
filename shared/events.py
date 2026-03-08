@@ -13,9 +13,7 @@ Each service uses a consumer group so multiple instances can share the load.
 
 import json
 import logging
-import time
 from dataclasses import asdict, dataclass
-from datetime import datetime
 
 import redis.asyncio as aioredis
 
@@ -24,9 +22,11 @@ logger = logging.getLogger(__name__)
 
 # --- Event Definitions ---
 
+
 @dataclass
 class RawMentionEvent:
     """Emitted by Collector Service after collecting a mention."""
+
     project_id: int
     platform: str
     source_id: str
@@ -47,6 +47,7 @@ class RawMentionEvent:
 @dataclass
 class AnalyzedMentionEvent:
     """Emitted by Analyzer Service after NLP processing."""
+
     project_id: int
     platform: str
     source_id: str
@@ -78,6 +79,7 @@ class AnalyzedMentionEvent:
 @dataclass
 class AlertEvent:
     """Emitted when an anomaly or threshold breach is detected."""
+
     project_id: int
     alert_type: str  # spike, negative_surge, volume_drop, influencer_mention
     severity: str  # low, medium, high, critical
@@ -90,6 +92,7 @@ class AlertEvent:
 @dataclass
 class ReportRequestEvent:
     """Request to generate a report."""
+
     project_id: int
     report_type: str  # daily, weekly, monthly, custom
     requested_by: str = ""
@@ -98,6 +101,7 @@ class ReportRequestEvent:
 @dataclass
 class MediaAnalysisEvent:
     """Request to analyze media (image/video/audio) attached to a mention."""
+
     mention_id: int
     project_id: int
     media_url: str
@@ -108,6 +112,7 @@ class MediaAnalysisEvent:
 @dataclass
 class MediaResultEvent:
     """Result of media analysis."""
+
     mention_id: int
     ocr_text: str = ""
     labels: str = ""  # JSON: detected objects, logos, scenes
@@ -118,6 +123,7 @@ class MediaResultEvent:
 @dataclass
 class EnrichmentEvent:
     """Request to enrich author data for a mention."""
+
     mention_id: int
     project_id: int
     author_handle: str
@@ -128,6 +134,7 @@ class EnrichmentEvent:
 @dataclass
 class EnrichmentResultEvent:
     """Result of author enrichment."""
+
     mention_id: int
     influence_score: float = 0.0
     is_bot: bool = False
@@ -138,6 +145,7 @@ class EnrichmentResultEvent:
 @dataclass
 class ExportRequestEvent:
     """Request to export data."""
+
     export_job_id: int
     project_id: int
     export_format: str
@@ -147,6 +155,7 @@ class ExportRequestEvent:
 @dataclass
 class PublishRequestEvent:
     """Request to publish content to a platform."""
+
     post_id: int
     project_id: int
     platform: str
@@ -158,6 +167,7 @@ class PublishRequestEvent:
 @dataclass
 class WorkflowTriggerEvent:
     """A workflow has been triggered by a mention matching its conditions."""
+
     workflow_id: int
     project_id: int
     mention_id: int
@@ -167,6 +177,7 @@ class WorkflowTriggerEvent:
 @dataclass
 class AuditEvent:
     """An auditable action occurred."""
+
     organization_id: int
     user_id: int
     action: str
@@ -195,6 +206,7 @@ STREAM_COLLECTION_REQUEST = "collection:request"
 
 
 # --- Event Bus ---
+
 
 class EventBus:
     """Async Redis Streams event bus for microservice communication."""

@@ -33,9 +33,7 @@ from shared.models import AlertLog, AlertRule, AlertSeverity, Mention
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "notification-service"
@@ -72,9 +70,7 @@ async def evaluate_rules(session_factory, bus: EventBus, data: dict):
 
     async with session_factory() as db:
         result = await db.execute(
-            select(AlertRule).where(
-                AlertRule.project_id == project_id, AlertRule.is_active.is_(True)
-            )
+            select(AlertRule).where(AlertRule.project_id == project_id, AlertRule.is_active.is_(True))
         )
         rules = result.scalars().all()
 
@@ -105,11 +101,12 @@ async def evaluate_rules(session_factory, bus: EventBus, data: dict):
                 if avg_per_window > 0 and recent > avg_per_window * rule.threshold:
                     triggered = True
                     severity = (
-                        AlertSeverity.HIGH if recent > avg_per_window * rule.threshold * 2
-                        else AlertSeverity.MEDIUM
+                        AlertSeverity.HIGH if recent > avg_per_window * rule.threshold * 2 else AlertSeverity.MEDIUM
                     )
                     title = f"Volume Spike: {recent} mentions in {rule.window_minutes}min"
-                    description = f"Average is {avg_per_window:.0f}, current is {recent} ({recent/avg_per_window:.1f}x)"
+                    description = (
+                        f"Average is {avg_per_window:.0f}, current is {recent} ({recent / avg_per_window:.1f}x)"
+                    )
 
             elif rule.rule_type == "negative_surge":
                 recent_total = len([t for t in mention_counts[project_id] if t > window_start])
@@ -121,8 +118,7 @@ async def evaluate_rules(session_factory, bus: EventBus, data: dict):
                         severity = AlertSeverity.HIGH if neg_pct > 0.5 else AlertSeverity.MEDIUM
                         title = f"Negative Sentiment Surge: {neg_pct:.0%}"
                         description = (
-                            f"{recent_negative}/{recent_total} mentions are negative "
-                            f"in last {rule.window_minutes}min"
+                            f"{recent_negative}/{recent_total} mentions are negative in last {rule.window_minutes}min"
                         )
 
             elif rule.rule_type == "influencer":
@@ -280,8 +276,11 @@ async def process_loop(bus: EventBus, session_factory):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_ANALYZED_MENTIONS, GROUP_NAME, CONSUMER_NAME,
-                count=20, block_ms=3000,
+                STREAM_ANALYZED_MENTIONS,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=20,
+                block_ms=3000,
             )
             for msg_id, data in messages:
                 try:

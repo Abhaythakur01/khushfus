@@ -12,16 +12,12 @@ router = APIRouter()
 
 @router.get("/{project_id}/rules", response_model=list[AlertRuleOut])
 async def list_alert_rules(project_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(AlertRule).where(AlertRule.project_id == project_id)
-    )
+    result = await db.execute(select(AlertRule).where(AlertRule.project_id == project_id))
     return result.scalars().all()
 
 
 @router.post("/{project_id}/rules", response_model=AlertRuleOut, status_code=201)
-async def create_alert_rule(
-    project_id: int, data: AlertRuleCreate, db: AsyncSession = Depends(get_db)
-):
+async def create_alert_rule(project_id: int, data: AlertRuleCreate, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -42,9 +38,7 @@ async def create_alert_rule(
 
 
 @router.delete("/{project_id}/rules/{rule_id}")
-async def delete_alert_rule(
-    project_id: int, rule_id: int, db: AsyncSession = Depends(get_db)
-):
+async def delete_alert_rule(project_id: int, rule_id: int, db: AsyncSession = Depends(get_db)):
     rule = await db.get(AlertRule, rule_id)
     if not rule or rule.project_id != project_id:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -54,22 +48,15 @@ async def delete_alert_rule(
 
 
 @router.get("/{project_id}/logs", response_model=list[AlertLogOut])
-async def list_alert_logs(
-    project_id: int, limit: int = 50, db: AsyncSession = Depends(get_db)
-):
+async def list_alert_logs(project_id: int, limit: int = 50, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(AlertLog)
-        .where(AlertLog.project_id == project_id)
-        .order_by(AlertLog.created_at.desc())
-        .limit(limit)
+        select(AlertLog).where(AlertLog.project_id == project_id).order_by(AlertLog.created_at.desc()).limit(limit)
     )
     return result.scalars().all()
 
 
 @router.patch("/{project_id}/logs/{log_id}/acknowledge")
-async def acknowledge_alert(
-    project_id: int, log_id: int, db: AsyncSession = Depends(get_db)
-):
+async def acknowledge_alert(project_id: int, log_id: int, db: AsyncSession = Depends(get_db)):
     log = await db.get(AlertLog, log_id)
     if not log or log.project_id != project_id:
         raise HTTPException(status_code=404, detail="Alert not found")

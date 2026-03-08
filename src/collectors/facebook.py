@@ -43,9 +43,7 @@ class FacebookCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("Facebook access token not configured, skipping collection")
             return []
@@ -90,9 +88,7 @@ class FacebookCollector(BaseCollector):
                         )
 
                     # Step 3: Collect comments on this post
-                    comment_mentions = await self._get_post_comments(
-                        post_id, page_token, keywords
-                    )
+                    comment_mentions = await self._get_post_comments(post_id, page_token, keywords)
                     mentions.extend(comment_mentions)
 
             # Step 4: Search for page mentions/tags
@@ -119,9 +115,7 @@ class FacebookCollector(BaseCollector):
             logger.error(f"Failed to get Facebook pages: {e}")
             return []
 
-    async def _get_page_posts(
-        self, page_id: str, page_token: str, since: datetime | None
-    ) -> list[dict]:
+    async def _get_page_posts(self, page_id: str, page_token: str, since: datetime | None) -> list[dict]:
         params = {
             "access_token": page_token,
             "fields": "id,message,created_time,from",
@@ -164,9 +158,7 @@ class FacebookCollector(BaseCollector):
         except Exception:
             return {"likes": 0, "shares": 0, "comments": 0}
 
-    async def _get_post_comments(
-        self, post_id: str, page_token: str, keywords: list[str]
-    ) -> list[CollectedMention]:
+    async def _get_post_comments(self, post_id: str, page_token: str, keywords: list[str]) -> list[CollectedMention]:
         mentions = []
         try:
             async with httpx.AsyncClient() as client:

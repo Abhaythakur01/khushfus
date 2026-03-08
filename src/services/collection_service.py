@@ -50,9 +50,7 @@ async def collect_for_project(db: AsyncSession, project_id: int, since: datetime
         return
 
     # Get active keywords
-    result = await db.execute(
-        select(Keyword).where(Keyword.project_id == project_id, Keyword.is_active.is_(True))
-    )
+    result = await db.execute(select(Keyword).where(Keyword.project_id == project_id, Keyword.is_active.is_(True)))
     keywords = [kw.term for kw in result.scalars().all()]
     if not keywords:
         logger.warning(f"No active keywords for project {project_id}")
@@ -72,9 +70,7 @@ async def collect_for_project(db: AsyncSession, project_id: int, since: datetime
             raw_mentions = await collector.collect(keywords, since)
             stored = await _store_mentions(db, project_id, raw_mentions, keywords)
             total_collected += stored
-            logger.info(
-                f"[{project.name}] {platform_name}: collected {len(raw_mentions)}, stored {stored}"
-            )
+            logger.info(f"[{project.name}] {platform_name}: collected {len(raw_mentions)}, stored {stored}")
         except Exception as e:
             logger.error(f"[{project.name}] {platform_name} collection failed: {e}")
 

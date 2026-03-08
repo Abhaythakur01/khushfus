@@ -18,9 +18,7 @@ class BlueskyCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # Public API, no credentials needed
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions: list[CollectedMention] = []
 
         for keyword in keywords:
@@ -55,9 +53,7 @@ class BlueskyCollector(BaseCollector):
                     published = None
                     created_at = record.get("createdAt") or post.get("indexedAt")
                     if created_at:
-                        published = datetime.fromisoformat(
-                            created_at.replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue

@@ -30,9 +30,7 @@ class MastodonCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions: list[CollectedMention] = []
         headers = {}
         if self.access_token:
@@ -69,9 +67,7 @@ class MastodonCollector(BaseCollector):
 
                     published = None
                     if status.get("created_at"):
-                        published = datetime.fromisoformat(
-                            status["created_at"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(status["created_at"].replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue
@@ -108,6 +104,7 @@ class MastodonCollector(BaseCollector):
     def _strip_html(html: str) -> str:
         """Remove HTML tags from Mastodon content."""
         import re
+
         text = re.sub(r"<br\s*/?>", "\n", html)
         text = re.sub(r"<[^>]+>", "", text)
         return text.strip()

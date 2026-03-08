@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
 
-import httpx
 import feedparser
+import httpx
 
 from src.collectors.base import BaseCollector, CollectedMention
 from src.config.settings import settings
@@ -27,9 +27,7 @@ class NewsCollector(BaseCollector):
         # RSS feeds don't need credentials; NewsAPI is optional
         return True
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions = []
 
         # Collect from NewsAPI if key is available
@@ -42,9 +40,7 @@ class NewsCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} news mentions for keywords: {keywords}")
         return mentions
 
-    async def _collect_newsapi(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_newsapi(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         mentions = []
         query = " OR ".join(keywords)
         params = {
@@ -67,9 +63,7 @@ class NewsCollector(BaseCollector):
                 text = f"{article.get('title', '')} {article.get('description', '')}"
                 published = None
                 if article.get("publishedAt"):
-                    published = datetime.fromisoformat(
-                        article["publishedAt"].replace("Z", "+00:00")
-                    )
+                    published = datetime.fromisoformat(article["publishedAt"].replace("Z", "+00:00"))
 
                 mentions.append(
                     CollectedMention(
@@ -88,9 +82,7 @@ class NewsCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_rss(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_rss(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         mentions = []
 
         for keyword in keywords:

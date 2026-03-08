@@ -19,11 +19,7 @@ class DiscordCollector(BaseCollector):
     def __init__(self):
         self.bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
         # Comma-separated channel IDs to monitor
-        self.channel_ids = [
-            cid.strip()
-            for cid in os.getenv("DISCORD_CHANNEL_IDS", "").split(",")
-            if cid.strip()
-        ]
+        self.channel_ids = [cid.strip() for cid in os.getenv("DISCORD_CHANNEL_IDS", "").split(",") if cid.strip()]
 
     async def validate_credentials(self) -> bool:
         if not self.bot_token:
@@ -38,9 +34,7 @@ class DiscordCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.bot_token:
             logger.warning("DISCORD_BOT_TOKEN not configured, skipping collection")
             return []
@@ -62,17 +56,13 @@ class DiscordCollector(BaseCollector):
 
                     published = None
                     if msg.get("timestamp"):
-                        published = datetime.fromisoformat(
-                            msg["timestamp"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(msg["timestamp"].replace("Z", "+00:00"))
 
                     if since and published and published < since:
                         continue
 
                     author = msg.get("author", {})
-                    reaction_count = sum(
-                        r.get("count", 0) for r in msg.get("reactions", [])
-                    )
+                    reaction_count = sum(r.get("count", 0) for r in msg.get("reactions", []))
                     thread = msg.get("thread")
                     thread_message_count = thread.get("message_count", 0) if thread else 0
 

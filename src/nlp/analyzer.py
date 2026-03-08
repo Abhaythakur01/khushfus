@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AnalysisResult:
     sentiment: str  # positive, negative, neutral, mixed
@@ -43,6 +44,7 @@ class AnalysisResult:
 # ---------------------------------------------------------------------------
 # Sentiment Analyzer (tiered)
 # ---------------------------------------------------------------------------
+
 
 class SentimentAnalyzer:
     """Tiered sentiment analyzer with emotion detection, NER, aspects, topics."""
@@ -201,9 +203,7 @@ class SentimentAnalyzer:
             sentiment_tier=tier,
         )
 
-    def analyze_batch(
-        self, texts: list[str], use_transformer: bool = False
-    ) -> list[AnalysisResult]:
+    def analyze_batch(self, texts: list[str], use_transformer: bool = False) -> list[AnalysisResult]:
         return [self.analyze(text, use_transformer) for text in texts]
 
     # ------------------------------------------------------------------
@@ -231,10 +231,7 @@ class SentimentAnalyzer:
                 # If confidence is high enough, use Tier 2
                 if t2_confidence >= 0.6:
                     # Check if Tier 3 should kick in for high-engagement
-                    if (
-                        engagement > high_engagement_threshold
-                        and self.anthropic_client
-                    ):
+                    if engagement > high_engagement_threshold and self.anthropic_client:
                         t3 = self._claude_sentiment(text)
                         if t3 is not None:
                             return t3[0], t3[1], "claude"
@@ -393,11 +390,13 @@ class SentimentAnalyzer:
             validated = []
             for a in aspects:
                 if isinstance(a, dict) and "aspect" in a:
-                    validated.append({
-                        "aspect": str(a["aspect"]),
-                        "sentiment": str(a.get("sentiment", "neutral")),
-                        "score": float(a.get("score", 0.0)),
-                    })
+                    validated.append(
+                        {
+                            "aspect": str(a["aspect"]),
+                            "sentiment": str(a.get("sentiment", "neutral")),
+                            "score": float(a.get("score", 0.0)),
+                        }
+                    )
             return validated
         return []
 
@@ -425,11 +424,13 @@ class SentimentAnalyzer:
                     sentiment = "negative"
                 else:
                     sentiment = "neutral"
-                results.append({
-                    "aspect": aspect,
-                    "sentiment": sentiment,
-                    "score": round(compound, 4),
-                })
+                results.append(
+                    {
+                        "aspect": aspect,
+                        "sentiment": sentiment,
+                        "score": round(compound, 4),
+                    }
+                )
         return results
 
     # ------------------------------------------------------------------
@@ -450,11 +451,7 @@ class SentimentAnalyzer:
             if results and isinstance(results, list):
                 # top_k=None returns list of lists; take first item
                 emotions_list = results[0] if isinstance(results[0], list) else results
-                return {
-                    item["label"]: round(item["score"], 4)
-                    for item in emotions_list
-                    if isinstance(item, dict)
-                }
+                return {item["label"]: round(item["score"], 4) for item in emotions_list if isinstance(item, dict)}
         except Exception as e:
             logger.warning(f"Emotion detection failed: {e}")
 
@@ -548,6 +545,7 @@ class SentimentAnalyzer:
 # Sarcasm Detection
 # ---------------------------------------------------------------------------
 
+
 def detect_sarcasm(text: str) -> bool:
     """Heuristic sarcasm detection.
 
@@ -601,6 +599,7 @@ def detect_sarcasm(text: str) -> bool:
 # ---------------------------------------------------------------------------
 # Topic Modeler (BERTopic)
 # ---------------------------------------------------------------------------
+
 
 class TopicModeler:
     """BERTopic-based topic modeling with keyword extraction fallback."""

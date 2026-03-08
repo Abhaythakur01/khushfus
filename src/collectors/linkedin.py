@@ -46,9 +46,7 @@ class LinkedInCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("LinkedIn access token not configured, skipping collection")
             return []
@@ -151,9 +149,7 @@ class LinkedInCollector(BaseCollector):
                 )
 
                 # Collect comments on the post
-                comment_mentions = await self._collect_post_comments(
-                    post_urn, keywords
-                )
+                comment_mentions = await self._collect_post_comments(post_urn, keywords)
                 mentions.extend(comment_mentions)
 
         except Exception as e:
@@ -161,9 +157,7 @@ class LinkedInCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_personal_posts(
-        self, keywords: list[str], since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_personal_posts(self, keywords: list[str], since: datetime | None) -> list[CollectedMention]:
         """Fallback: collect posts from the authenticated user's feed."""
         mentions = []
         try:
@@ -268,9 +262,7 @@ class LinkedInCollector(BaseCollector):
         except Exception:
             return {}
 
-    async def _collect_post_comments(
-        self, post_urn: str, keywords: list[str]
-    ) -> list[CollectedMention]:
+    async def _collect_post_comments(self, post_urn: str, keywords: list[str]) -> list[CollectedMention]:
         mentions = []
         try:
             async with httpx.AsyncClient() as client:

@@ -1,5 +1,5 @@
 """Tests for the Redis Streams event bus event dataclasses."""
-import pytest
+
 from dataclasses import asdict
 
 from shared.events import (

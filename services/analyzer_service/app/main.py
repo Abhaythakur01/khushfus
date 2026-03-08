@@ -22,10 +22,10 @@ import logging
 import os
 
 from shared.events import (
-    AnalyzedMentionEvent,
-    EventBus,
     STREAM_ANALYZED_MENTIONS,
     STREAM_RAW_MENTIONS,
+    AnalyzedMentionEvent,
+    EventBus,
 )
 from src.nlp.analyzer import SentimentAnalyzer
 
@@ -96,8 +96,11 @@ async def process_loop(bus: EventBus):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_RAW_MENTIONS, GROUP_NAME, CONSUMER_NAME,
-                count=BATCH_SIZE, block_ms=3000,
+                STREAM_RAW_MENTIONS,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=BATCH_SIZE,
+                block_ms=3000,
             )
 
             if not messages:

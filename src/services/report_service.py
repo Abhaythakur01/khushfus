@@ -42,9 +42,7 @@ async def generate_report(db: AsyncSession, project_id: int, report_type: str) -
     return report
 
 
-async def _build_report_data(
-    db: AsyncSession, project_id: int, start: datetime, end: datetime
-) -> dict:
+async def _build_report_data(db: AsyncSession, project_id: int, start: datetime, end: datetime) -> dict:
     """Build comprehensive report data from mentions in the period."""
     base_filter = [
         Mention.project_id == project_id,
@@ -59,25 +57,19 @@ async def _build_report_data(
     # Sentiment breakdown
     sentiment_counts = {}
     for s in Sentiment:
-        result = await db.execute(
-            select(func.count(Mention.id)).where(*base_filter, Mention.sentiment == s)
-        )
+        result = await db.execute(select(func.count(Mention.id)).where(*base_filter, Mention.sentiment == s))
         sentiment_counts[s.value] = result.scalar() or 0
 
     # Platform breakdown
     platform_counts = {}
     for p in Platform:
-        result = await db.execute(
-            select(func.count(Mention.id)).where(*base_filter, Mention.platform == p)
-        )
+        result = await db.execute(select(func.count(Mention.id)).where(*base_filter, Mention.platform == p))
         count = result.scalar() or 0
         if count > 0:
             platform_counts[p.value] = count
 
     # Average sentiment score
-    avg_result = await db.execute(
-        select(func.avg(Mention.sentiment_score)).where(*base_filter)
-    )
+    avg_result = await db.execute(select(func.avg(Mention.sentiment_score)).where(*base_filter))
     avg_sentiment = avg_result.scalar() or 0.0
 
     # Top contributors (by follower count)
@@ -123,9 +115,7 @@ async def _build_report_data(
 
     # Keyword frequency
     keyword_mentions = await db.execute(
-        select(Mention.matched_keywords).where(
-            *base_filter, Mention.matched_keywords.isnot(None)
-        )
+        select(Mention.matched_keywords).where(*base_filter, Mention.matched_keywords.isnot(None))
     )
     keyword_freq: dict[str, int] = {}
     for row in keyword_mentions.scalars():
@@ -135,9 +125,7 @@ async def _build_report_data(
                 keyword_freq[kw] = keyword_freq.get(kw, 0) + 1
 
     # Flagged mentions (discrepancies)
-    flagged_result = await db.execute(
-        select(func.count(Mention.id)).where(*base_filter, Mention.is_flagged.is_(True))
-    )
+    flagged_result = await db.execute(select(func.count(Mention.id)).where(*base_filter, Mention.is_flagged.is_(True)))
     flagged_count = flagged_result.scalar() or 0
 
     # Probable influencers (high follower count + engagement)
@@ -204,10 +192,12 @@ async def get_dashboard_data(db: AsyncSession, project_id: int, days: int = 7) -
                 Mention.collected_at < day_end,
             )
         )
-        daily_trend.append({
-            "date": day_start.strftime("%Y-%m-%d"),
-            "mentions": day_count.scalar() or 0,
-        })
+        daily_trend.append(
+            {
+                "date": day_start.strftime("%Y-%m-%d"),
+                "mentions": day_count.scalar() or 0,
+            }
+        )
 
     data["daily_trend"] = daily_trend
     return data

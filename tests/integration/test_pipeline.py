@@ -1,11 +1,9 @@
 """Integration tests for the mention processing pipeline."""
+
 import pytest
 
 from shared.events import (
-    STREAM_ANALYZED_MENTIONS,
-    STREAM_RAW_MENTIONS,
     EventBus,
-    RawMentionEvent,
 )
 
 

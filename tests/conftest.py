@@ -1,4 +1,5 @@
 """Shared test fixtures for KhushFus test suite."""
+
 import asyncio
 import os
 
@@ -105,10 +106,7 @@ async def sample_mentions(db_session, sample_project):
             project_id=sample_project.id,
             platform=platforms[i % 3],
             source_id=f"src_{i}",
-            text=(
-                f"Sample mention {i} about test brand "
-                f"{'great' if i % 3 == 0 else 'bad' if i % 3 == 1 else 'okay'}"
-            ),
+            text=(f"Sample mention {i} about test brand {'great' if i % 3 == 0 else 'bad' if i % 3 == 1 else 'okay'}"),
             author_name=f"Author {i}",
             author_handle=f"@author{i}",
             author_followers=100 * (i + 1),

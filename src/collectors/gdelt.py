@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import httpx
 
@@ -29,9 +29,7 @@ class GdeltCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # Free, no auth needed
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions = []
 
         for keyword in keywords:
@@ -46,9 +44,7 @@ class GdeltCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} GDELT mentions for keywords: {keywords}")
         return mentions
 
-    async def _collect_articles(
-        self, keyword: str, since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_articles(self, keyword: str, since: datetime | None) -> list[CollectedMention]:
         mentions = []
 
         # GDELT DOC API uses timespan format like "1d", "7d", "1w"
@@ -120,9 +116,7 @@ class GdeltCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_tv_mentions(
-        self, keyword: str, since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_tv_mentions(self, keyword: str, since: datetime | None) -> list[CollectedMention]:
         """Collect TV broadcast mentions from GDELT TV API."""
         mentions = []
 

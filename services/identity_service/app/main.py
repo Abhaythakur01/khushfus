@@ -429,9 +429,7 @@ async def login(
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     # Determine primary org for the token claims
-    mem_result = await db.execute(
-        select(OrgMember).where(OrgMember.user_id == user.id).order_by(OrgMember.joined_at)
-    )
+    mem_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id).order_by(OrgMember.joined_at))
     membership = mem_result.scalars().first()
     org_id = membership.organization_id if membership else 0
     role = membership.role.value if membership else ""
@@ -488,9 +486,7 @@ async def refresh_tokens(
     # Rotate: revoke old session, issue new tokens
     await _revoke_session(bus, session_id)
 
-    mem_result = await db.execute(
-        select(OrgMember).where(OrgMember.user_id == user.id).order_by(OrgMember.joined_at)
-    )
+    mem_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id).order_by(OrgMember.joined_at))
     membership = mem_result.scalars().first()
     org_id = membership.organization_id if membership else 0
     role = membership.role.value if membership else ""
@@ -642,6 +638,7 @@ async def saml_acs(
     # Below we simulate the parsed attributes for the wiring to be complete.
 
     import base64
+
     try:
         decoded_xml = base64.b64decode(saml_response).decode("utf-8", errors="replace")
     except Exception:
@@ -691,6 +688,7 @@ async def saml_acs(
 def _extract_saml_attr(xml_str: str, attr_name: str) -> str | None:
     """Naive attribute extraction from SAML XML. Production uses python3-saml."""
     import re
+
     # Try NameID
     if attr_name == "NameID":
         m = re.search(r"<(?:\w+:)?NameID[^>]*>([^<]+)</(?:\w+:)?NameID>", xml_str)
@@ -698,7 +696,7 @@ def _extract_saml_attr(xml_str: str, attr_name: str) -> str | None:
     # Try Attribute with Name containing attr_name
     pattern = (
         rf'<(?:\w+:)?Attribute[^>]*Name="[^"]*{re.escape(attr_name)}[^"]*"[^>]*>'
-        r'.*?<(?:\w+:)?AttributeValue[^>]*>([^<]+)</(?:\w+:)?AttributeValue>'
+        r".*?<(?:\w+:)?AttributeValue[^>]*>([^<]+)</(?:\w+:)?AttributeValue>"
     )
     m = re.search(pattern, xml_str, re.DOTALL)
     return m.group(1).strip() if m else None
@@ -801,6 +799,7 @@ async def oidc_callback(
 
     # Exchange code for tokens
     import httpx
+
     async with httpx.AsyncClient(timeout=15) as client:
         token_resp = await client.post(
             f"{base_url}/token",

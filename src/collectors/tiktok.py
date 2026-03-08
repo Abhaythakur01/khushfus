@@ -22,9 +22,7 @@ class TikTokCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return bool(self.access_token)
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("TIKTOK_ACCESS_TOKEN not configured, skipping collection")
             return []
@@ -39,9 +37,14 @@ class TikTokCollector(BaseCollector):
             "end_date": end_date,
             "max_count": 100,
             "fields": [
-                "id", "video_description", "create_time",
-                "username", "like_count", "comment_count",
-                "share_count", "view_count",
+                "id",
+                "video_description",
+                "create_time",
+                "username",
+                "like_count",
+                "comment_count",
+                "share_count",
+                "view_count",
             ],
         }
 

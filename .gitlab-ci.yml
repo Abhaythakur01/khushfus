@@ -43,7 +43,7 @@ lint-python:
   stage: lint
   image: python:3.11-slim
   before_script:
-    - pip install --cache-dir $PIP_CACHE_DIR ruff
+    - pip install --cache-dir $PIP_CACHE_DIR ruff==0.15.5
   script:
     - ruff check src/ services/ shared/ tests/
     - ruff format --check src/ services/ shared/ tests/

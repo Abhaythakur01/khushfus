@@ -1,4 +1,5 @@
 """Tests for database models."""
+
 import pytest
 
 from shared.models import (
@@ -11,12 +12,11 @@ from shared.models import (
     Organization,
     OrgMember,
     OrgRole,
-    Platform,
     PlanTier,
+    Platform,
     Project,
     ProjectStatus,
     PublishStatus,
-    Report,
     Sentiment,
     User,
     WorkflowStatus,

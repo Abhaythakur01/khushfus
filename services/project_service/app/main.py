@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class KeywordCreate(BaseModel):
     term: str = Field(min_length=1, max_length=255)
     keyword_type: str = "brand"
@@ -100,6 +101,7 @@ class ProjectListOut(BaseModel):
 # Lifespan & Dependencies
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
@@ -140,6 +142,7 @@ def get_org_id(x_org_id: int = Header(..., alias="X-Org-Id")) -> int:
 # Health
 # ---------------------------------------------------------------------------
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "project", "version": "0.1.0"}
@@ -149,10 +152,13 @@ async def health():
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _project_to_out(project: Project, keywords: list[Keyword] | None = None) -> ProjectOut:
     """Convert a Project ORM object to a ProjectOut schema."""
-    kw_list = keywords if keywords is not None else (
-        project.keywords if hasattr(project, "keywords") and project.keywords else []
+    kw_list = (
+        keywords
+        if keywords is not None
+        else (project.keywords if hasattr(project, "keywords") and project.keywords else [])
     )
     return ProjectOut(
         id=project.id,
@@ -181,6 +187,7 @@ def _project_to_out(project: Project, keywords: list[Keyword] | None = None) -> 
 # ---------------------------------------------------------------------------
 # Project CRUD
 # ---------------------------------------------------------------------------
+
 
 @app.post("/api/v1/projects", response_model=ProjectOut, status_code=201)
 async def create_project(
@@ -247,19 +254,13 @@ async def list_projects(
         total = (await db.execute(count_q)).scalar() or 0
 
         result = await db.execute(
-            select(Project)
-            .where(*base_filter)
-            .order_by(Project.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+            select(Project).where(*base_filter).order_by(Project.created_at.desc()).offset(skip).limit(limit)
         )
         projects = result.scalars().all()
 
         items = []
         for p in projects:
-            kw_result = await db.execute(
-                select(Keyword).where(Keyword.project_id == p.id)
-            )
+            kw_result = await db.execute(select(Keyword).where(Keyword.project_id == p.id))
             kws = kw_result.scalars().all()
             items.append(_project_to_out(p, kws))
 
@@ -287,9 +288,7 @@ async def get_project(
         if project.status == ProjectStatus.ARCHIVED:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        kw_result = await db.execute(
-            select(Keyword).where(Keyword.project_id == project.id)
-        )
+        kw_result = await db.execute(select(Keyword).where(Keyword.project_id == project.id))
         keywords = kw_result.scalars().all()
 
         return _project_to_out(project, keywords)
@@ -336,9 +335,7 @@ async def update_project(
         await db.commit()
         await db.refresh(project)
 
-        kw_result = await db.execute(
-            select(Keyword).where(Keyword.project_id == project.id)
-        )
+        kw_result = await db.execute(select(Keyword).where(Keyword.project_id == project.id))
         keywords = kw_result.scalars().all()
 
         logger.info(f"Updated project {project_id}")
@@ -379,6 +376,7 @@ async def delete_project(
 # ---------------------------------------------------------------------------
 # Keyword Management
 # ---------------------------------------------------------------------------
+
 
 @app.post("/api/v1/projects/{project_id}/keywords", response_model=KeywordOut, status_code=201)
 async def add_keyword(

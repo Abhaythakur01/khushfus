@@ -22,7 +22,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
-from elasticsearch import AsyncElasticsearch, NotFoundError as ESNotFoundError
+from elasticsearch import AsyncElasticsearch
+from elasticsearch import NotFoundError as ESNotFoundError
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -54,6 +55,7 @@ ES_INDEX = "khushfus-mentions"
 
 class SearchRequest(BaseModel):
     """Standard search with filters."""
+
     query: str = Field("", description="Full-text search query (supports Elasticsearch simple_query_string syntax)")
     project_id: int | None = Field(None, description="Filter by project")
     platform: str | None = Field(None, description="Filter by platform (e.g. twitter)")
@@ -83,6 +85,7 @@ class SearchResponse(BaseModel):
 
 class AdvancedSearchRequest(BaseModel):
     """Raw Elasticsearch DSL query body."""
+
     body: dict[str, Any] = Field(..., description="Full ES query DSL")
     index: str = Field(ES_INDEX, description="ES index to query")
 
@@ -133,6 +136,7 @@ class FacetsResponse(BaseModel):
 # Lifespan — init DB + ES connections
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
@@ -162,6 +166,7 @@ app = FastAPI(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_es_query(req: SearchRequest) -> dict:
     """Translate a SearchRequest into an Elasticsearch query body."""
     must: list[dict] = []
@@ -169,13 +174,15 @@ def _build_es_query(req: SearchRequest) -> dict:
 
     # Full-text query
     if req.query:
-        must.append({
-            "simple_query_string": {
-                "query": req.query,
-                "fields": ["text^3", "matched_keywords^2", "author_name", "author_handle", "topics"],
-                "default_operator": "AND",
+        must.append(
+            {
+                "simple_query_string": {
+                    "query": req.query,
+                    "fields": ["text^3", "matched_keywords^2", "author_name", "author_handle", "topics"],
+                    "default_operator": "AND",
+                }
             }
-        })
+        )
 
     # Keyword filters
     if req.project_id is not None:
@@ -189,15 +196,17 @@ def _build_es_query(req: SearchRequest) -> dict:
 
     # Author filter (match either name or handle)
     if req.author:
-        filters.append({
-            "bool": {
-                "should": [
-                    {"term": {"author_name": req.author}},
-                    {"term": {"author_handle": req.author}},
-                ],
-                "minimum_should_match": 1,
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"author_name": req.author}},
+                        {"term": {"author_handle": req.author}},
+                    ],
+                    "minimum_should_match": 1,
+                }
             }
-        })
+        )
 
     # Date range
     date_range: dict[str, str] = {}
@@ -227,12 +236,14 @@ def _build_es_query(req: SearchRequest) -> dict:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "search-service", "version": "0.1.0"}
 
 
 # ---- Full-text search ----
+
 
 @app.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest):
@@ -262,6 +273,7 @@ async def search(req: SearchRequest):
 
 # ---- Advanced (raw DSL) search ----
 
+
 @app.post("/search/advanced")
 async def search_advanced(req: AdvancedSearchRequest):
     """Execute a raw Elasticsearch DSL query."""
@@ -277,6 +289,7 @@ async def search_advanced(req: AdvancedSearchRequest):
 
 
 # ---- Autocomplete / suggest ----
+
 
 @app.get("/search/suggest", response_model=SuggestResponse)
 async def suggest(
@@ -324,6 +337,7 @@ async def suggest(
 
 
 # ---- Trending topics ----
+
 
 @app.get("/search/trending", response_model=TrendingResponse)
 async def trending(
@@ -386,6 +400,7 @@ async def trending(
 
 
 # ---- Faceted counts ----
+
 
 @app.get("/search/facets", response_model=FacetsResponse)
 async def facets(
@@ -452,6 +467,7 @@ async def facets(
 
 # ---- Saved searches (CRUD) ----
 
+
 @app.post("/saved-searches", response_model=SavedSearchOut, status_code=201)
 async def create_saved_search(req: SavedSearchCreate):
     """Create a saved search."""
@@ -477,9 +493,7 @@ async def list_saved_searches(
     session_factory = app.state.db_session
     async with session_factory() as db:
         result = await db.execute(
-            select(SavedSearch)
-            .where(SavedSearch.project_id == project_id)
-            .order_by(SavedSearch.created_at.desc())
+            select(SavedSearch).where(SavedSearch.project_id == project_id).order_by(SavedSearch.created_at.desc())
         )
         return result.scalars().all()
 
@@ -489,9 +503,7 @@ async def delete_saved_search(search_id: int):
     """Delete a saved search by ID."""
     session_factory = app.state.db_session
     async with session_factory() as db:
-        result = await db.execute(
-            select(SavedSearch).where(SavedSearch.id == search_id)
-        )
+        result = await db.execute(select(SavedSearch).where(SavedSearch.id == search_id))
         obj = result.scalar_one_or_none()
         if not obj:
             raise HTTPException(status_code=404, detail="Saved search not found")

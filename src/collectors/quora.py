@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import datetime
 
 import httpx
@@ -27,9 +26,7 @@ class QuoraCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # Web scraping, no credentials
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         mentions = []
 
         for keyword in keywords:

@@ -60,11 +60,26 @@ CLIP_MODEL_NAME = os.getenv("CLIP_MODEL_NAME", "openai/clip-vit-base-patch32")
 
 # Well-known brand labels for CLIP zero-shot logo detection
 LOGO_CANDIDATES = [
-    "Apple logo", "Google logo", "Microsoft logo", "Amazon logo",
-    "Nike logo", "Adidas logo", "Coca-Cola logo", "Samsung logo",
-    "Toyota logo", "Facebook logo", "Twitter logo", "Instagram logo",
-    "YouTube logo", "Netflix logo", "Starbucks logo", "McDonald's logo",
-    "BMW logo", "Mercedes-Benz logo", "Tesla logo", "Pepsi logo",
+    "Apple logo",
+    "Google logo",
+    "Microsoft logo",
+    "Amazon logo",
+    "Nike logo",
+    "Adidas logo",
+    "Coca-Cola logo",
+    "Samsung logo",
+    "Toyota logo",
+    "Facebook logo",
+    "Twitter logo",
+    "Instagram logo",
+    "YouTube logo",
+    "Netflix logo",
+    "Starbucks logo",
+    "McDonald's logo",
+    "BMW logo",
+    "Mercedes-Benz logo",
+    "Tesla logo",
+    "Pepsi logo",
     "no brand logo",
 ]
 LOGO_CONFIDENCE_THRESHOLD = float(os.getenv("LOGO_CONFIDENCE_THRESHOLD", "0.35"))
@@ -88,6 +103,7 @@ def _get_ocr_engine():
 
     try:
         import easyocr
+
         _ocr_engine = easyocr.Reader(["en"], gpu=torch.cuda.is_available())
         logger.info("OCR engine: EasyOCR (GPU=%s)", torch.cuda.is_available())
         return _ocr_engine
@@ -96,6 +112,7 @@ def _get_ocr_engine():
 
     try:
         import pytesseract  # noqa: F401 — availability check
+
         # Wrap pytesseract in a duck-typed object with .readtext()
         class _TesseractWrapper:
             @staticmethod
@@ -125,6 +142,7 @@ def _get_whisper_model():
 
     try:
         import whisper
+
         _whisper_model = whisper.load_model(WHISPER_MODEL_SIZE)
         logger.info("Whisper model loaded: %s", WHISPER_MODEL_SIZE)
         return _whisper_model
@@ -167,6 +185,7 @@ def _get_clip():
 # Media download
 # ---------------------------------------------------------------------------
 
+
 async def download_media(url: str, dest_dir: str) -> str:
     """Download a media file from *url* into *dest_dir*. Returns local path."""
     async with httpx.AsyncClient(
@@ -183,9 +202,7 @@ async def download_media(url: str, dest_dir: str) -> str:
         # Enforce size limit
         content_length = len(resp.content)
         if content_length > MAX_MEDIA_SIZE_MB * 1024 * 1024:
-            raise ValueError(
-                f"Media file too large ({content_length / 1024 / 1024:.1f} MB > {MAX_MEDIA_SIZE_MB} MB)"
-            )
+            raise ValueError(f"Media file too large ({content_length / 1024 / 1024:.1f} MB > {MAX_MEDIA_SIZE_MB} MB)")
 
         with open(local_path, "wb") as f:
             f.write(resp.content)
@@ -196,10 +213,17 @@ async def download_media(url: str, dest_dir: str) -> str:
 def _ext_from_content_type(ct: str, url: str) -> str:
     """Best-effort file extension from content type or URL."""
     mapping = {
-        "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-        "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm",
-        "video/quicktime": ".mov", "audio/mpeg": ".mp3", "audio/wav": ".wav",
-        "audio/ogg": ".ogg", "audio/mp4": ".m4a",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/quicktime": ".mov",
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/ogg": ".ogg",
+        "audio/mp4": ".m4a",
     }
     for key, ext in mapping.items():
         if key in ct:
@@ -212,6 +236,7 @@ def _ext_from_content_type(ct: str, url: str) -> str:
 # ---------------------------------------------------------------------------
 # Image analysis
 # ---------------------------------------------------------------------------
+
 
 def run_ocr(image: Image.Image) -> str:
     """Extract text from an image via OCR. Returns concatenated text."""
@@ -262,11 +287,25 @@ def classify_scene(image: Image.Image) -> list[dict]:
         return []
 
     scene_labels = [
-        "outdoor landscape", "indoor room", "city street", "office",
-        "food and drink", "people group", "single person portrait",
-        "animal", "vehicle", "product shot", "sports event",
-        "concert or event", "nature", "technology device", "text or document",
-        "meme or infographic", "beach", "mountain", "building architecture",
+        "outdoor landscape",
+        "indoor room",
+        "city street",
+        "office",
+        "food and drink",
+        "people group",
+        "single person portrait",
+        "animal",
+        "vehicle",
+        "product shot",
+        "sports event",
+        "concert or event",
+        "nature",
+        "technology device",
+        "text or document",
+        "meme or infographic",
+        "beach",
+        "mountain",
+        "building architecture",
     ]
     try:
         inputs_img = processor(images=image, return_tensors="pt")
@@ -309,6 +348,7 @@ def analyze_image(image: Image.Image) -> dict:
 # Video analysis
 # ---------------------------------------------------------------------------
 
+
 def extract_keyframes(video_path: str, max_frames: int = MAX_VIDEO_KEYFRAMES) -> list[str]:
     """Extract keyframes from a video using ffmpeg scene-change detection.
 
@@ -320,8 +360,14 @@ def extract_keyframes(video_path: str, max_frames: int = MAX_VIDEO_KEYFRAMES) ->
 
     # Get video duration
     probe_cmd = [
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", video_path,
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
     ]
     try:
         duration = float(subprocess.check_output(probe_cmd, stderr=subprocess.DEVNULL).decode().strip())
@@ -331,10 +377,19 @@ def extract_keyframes(video_path: str, max_frames: int = MAX_VIDEO_KEYFRAMES) ->
     # Try scene-change detection first
     pattern = os.path.join(out_dir, "scene_%04d.jpg")
     scene_cmd = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-vf", "select='gt(scene,0.3)',setpts=N/FRAME_RATE/TB",
-        "-frames:v", str(max_frames),
-        "-vsync", "vfr", "-q:v", "2", pattern,
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-vf",
+        "select='gt(scene,0.3)',setpts=N/FRAME_RATE/TB",
+        "-frames:v",
+        str(max_frames),
+        "-vsync",
+        "vfr",
+        "-q:v",
+        "2",
+        pattern,
     ]
     try:
         subprocess.run(scene_cmd, capture_output=True, timeout=120)
@@ -352,8 +407,17 @@ def extract_keyframes(video_path: str, max_frames: int = MAX_VIDEO_KEYFRAMES) ->
                 break
             out_file = os.path.join(out_dir, f"uniform_{i:04d}.jpg")
             cmd = [
-                "ffmpeg", "-y", "-ss", str(ts), "-i", video_path,
-                "-frames:v", "1", "-q:v", "2", out_file,
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(ts),
+                "-i",
+                video_path,
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                out_file,
             ]
             try:
                 subprocess.run(cmd, capture_output=True, timeout=30)
@@ -370,8 +434,17 @@ def extract_audio(video_path: str) -> str | None:
     """Extract audio track from a video file. Returns path to WAV or None."""
     audio_path = video_path.rsplit(".", 1)[0] + "_audio.wav"
     cmd = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
         audio_path,
     ]
     try:
@@ -386,6 +459,7 @@ def extract_audio(video_path: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Audio / speech-to-text
 # ---------------------------------------------------------------------------
+
 
 def transcribe_audio(audio_path: str) -> str:
     """Transcribe audio file using OpenAI Whisper. Returns transcript text."""
@@ -403,6 +477,7 @@ def transcribe_audio(audio_path: str) -> str:
 # ---------------------------------------------------------------------------
 # Top-level analysis dispatcher
 # ---------------------------------------------------------------------------
+
 
 async def analyze_media(media_url: str, media_type: str, tmp_dir: str) -> dict:
     """Download and analyse media. Returns {ocr_text, labels_json, transcript, logos}."""
@@ -484,6 +559,7 @@ def _dedupe_labels(items: list[dict]) -> list[dict]:
 # Database update
 # ---------------------------------------------------------------------------
 
+
 async def update_mention_media(
     session_factory,
     mention_id: int,
@@ -510,6 +586,7 @@ async def update_mention_media(
 # Consumer loop
 # ---------------------------------------------------------------------------
 
+
 async def process_message(
     bus: EventBus,
     session_factory,
@@ -528,7 +605,10 @@ async def process_message(
 
     logger.info(
         "Analysing %s media for mention %d (project %d): %s",
-        media_type, mention_id, project_id, media_url[:120],
+        media_type,
+        mention_id,
+        project_id,
+        media_url[:120],
     )
 
     with tempfile.TemporaryDirectory(prefix="khushfus_media_") as tmp_dir:
@@ -538,7 +618,7 @@ async def process_message(
     logo_names = ",".join(logo["label"] for logo in result.get("logos", []))
     event = MediaResultEvent(
         mention_id=mention_id,
-        ocr_text=result["ocr_text"][:10000],   # cap field sizes
+        ocr_text=result["ocr_text"][:10000],  # cap field sizes
         labels=result["labels_json"][:10000],
         transcript=result["transcript"][:30000],
         logo_detected=logo_names,
@@ -556,7 +636,10 @@ async def process_message(
 
     logger.info(
         "Media analysis complete for mention %d — OCR=%d chars, logos=%s, transcript=%d chars",
-        mention_id, len(result["ocr_text"]), logo_names or "(none)", len(result["transcript"]),
+        mention_id,
+        len(result["ocr_text"]),
+        logo_names or "(none)",
+        len(result["transcript"]),
     )
 
 
@@ -582,9 +665,7 @@ async def process_loop(bus: EventBus, session_factory):
                 try:
                     await process_message(bus, session_factory, msg_id, data)
                 except Exception as exc:
-                    logger.error(
-                        "Failed to process media message %s: %s", msg_id, exc, exc_info=True
-                    )
+                    logger.error("Failed to process media message %s: %s", msg_id, exc, exc_info=True)
                 finally:
                     await bus.ack(STREAM_MEDIA_ANALYSIS, GROUP_NAME, msg_id)
 
@@ -596,6 +677,7 @@ async def process_loop(bus: EventBus, session_factory):
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 async def main():
     engine, session_factory = create_db(DATABASE_URL)

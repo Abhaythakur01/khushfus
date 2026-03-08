@@ -20,14 +20,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import (
     DateTime,
+    ForeignKey,
     Integer,
     Text,
-    ForeignKey,
     delete,
     func,
     select,
@@ -36,12 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.database import create_db, init_tables
-from shared.events import EventBus, STREAM_AUDIT
+from shared.events import STREAM_AUDIT, EventBus
 from shared.models import (
     AuditLog,
     Base,
     Mention,
-    Organization,
     OrgMember,
     Project,
     Report,
@@ -51,9 +50,7 @@ from shared.models import (
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "audit-service"
@@ -64,26 +61,24 @@ CONSUMER_NAME = f"audit-{os.getpid()}"
 # Retention Policy Model (stored in its own table)
 # ============================================================
 
+
 class RetentionPolicy(Base):
     __tablename__ = "retention_policies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    organization_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("organizations.id"), unique=True, index=True
-    )
+    organization_id: Mapped[int] = mapped_column(Integer, ForeignKey("organizations.id"), unique=True, index=True)
     mentions_retention_days: Mapped[int] = mapped_column(Integer, default=365)
     audit_logs_retention_days: Mapped[int] = mapped_column(Integer, default=730)
     reports_retention_days: Mapped[int] = mapped_column(Integer, default=365)
     config_json: Mapped[str] = mapped_column(Text, default="{}")
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 # ============================================================
 # Pydantic Schemas
 # ============================================================
+
 
 class AuditLogOut(BaseModel):
     id: int
@@ -159,6 +154,7 @@ class GDPRPurgeOut(BaseModel):
 # Background Consumer
 # ============================================================
 
+
 async def audit_consumer(bus: EventBus, session_factory):
     """Consume audit events from STREAM_AUDIT and persist them."""
     await bus.ensure_group(STREAM_AUDIT, GROUP_NAME)
@@ -167,8 +163,11 @@ async def audit_consumer(bus: EventBus, session_factory):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_AUDIT, GROUP_NAME, CONSUMER_NAME,
-                count=50, block_ms=3000,
+                STREAM_AUDIT,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=50,
+                block_ms=3000,
             )
             for msg_id, data in messages:
                 try:
@@ -196,6 +195,7 @@ async def audit_consumer(bus: EventBus, session_factory):
 # ============================================================
 # FastAPI Application
 # ============================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -247,6 +247,7 @@ async def get_db():
 # Health
 # ============================================================
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "audit-service", "version": "0.1.0"}
@@ -255,6 +256,7 @@ async def health():
 # ============================================================
 # Audit Log Endpoints
 # ============================================================
+
 
 @app.get("/audit-logs", response_model=AuditLogListOut)
 async def list_audit_logs(
@@ -287,13 +289,7 @@ async def list_audit_logs(
 
     # Paginated results
     offset = (page - 1) * page_size
-    items_q = (
-        select(AuditLog)
-        .where(*conditions)
-        .order_by(AuditLog.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-    )
+    items_q = select(AuditLog).where(*conditions).order_by(AuditLog.created_at.desc()).offset(offset).limit(page_size)
     result = await db.execute(items_q)
     items = result.scalars().all()
 
@@ -349,15 +345,10 @@ async def audit_summary(
         .order_by(func.date_trunc("day", AuditLog.created_at))
     )
     timeline_result = await db.execute(timeline_q)
-    activity_timeline = [
-        {"date": r.day.isoformat() if r.day else "", "count": r.cnt}
-        for r in timeline_result
-    ]
+    activity_timeline = [{"date": r.day.isoformat() if r.day else "", "count": r.cnt} for r in timeline_result]
 
     # Total
-    total = (
-        await db.execute(select(func.count(AuditLog.id)).where(*base_conditions))
-    ).scalar() or 0
+    total = (await db.execute(select(func.count(AuditLog.id)).where(*base_conditions))).scalar() or 0
 
     return AuditSummaryOut(
         actions_per_user=actions_per_user,
@@ -383,17 +374,14 @@ async def get_audit_log(
 # Data Retention Endpoints
 # ============================================================
 
+
 @app.post("/data-retention", response_model=RetentionPolicyOut)
 async def configure_retention(
     payload: RetentionPolicyCreate,
     db: AsyncSession = Depends(get_db),
 ):
     """Create or update a data retention policy for an organization."""
-    result = await db.execute(
-        select(RetentionPolicy).where(
-            RetentionPolicy.organization_id == payload.organization_id
-        )
-    )
+    result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == payload.organization_id))
     policy = result.scalar_one_or_none()
 
     if policy:
@@ -422,9 +410,7 @@ async def get_retention(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the current data retention policy for an organization."""
-    result = await db.execute(
-        select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id)
-    )
+    result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id))
     policy = result.scalar_one_or_none()
     if not policy:
         raise HTTPException(
@@ -440,9 +426,7 @@ async def execute_retention(
     db: AsyncSession = Depends(get_db),
 ):
     """Execute data retention cleanup: delete old data according to the org's policy."""
-    result = await db.execute(
-        select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id)
-    )
+    result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id))
     policy = result.scalar_one_or_none()
     if not policy:
         raise HTTPException(
@@ -493,7 +477,10 @@ async def execute_retention(
 
     logger.info(
         "Retention cleanup org=%d: mentions=%d, audit=%d, reports=%d",
-        org_id, mentions_deleted, audit_deleted, reports_deleted,
+        org_id,
+        mentions_deleted,
+        audit_deleted,
+        reports_deleted,
     )
 
     return RetentionExecuteOut(
@@ -507,6 +494,7 @@ async def execute_retention(
 # ============================================================
 # GDPR Compliance Endpoints
 # ============================================================
+
 
 @app.get("/compliance/export", response_model=GDPRExportOut)
 async def gdpr_export(
@@ -547,9 +535,7 @@ async def gdpr_export(
     }
 
     # All memberships across orgs
-    memberships_result = await db.execute(
-        select(OrgMember).where(OrgMember.user_id == user.id)
-    )
+    memberships_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id))
     memberships = [
         {
             "organization_id": m.organization_id,
@@ -617,9 +603,7 @@ async def gdpr_purge(
     for log in audit_logs:
         log.user_id = None
         log.ip_address = None
-        log.details_json = json.dumps(
-            {"purged": True, "purged_at": datetime.utcnow().isoformat()}
-        )
+        log.details_json = json.dumps({"purged": True, "purged_at": datetime.utcnow().isoformat()})
     records_purged["audit_logs_anonymized"] = len(audit_logs)
 
     # Remove org membership
@@ -631,9 +615,7 @@ async def gdpr_purge(
     records_purged["memberships_deleted"] = mem_result.rowcount
 
     # Check if user has any other org memberships remaining
-    remaining = await db.execute(
-        select(func.count(OrgMember.id)).where(OrgMember.user_id == user.id)
-    )
+    remaining = await db.execute(select(func.count(OrgMember.id)).where(OrgMember.user_id == user.id))
     remaining_count = remaining.scalar() or 0
 
     # If no other memberships, anonymize the user record itself
@@ -653,7 +635,9 @@ async def gdpr_purge(
 
     logger.info(
         "GDPR purge completed: org=%d user=%s records=%s",
-        org_id, user_email, records_purged,
+        org_id,
+        user_email,
+        records_purged,
     )
 
     return GDPRPurgeOut(

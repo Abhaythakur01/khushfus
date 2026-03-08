@@ -12,30 +12,27 @@ to STREAM_ENRICHMENT_RESULTS.
 """
 
 import asyncio
-import json
 import logging
 import math
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from shared.database import create_db
 from shared.events import (
-    EnrichmentResultEvent,
-    EventBus,
     STREAM_ENRICHMENT,
     STREAM_ENRICHMENT_RESULTS,
+    EnrichmentResultEvent,
+    EventBus,
 )
 from shared.models import Mention
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "enrichment-service"
@@ -43,16 +40,62 @@ CONSUMER_NAME = f"enrichment-{os.getpid()}"
 
 # Known organization keywords for org resolution
 ORG_KEYWORDS = [
-    "inc", "inc.", "corp", "corp.", "corporation", "llc", "ltd", "ltd.",
-    "limited", "company", "co.", "group", "holdings", "partners",
-    "foundation", "institute", "association", "agency", "consulting",
-    "solutions", "technologies", "tech", "labs", "studio", "studios",
-    "media", "news", "press", "network", "networks", "global",
-    "international", "university", "college", "school", "hospital",
-    "healthcare", "pharma", "bank", "financial", "insurance",
-    "ventures", "capital", "investments", "enterprises", "services",
-    "software", "systems", "digital", "analytics", "research",
-    "official", "verified", "brand", "team", "hq",
+    "inc",
+    "inc.",
+    "corp",
+    "corp.",
+    "corporation",
+    "llc",
+    "ltd",
+    "ltd.",
+    "limited",
+    "company",
+    "co.",
+    "group",
+    "holdings",
+    "partners",
+    "foundation",
+    "institute",
+    "association",
+    "agency",
+    "consulting",
+    "solutions",
+    "technologies",
+    "tech",
+    "labs",
+    "studio",
+    "studios",
+    "media",
+    "news",
+    "press",
+    "network",
+    "networks",
+    "global",
+    "international",
+    "university",
+    "college",
+    "school",
+    "hospital",
+    "healthcare",
+    "pharma",
+    "bank",
+    "financial",
+    "insurance",
+    "ventures",
+    "capital",
+    "investments",
+    "enterprises",
+    "services",
+    "software",
+    "systems",
+    "digital",
+    "analytics",
+    "research",
+    "official",
+    "verified",
+    "brand",
+    "team",
+    "hq",
 ]
 
 # Patterns suggesting bot accounts
@@ -60,7 +103,7 @@ BOT_HANDLE_PATTERNS = [
     r"bot\d*$",
     r"_bot$",
     r"^bot_",
-    r"\d{6,}$",          # handles ending in long number sequences
+    r"\d{6,}$",  # handles ending in long number sequences
     r"^[a-z]{2,4}\d{5,}",  # short prefix + many digits
     r"auto_?\w*post",
     r"feed_?bot",
@@ -163,9 +206,15 @@ def detect_bot(
         risk_score += 0.5
     else:
         spam_keywords = [
-            "follow back", "follow4follow", "f4f", "gain followers",
-            "free followers", "buy followers", "dm for promo",
-            "automated", "bot account",
+            "follow back",
+            "follow4follow",
+            "f4f",
+            "gain followers",
+            "free followers",
+            "buy followers",
+            "dm for promo",
+            "automated",
+            "bot account",
         ]
         for kw in spam_keywords:
             if kw in bio_lower:
@@ -278,6 +327,7 @@ async def enrich_mention(session_factory, mention_id: int, data: dict) -> Enrich
 
         # Calculate post count from DB for this author in this project
         from sqlalchemy import func as sqlfunc
+
         post_count_result = await db.execute(
             select(sqlfunc.count(Mention.id)).where(
                 Mention.author_handle == author_handle,
@@ -370,8 +420,11 @@ async def process_loop(bus: EventBus, session_factory):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_ENRICHMENT, GROUP_NAME, CONSUMER_NAME,
-                count=20, block_ms=3000,
+                STREAM_ENRICHMENT,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=20,
+                block_ms=3000,
             )
 
             for msg_id, data in messages:

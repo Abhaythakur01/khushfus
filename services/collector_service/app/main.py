@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from shared.database import create_db
-from shared.events import EventBus, RawMentionEvent, STREAM_RAW_MENTIONS
+from shared.events import STREAM_RAW_MENTIONS, EventBus, RawMentionEvent
 from shared.models import Keyword, Project, ProjectStatus
 
 from .collectors import PLATFORM_COLLECTORS
@@ -24,9 +24,7 @@ from .collectors import PLATFORM_COLLECTORS
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 COLLECTION_INTERVAL_SECONDS = int(os.getenv("COLLECTION_INTERVAL", "3600"))  # 1 hour
 
@@ -42,9 +40,7 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
             logger.warning(f"Project {project_id} not found or inactive")
             return
 
-        result = await db.execute(
-            select(Keyword).where(Keyword.project_id == project_id, Keyword.is_active.is_(True))
-        )
+        result = await db.execute(select(Keyword).where(Keyword.project_id == project_id, Keyword.is_active.is_(True)))
         keywords = [kw.term for kw in result.scalars().all()]
         if not keywords:
             logger.warning(f"No active keywords for project {project_id}")
@@ -68,23 +64,25 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
             events = []
             for m in raw_mentions:
                 matched = [kw for kw in keywords if kw.lower() in m.text.lower()]
-                events.append(RawMentionEvent(
-                    project_id=project_id,
-                    platform=m.platform,
-                    source_id=m.source_id,
-                    source_url=m.source_url,
-                    text=m.text[:5000],
-                    author_name=m.author_name,
-                    author_handle=m.author_handle,
-                    author_followers=m.author_followers,
-                    author_profile_url=m.author_profile_url,
-                    likes=m.likes,
-                    shares=m.shares,
-                    comments=m.comments,
-                    reach=m.reach,
-                    published_at=m.published_at.isoformat() if m.published_at else "",
-                    matched_keywords=",".join(matched),
-                ))
+                events.append(
+                    RawMentionEvent(
+                        project_id=project_id,
+                        platform=m.platform,
+                        source_id=m.source_id,
+                        source_url=m.source_url,
+                        text=m.text[:5000],
+                        author_name=m.author_name,
+                        author_handle=m.author_handle,
+                        author_followers=m.author_followers,
+                        author_profile_url=m.author_profile_url,
+                        likes=m.likes,
+                        shares=m.shares,
+                        comments=m.comments,
+                        reach=m.reach,
+                        published_at=m.published_at.isoformat() if m.published_at else "",
+                        matched_keywords=",".join(matched),
+                    )
+                )
 
             if events:
                 await bus.publish_batch(STREAM_RAW_MENTIONS, events)
@@ -99,9 +97,7 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
 async def collect_all_active(bus: EventBus, session_factory):
     """Collect mentions for all active projects."""
     async with session_factory() as db:
-        result = await db.execute(
-            select(Project).where(Project.status == ProjectStatus.ACTIVE)
-        )
+        result = await db.execute(select(Project).where(Project.status == ProjectStatus.ACTIVE))
         projects = result.scalars().all()
 
     for project in projects:

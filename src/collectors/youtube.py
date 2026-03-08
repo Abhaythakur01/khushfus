@@ -32,9 +32,7 @@ class YouTubeCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.api_key:
             logger.warning("YouTube API key not configured, skipping collection")
             return []
@@ -71,9 +69,7 @@ class YouTubeCollector(BaseCollector):
                             text=f"{snippet['title']} - {snippet.get('description', '')}",
                             author_name=snippet.get("channelTitle", ""),
                             author_handle=snippet.get("channelId", ""),
-                            published_at=datetime.fromisoformat(
-                                snippet["publishedAt"].replace("Z", "+00:00")
-                            ),
+                            published_at=datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00")),
                             raw_data=item,
                         )
                     )
@@ -88,9 +84,7 @@ class YouTubeCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} YouTube mentions for keywords: {keywords}")
         return mentions
 
-    async def _collect_comments(
-        self, video_id: str, keywords: list[str]
-    ) -> list[CollectedMention]:
+    async def _collect_comments(self, video_id: str, keywords: list[str]) -> list[CollectedMention]:
         mentions = []
         params = {
             "part": "snippet",
@@ -125,9 +119,7 @@ class YouTubeCollector(BaseCollector):
                         author_handle=comment.get("authorChannelId", {}).get("value", ""),
                         author_profile_url=comment.get("authorChannelUrl", ""),
                         likes=comment.get("likeCount", 0),
-                        published_at=datetime.fromisoformat(
-                            comment["publishedAt"].replace("Z", "+00:00")
-                        ),
+                        published_at=datetime.fromisoformat(comment["publishedAt"].replace("Z", "+00:00")),
                         raw_data=item,
                     )
                 )

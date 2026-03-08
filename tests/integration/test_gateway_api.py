@@ -1,4 +1,5 @@
 """Integration tests for Gateway API."""
+
 import pytest
 
 

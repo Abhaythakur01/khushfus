@@ -36,17 +36,13 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
     await db.refresh(project)
 
     # Load keywords for response
-    result = await db.execute(
-        select(Project).where(Project.id == project.id).options(selectinload(Project.keywords))
-    )
+    result = await db.execute(select(Project).where(Project.id == project.id).options(selectinload(Project.keywords)))
     return result.scalar_one()
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id).options(selectinload(Project.keywords))
-    )
+    result = await db.execute(select(Project).where(Project.id == project_id).options(selectinload(Project.keywords)))
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -54,9 +50,7 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
-async def update_project(
-    project_id: int, data: ProjectUpdate, db: AsyncSession = Depends(get_db)
-):
+async def update_project(project_id: int, data: ProjectUpdate, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -67,16 +61,12 @@ async def update_project(
         setattr(project, field, value)
 
     await db.commit()
-    result = await db.execute(
-        select(Project).where(Project.id == project_id).options(selectinload(Project.keywords))
-    )
+    result = await db.execute(select(Project).where(Project.id == project_id).options(selectinload(Project.keywords)))
     return result.scalar_one()
 
 
 @router.post("/{project_id}/collect")
-async def trigger_collection(
-    project_id: int, data: CollectRequest, db: AsyncSession = Depends(get_db)
-):
+async def trigger_collection(project_id: int, data: CollectRequest, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -86,9 +76,7 @@ async def trigger_collection(
 
 
 @router.post("/{project_id}/keywords")
-async def add_keyword(
-    project_id: int, term: str, keyword_type: str = "brand", db: AsyncSession = Depends(get_db)
-):
+async def add_keyword(project_id: int, term: str, keyword_type: str = "brand", db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

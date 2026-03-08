@@ -53,9 +53,7 @@ from shared.models import (
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 GROUP_NAME = "export-service"
@@ -67,11 +65,12 @@ OUTPUT_DIR = Path("/app/exports_output")
 # Pydantic Schemas
 # ============================================================
 
+
 class ExportFilters(BaseModel):
     platform: Optional[str] = None
     sentiment: Optional[str] = None
-    date_from: Optional[str] = None          # ISO date string
-    date_to: Optional[str] = None            # ISO date string
+    date_from: Optional[str] = None  # ISO date string
+    date_to: Optional[str] = None  # ISO date string
     keyword: Optional[str] = None
     author_handle: Optional[str] = None
     min_likes: Optional[int] = None
@@ -83,7 +82,7 @@ class ExportFilters(BaseModel):
 class ExportCreate(BaseModel):
     project_id: int
     user_id: int = 1
-    format: str = "csv"                       # csv | excel | json | pdf
+    format: str = "csv"  # csv | excel | json | pdf
     filters: ExportFilters = ExportFilters()
 
 
@@ -102,9 +101,9 @@ class ExportJobOut(BaseModel):
 
 class IntegrationCreate(BaseModel):
     organization_id: int
-    integration_type: str                     # salesforce | hubspot | slack | tableau | webhook
+    integration_type: str  # salesforce | hubspot | slack | tableau | webhook
     name: str
-    config: dict                              # connection config (API keys, URLs, etc.)
+    config: dict  # connection config (API keys, URLs, etc.)
 
 
 class IntegrationOut(BaseModel):
@@ -128,6 +127,7 @@ class IntegrationSyncResult(BaseModel):
 # ============================================================
 # Export Generation Logic
 # ============================================================
+
 
 def _build_mention_filters(filters_json: str) -> list:
     """Parse filters JSON and return a list of SQLAlchemy where-clauses."""
@@ -174,11 +174,29 @@ def _build_mention_filters(filters_json: str) -> list:
 
 
 MENTION_COLUMNS = [
-    "id", "platform", "source_url", "text", "author_name", "author_handle",
-    "author_followers", "likes", "shares", "comments", "reach",
-    "sentiment", "sentiment_score", "language", "matched_keywords", "topics",
-    "author_influence_score", "author_is_bot", "author_org", "virality_score",
-    "published_at", "collected_at", "is_flagged",
+    "id",
+    "platform",
+    "source_url",
+    "text",
+    "author_name",
+    "author_handle",
+    "author_followers",
+    "likes",
+    "shares",
+    "comments",
+    "reach",
+    "sentiment",
+    "sentiment_score",
+    "language",
+    "matched_keywords",
+    "topics",
+    "author_influence_score",
+    "author_is_bot",
+    "author_org",
+    "virality_score",
+    "published_at",
+    "collected_at",
+    "is_flagged",
 ]
 
 
@@ -216,9 +234,7 @@ async def _fetch_mentions(session_factory, project_id: int, filters_json: str) -
     async with session_factory() as db:
         clauses = [Mention.project_id == project_id]
         clauses.extend(_build_mention_filters(filters_json))
-        result = await db.execute(
-            select(Mention).where(*clauses).order_by(Mention.published_at.desc())
-        )
+        result = await db.execute(select(Mention).where(*clauses).order_by(Mention.published_at.desc()))
         return result.scalars().all()
 
 
@@ -259,8 +275,10 @@ async def generate_excel_export(session_factory, job: ExportJob) -> tuple[str, i
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
     thin_border = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
     )
 
     # Write headers
@@ -350,8 +368,14 @@ async def generate_excel_export(session_factory, job: ExportJob) -> tuple[str, i
     top_authors = sorted(author_stats.values(), key=lambda x: x["mentions"], reverse=True)[:50]
 
     contrib_columns = [
-        "Name", "Handle", "Platform", "Followers",
-        "Mentions", "Total Likes", "Total Shares", "Influence Score",
+        "Name",
+        "Handle",
+        "Platform",
+        "Followers",
+        "Mentions",
+        "Total Likes",
+        "Total Shares",
+        "Influence Score",
     ]
     for col_idx, col_name in enumerate(contrib_columns, 1):
         cell = ws_contributors.cell(row=1, column=col_idx, value=col_name)
@@ -539,6 +563,7 @@ async def generate_pdf_export(session_factory, job: ExportJob) -> tuple[str, int
     filename_base = f"export_{job.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     try:
         from weasyprint import HTML as WeasyprintHTML  # noqa: N811
+
         filepath = OUTPUT_DIR / f"{filename_base}.pdf"
         WeasyprintHTML(string=html).write_pdf(str(filepath))
     except ImportError:
@@ -569,7 +594,7 @@ async def process_export_job(session_factory, job_id: int):
         await db.commit()
 
     try:
-        fmt_val = job.export_format.value if hasattr(job.export_format, 'value') else job.export_format
+        fmt_val = job.export_format.value if hasattr(job.export_format, "value") else job.export_format
         generator = EXPORT_GENERATORS.get(ExportFormat(fmt_val))
         if not generator:
             raise ValueError(f"Unsupported export format: {job.export_format}")
@@ -600,28 +625,25 @@ async def process_export_job(session_factory, job_id: int):
 # Integration Sync Logic
 # ============================================================
 
+
 async def sync_integration(
-    session_factory, integration_id: int, project_id: int | None = None,
+    session_factory,
+    integration_id: int,
+    project_id: int | None = None,
 ) -> IntegrationSyncResult:
     """Push mention data to the configured external system."""
     async with session_factory() as db:
         integration = await db.get(Integration, integration_id)
         if not integration:
-            return IntegrationSyncResult(
-                integration_id=integration_id, status="error", error="Integration not found"
-            )
+            return IntegrationSyncResult(integration_id=integration_id, status="error", error="Integration not found")
 
         if not integration.is_active:
-            return IntegrationSyncResult(
-                integration_id=integration_id, status="error", error="Integration is inactive"
-            )
+            return IntegrationSyncResult(integration_id=integration_id, status="error", error="Integration is inactive")
 
         try:
             config = json.loads(integration.config_json)
         except json.JSONDecodeError:
-            return IntegrationSyncResult(
-                integration_id=integration_id, status="error", error="Invalid configuration"
-            )
+            return IntegrationSyncResult(integration_id=integration_id, status="error", error="Invalid configuration")
 
         # Determine the project to sync (from config or param)
         sync_project_id = project_id or config.get("project_id")
@@ -633,19 +655,20 @@ async def sync_integration(
         # Fetch recent mentions (since last sync or last 24h)
         since = integration.last_sync_at or (datetime.utcnow() - timedelta(hours=24))
         result = await db.execute(
-            select(Mention).where(
+            select(Mention)
+            .where(
                 Mention.project_id == int(sync_project_id),
                 Mention.collected_at >= since,
-            ).order_by(Mention.collected_at.desc()).limit(1000)
+            )
+            .order_by(Mention.collected_at.desc())
+            .limit(1000)
         )
         mentions = result.scalars().all()
 
         if not mentions:
             integration.last_sync_at = datetime.utcnow()
             await db.commit()
-            return IntegrationSyncResult(
-                integration_id=integration_id, status="success", records_synced=0
-            )
+            return IntegrationSyncResult(integration_id=integration_id, status="success", records_synced=0)
 
         mention_data = [_mention_to_row(m) for m in mentions]
 
@@ -653,8 +676,9 @@ async def sync_integration(
     handler = INTEGRATION_HANDLERS.get(integration.integration_type)
     if not handler:
         return IntegrationSyncResult(
-            integration_id=integration_id, status="error",
-            error=f"Unknown integration type: {integration.integration_type}"
+            integration_id=integration_id,
+            status="error",
+            error=f"Unknown integration type: {integration.integration_type}",
         )
 
     try:
@@ -665,15 +689,11 @@ async def sync_integration(
             integration.last_sync_at = datetime.utcnow()
             await db.commit()
 
-        return IntegrationSyncResult(
-            integration_id=integration_id, status="success", records_synced=synced
-        )
+        return IntegrationSyncResult(integration_id=integration_id, status="success", records_synced=synced)
 
     except Exception as e:
         logger.error(f"Integration sync failed for {integration_id}: {e}", exc_info=True)
-        return IntegrationSyncResult(
-            integration_id=integration_id, status="error", error=str(e)[:500]
-        )
+        return IntegrationSyncResult(integration_id=integration_id, status="error", error=str(e)[:500])
 
 
 async def _sync_webhook(config: dict, mentions: list[dict]) -> int:
@@ -691,7 +711,7 @@ async def _sync_webhook(config: dict, mentions: list[dict]) -> int:
         # Send in batches of 100
         synced = 0
         for i in range(0, len(mentions), 100):
-            batch = mentions[i:i + 100]
+            batch = mentions[i : i + 100]
             resp = await client.post(
                 url,
                 json={"mentions": batch, "count": len(batch), "timestamp": datetime.utcnow().isoformat()},
@@ -904,6 +924,7 @@ INTEGRATION_HANDLERS = {
 # Background Consumer
 # ============================================================
 
+
 async def export_consumer_loop(bus: EventBus, session_factory):
     """Background consumer: listen for export requests on the stream."""
     await bus.ensure_group(STREAM_EXPORT, GROUP_NAME)
@@ -912,8 +933,11 @@ async def export_consumer_loop(bus: EventBus, session_factory):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_EXPORT, GROUP_NAME, CONSUMER_NAME,
-                count=5, block_ms=3000,
+                STREAM_EXPORT,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=5,
+                block_ms=3000,
             )
 
             for msg_id, data in messages:
@@ -938,6 +962,7 @@ async def export_consumer_loop(bus: EventBus, session_factory):
 # ============================================================
 # FastAPI Application
 # ============================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -985,6 +1010,7 @@ app.add_middleware(
 # Health Check
 # ============================================================
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "export-service", "version": "0.1.0"}
@@ -993,6 +1019,7 @@ async def health():
 # ============================================================
 # Export Endpoints
 # ============================================================
+
 
 @app.post("/exports", response_model=ExportJobOut, status_code=201)
 async def create_export(payload: ExportCreate, request: Request):
@@ -1024,12 +1051,15 @@ async def create_export(payload: ExportCreate, request: Request):
         await db.refresh(job)
 
         # Publish to stream for background processing
-        await bus.publish(STREAM_EXPORT, ExportRequestEvent(
-            export_job_id=job.id,
-            project_id=job.project_id,
-            export_format=fmt.value,
-            filters_json=filters_json,
-        ))
+        await bus.publish(
+            STREAM_EXPORT,
+            ExportRequestEvent(
+                export_job_id=job.id,
+                project_id=job.project_id,
+                export_format=fmt.value,
+                filters_json=filters_json,
+            ),
+        )
 
         return ExportJobOut(
             id=job.id,
@@ -1051,9 +1081,7 @@ async def list_exports(request: Request, project_id: int = Query(...)):
 
     async with session_factory() as db:
         result = await db.execute(
-            select(ExportJob)
-            .where(ExportJob.project_id == project_id)
-            .order_by(ExportJob.created_at.desc())
+            select(ExportJob).where(ExportJob.project_id == project_id).order_by(ExportJob.created_at.desc())
         )
         jobs = result.scalars().all()
 
@@ -1061,8 +1089,8 @@ async def list_exports(request: Request, project_id: int = Query(...)):
             ExportJobOut(
                 id=j.id,
                 project_id=j.project_id,
-                export_format=j.export_format.value if hasattr(j.export_format, 'value') else j.export_format,
-                status=j.status.value if hasattr(j.status, 'value') else j.status,
+                export_format=j.export_format.value if hasattr(j.export_format, "value") else j.export_format,
+                status=j.status.value if hasattr(j.status, "value") else j.status,
                 file_path=j.file_path,
                 row_count=j.row_count,
                 error_message=j.error_message,
@@ -1085,7 +1113,7 @@ async def get_export_status(export_id: int, request: Request):
 
         return {
             "id": job.id,
-            "status": job.status.value if hasattr(job.status, 'value') else job.status,
+            "status": job.status.value if hasattr(job.status, "value") else job.status,
             "row_count": job.row_count,
             "file_path": job.file_path,
             "error_message": job.error_message,
@@ -1137,6 +1165,7 @@ async def download_export(export_id: int, request: Request):
 # Integration Endpoints
 # ============================================================
 
+
 @app.post("/integrations", response_model=IntegrationOut, status_code=201)
 async def create_integration(payload: IntegrationCreate, request: Request):
     """Configure a new integration (Salesforce, HubSpot, Slack, Tableau, webhook)."""
@@ -1179,9 +1208,7 @@ async def list_integrations(request: Request, org_id: int = Query(...)):
 
     async with session_factory() as db:
         result = await db.execute(
-            select(Integration)
-            .where(Integration.organization_id == org_id)
-            .order_by(Integration.created_at.desc())
+            select(Integration).where(Integration.organization_id == org_id).order_by(Integration.created_at.desc())
         )
         integrations = result.scalars().all()
 

@@ -1,5 +1,5 @@
 """Tests for platform collectors."""
-import pytest
+
 from datetime import datetime, timedelta
 
 from src.collectors.base import BaseCollector, CollectedMention

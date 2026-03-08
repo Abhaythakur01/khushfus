@@ -13,16 +13,14 @@ Port: 8014
 """
 
 import logging
-import math
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Optional
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
 from shared.database import create_db, init_tables
 from shared.models import Platform, PlatformQuota
@@ -70,6 +68,7 @@ DEFAULT_QUOTAS: list[dict] = [
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
 
 class AcquireRequest(BaseModel):
     platform: str
@@ -119,6 +118,7 @@ class QuotaStatusOut(BaseModel):
 # Sliding Window Rate Limiter (Redis sorted sets)
 # ---------------------------------------------------------------------------
 
+
 class SlidingWindowLimiter:
     """
     Precision sliding window rate limiter using Redis sorted sets.
@@ -134,9 +134,7 @@ class SlidingWindowLimiter:
     def _key(self, platform: str, endpoint: str) -> str:
         return f"{RATE_LIMIT_PREFIX}:{platform}:{endpoint}"
 
-    async def acquire(
-        self, platform: str, endpoint: str, max_requests: int, window_seconds: int
-    ) -> AcquireResponse:
+    async def acquire(self, platform: str, endpoint: str, max_requests: int, window_seconds: int) -> AcquireResponse:
         """
         Attempt to acquire a rate limit slot.
         Returns whether the request is allowed, plus usage metadata.
@@ -234,6 +232,7 @@ class SlidingWindowLimiter:
 # Quota Configuration Helpers
 # ---------------------------------------------------------------------------
 
+
 async def get_quota_config(session_factory, platform: str, endpoint: str) -> dict | None:
     """Look up quota config from DB, falling back to defaults."""
     async with session_factory() as db:
@@ -281,6 +280,7 @@ async def seed_default_quotas(session_factory):
             existing = result.scalar_one_or_none()
             if not existing:
                 from datetime import datetime, timezone
+
                 quota = PlatformQuota(
                     platform=Platform(q["platform"]),
                     endpoint=q["endpoint"],
@@ -297,6 +297,7 @@ async def seed_default_quotas(session_factory):
 # ---------------------------------------------------------------------------
 # FastAPI Application
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -335,6 +336,7 @@ async def health():
 # REST Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.post("/acquire", response_model=AcquireResponse)
 async def acquire(body: AcquireRequest):
     """
@@ -367,9 +369,7 @@ async def list_quotas():
     session_factory = app.state.db_session
 
     async with session_factory() as db:
-        result = await db.execute(
-            select(PlatformQuota).order_by(PlatformQuota.platform, PlatformQuota.endpoint)
-        )
+        result = await db.execute(select(PlatformQuota).order_by(PlatformQuota.platform, PlatformQuota.endpoint))
         quotas = result.scalars().all()
         return [QuotaOut.model_validate(q) for q in quotas]
 
@@ -396,12 +396,12 @@ async def configure_quota(body: QuotaConfigRequest):
             await db.commit()
             await db.refresh(existing)
             logger.info(
-                f"Updated quota: {body.platform}/{body.endpoint} "
-                f"-> {body.max_requests} req / {body.window_seconds}s"
+                f"Updated quota: {body.platform}/{body.endpoint} -> {body.max_requests} req / {body.window_seconds}s"
             )
             return QuotaOut.model_validate(existing)
         else:
             from datetime import datetime, timezone
+
             quota = PlatformQuota(
                 platform=Platform(body.platform),
                 endpoint=body.endpoint,
@@ -414,8 +414,7 @@ async def configure_quota(body: QuotaConfigRequest):
             await db.commit()
             await db.refresh(quota)
             logger.info(
-                f"Created quota: {body.platform}/{body.endpoint} "
-                f"-> {body.max_requests} req / {body.window_seconds}s"
+                f"Created quota: {body.platform}/{body.endpoint} -> {body.max_requests} req / {body.window_seconds}s"
             )
             return QuotaOut.model_validate(quota)
 
@@ -433,9 +432,7 @@ async def platform_status(platform: str):
         raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
 
     async with session_factory() as db:
-        result = await db.execute(
-            select(PlatformQuota).where(PlatformQuota.platform == Platform(platform))
-        )
+        result = await db.execute(select(PlatformQuota).where(PlatformQuota.platform == Platform(platform)))
         quotas = result.scalars().all()
 
     if not quotas:
@@ -451,17 +448,19 @@ async def platform_status(platform: str):
         utilization = current_usage / q.max_requests if q.max_requests > 0 else 0.0
         window_resets_in = await limiter.get_window_reset(platform, q.endpoint, q.window_seconds)
 
-        statuses.append(QuotaStatusOut(
-            platform=platform,
-            endpoint=q.endpoint,
-            max_requests=q.max_requests,
-            window_seconds=q.window_seconds,
-            current_usage=current_usage,
-            remaining=remaining,
-            utilization_pct=round(utilization * 100, 2),
-            window_resets_in_seconds=round(window_resets_in, 2),
-            backoff_recommended=utilization >= 0.8,
-        ))
+        statuses.append(
+            QuotaStatusOut(
+                platform=platform,
+                endpoint=q.endpoint,
+                max_requests=q.max_requests,
+                window_seconds=q.window_seconds,
+                current_usage=current_usage,
+                remaining=remaining,
+                utilization_pct=round(utilization * 100, 2),
+                window_resets_in_seconds=round(window_resets_in, 2),
+                backoff_recommended=utilization >= 0.8,
+            )
+        )
 
     return statuses
 
@@ -472,4 +471,5 @@ async def platform_status(platform: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8014)

@@ -24,15 +24,14 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
 from shared.database import create_db, init_tables
 from shared.events import (
-    AuditEvent,
-    EventBus,
-    PublishRequestEvent,
     STREAM_AUDIT,
     STREAM_PUBLISH,
+    AuditEvent,
+    EventBus,
 )
 from shared.models import (
     Mention,
@@ -71,6 +70,7 @@ SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "15"))
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
 
 class PostCreate(BaseModel):
     project_id: int
@@ -116,6 +116,7 @@ class ApproveRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Platform Publishers
 # ---------------------------------------------------------------------------
+
 
 async def _acquire_rate_limit(platform: str, endpoint: str) -> dict:
     """Ask the rate limiter service for permission to call a platform API.
@@ -332,11 +333,13 @@ async def publish_post(post: ScheduledPost, session_factory, bus: EventBus) -> d
                 action=action,
                 resource_type="scheduled_post",
                 resource_id=post.id,
-                details=json.dumps({
-                    "platform": platform_key,
-                    "platform_post_id": result.get("platform_post_id", ""),
-                    "error": result.get("error", ""),
-                }),
+                details=json.dumps(
+                    {
+                        "platform": platform_key,
+                        "platform_post_id": result.get("platform_post_id", ""),
+                        "error": result.get("error", ""),
+                    }
+                ),
             ),
         )
     except Exception as e:
@@ -348,6 +351,7 @@ async def publish_post(post: ScheduledPost, session_factory, bus: EventBus) -> d
 # ---------------------------------------------------------------------------
 # Background Tasks
 # ---------------------------------------------------------------------------
+
 
 async def scheduler_loop(session_factory, bus: EventBus):
     """Periodically check for scheduled posts that are due and publish them."""
@@ -384,8 +388,11 @@ async def consume_publish_requests(session_factory, bus: EventBus):
     while True:
         try:
             messages = await bus.consume(
-                STREAM_PUBLISH, GROUP_NAME, CONSUMER_NAME,
-                count=10, block_ms=5000,
+                STREAM_PUBLISH,
+                GROUP_NAME,
+                CONSUMER_NAME,
+                count=10,
+                block_ms=5000,
             )
             for msg_id, data in messages:
                 try:
@@ -399,10 +406,7 @@ async def consume_publish_requests(session_factory, bus: EventBus):
                             ):
                                 await publish_post(post, session_factory, bus)
                             else:
-                                logger.warning(
-                                    f"Publish request for post {post_id}: "
-                                    f"not found or invalid status"
-                                )
+                                logger.warning(f"Publish request for post {post_id}: not found or invalid status")
                     else:
                         logger.warning(f"Publish request missing post_id: {data}")
                 except Exception as e:
@@ -418,6 +422,7 @@ async def consume_publish_requests(session_factory, bus: EventBus):
 # ---------------------------------------------------------------------------
 # FastAPI Application
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -468,6 +473,7 @@ async def health():
 # REST Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.post("/posts", response_model=PostOut, status_code=201)
 async def create_post(body: PostCreate):
     """Create a new scheduled post (defaults to DRAFT status)."""
@@ -498,10 +504,12 @@ async def create_post(body: PostCreate):
                     action="post.created",
                     resource_type="scheduled_post",
                     resource_id=post.id,
-                    details=json.dumps({
-                        "platform": body.platform,
-                        "scheduled_at": body.scheduled_at.isoformat(),
-                    }),
+                    details=json.dumps(
+                        {
+                            "platform": body.platform,
+                            "scheduled_at": body.scheduled_at.isoformat(),
+                        }
+                    ),
                 ),
             )
         except Exception as e:
@@ -672,4 +680,5 @@ async def create_reply(body: ReplyCreate):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8013)

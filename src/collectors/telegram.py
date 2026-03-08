@@ -31,9 +31,7 @@ class TelegramCollector(BaseCollector):
     async def validate_credentials(self) -> bool:
         return True  # Public channels don't need auth
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.channels:
             logger.debug("No Telegram channels configured, skipping")
             return []
@@ -92,9 +90,7 @@ class TelegramCollector(BaseCollector):
                 published = None
                 if date_el and date_el.get("datetime"):
                     try:
-                        published = datetime.fromisoformat(
-                            date_el["datetime"].replace("Z", "+00:00")
-                        )
+                        published = datetime.fromisoformat(date_el["datetime"].replace("Z", "+00:00"))
                     except Exception:
                         pass
 

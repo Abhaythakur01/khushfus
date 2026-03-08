@@ -4,7 +4,6 @@ Single source of truth for the database schema.
 """
 
 import enum
-import secrets
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
@@ -18,6 +17,7 @@ class Base(DeclarativeBase):
 # ============================================================
 # Enums
 # ============================================================
+
 
 class ProjectStatus(str, enum.Enum):
     ACTIVE = "active"
@@ -109,6 +109,7 @@ class WorkflowStatus(str, enum.Enum):
 # Identity & Multi-Tenancy
 # ============================================================
 
+
 class Organization(Base):
     __tablename__ = "organizations"
 
@@ -190,6 +191,7 @@ class ApiKey(Base):
 # Project & Keywords (tenant-scoped)
 # ============================================================
 
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -229,6 +231,7 @@ class Keyword(Base):
 # ============================================================
 # Mentions & Media
 # ============================================================
+
 
 class Mention(Base):
     __tablename__ = "mentions"
@@ -282,6 +285,7 @@ class Mention(Base):
 # Reports
 # ============================================================
 
+
 class Report(Base):
     __tablename__ = "reports"
 
@@ -301,6 +305,7 @@ class Report(Base):
 # ============================================================
 # Alerts
 # ============================================================
+
 
 class AlertRule(Base):
     __tablename__ = "alert_rules"
@@ -338,6 +343,7 @@ class AlertLog(Base):
 # Search
 # ============================================================
 
+
 class SavedSearch(Base):
     __tablename__ = "saved_searches"
 
@@ -354,6 +360,7 @@ class SavedSearch(Base):
 # ============================================================
 # Publishing & Engagement
 # ============================================================
+
 
 class ScheduledPost(Base):
     __tablename__ = "scheduled_posts"
@@ -379,6 +386,7 @@ class ScheduledPost(Base):
 # ============================================================
 # Export & Integration
 # ============================================================
+
 
 class ExportJob(Base):
     __tablename__ = "export_jobs"
@@ -413,6 +421,7 @@ class Integration(Base):
 # Competitive Intelligence
 # ============================================================
 
+
 class CompetitorBenchmark(Base):
     __tablename__ = "competitor_benchmarks"
 
@@ -428,6 +437,7 @@ class CompetitorBenchmark(Base):
 # ============================================================
 # Workflows & Automation
 # ============================================================
+
 
 class Workflow(Base):
     __tablename__ = "workflows"
@@ -446,6 +456,7 @@ class Workflow(Base):
 # Audit & Compliance
 # ============================================================
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -463,6 +474,7 @@ class AuditLog(Base):
 # ============================================================
 # Rate Limiting
 # ============================================================
+
 
 class PlatformQuota(Base):
     __tablename__ = "platform_quotas"

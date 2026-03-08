@@ -41,25 +41,39 @@ async def get_dashboard(
             platform_counts[p.value] = c
 
     # Engagement
-    eng = (await db.execute(
-        select(
-            func.sum(Mention.likes), func.sum(Mention.shares),
-            func.sum(Mention.comments), func.sum(Mention.reach),
-        ).where(*base)
-    )).one()
+    eng = (
+        await db.execute(
+            select(
+                func.sum(Mention.likes),
+                func.sum(Mention.shares),
+                func.sum(Mention.comments),
+                func.sum(Mention.reach),
+            ).where(*base)
+        )
+    ).one()
 
     # Top contributors
     top = await db.execute(
         select(
-            Mention.author_name, Mention.author_handle, Mention.author_followers,
-            Mention.platform, func.count(Mention.id).label("cnt"),
-        ).where(*base)
+            Mention.author_name,
+            Mention.author_handle,
+            Mention.author_followers,
+            Mention.platform,
+            func.count(Mention.id).label("cnt"),
+        )
+        .where(*base)
         .group_by(Mention.author_handle, Mention.author_name, Mention.author_followers, Mention.platform)
-        .order_by(func.count(Mention.id).desc()).limit(20)
+        .order_by(func.count(Mention.id).desc())
+        .limit(20)
     )
     top_contributors = [
-        {"name": r.author_name, "handle": r.author_handle, "followers": r.author_followers,
-         "platform": r.platform, "mentions": r.cnt}
+        {
+            "name": r.author_name,
+            "handle": r.author_handle,
+            "followers": r.author_followers,
+            "platform": r.platform,
+            "mentions": r.cnt,
+        }
         for r in top
     ]
 
@@ -68,12 +82,15 @@ async def get_dashboard(
     for i in range(days):
         d_start = start + timedelta(days=i)
         d_end = d_start + timedelta(days=1)
-        c = (await db.execute(
-            select(func.count(Mention.id)).where(
-                Mention.project_id == project_id,
-                Mention.collected_at >= d_start, Mention.collected_at < d_end,
+        c = (
+            await db.execute(
+                select(func.count(Mention.id)).where(
+                    Mention.project_id == project_id,
+                    Mention.collected_at >= d_start,
+                    Mention.collected_at < d_end,
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
         daily_trend.append({"date": d_start.strftime("%Y-%m-%d"), "mentions": c})
 
     return {
@@ -81,8 +98,10 @@ async def get_dashboard(
         "sentiment": {"breakdown": sentiment_counts, "average_score": round(float(avg), 4)},
         "platforms": platform_counts,
         "engagement": {
-            "total_likes": eng[0] or 0, "total_shares": eng[1] or 0,
-            "total_comments": eng[2] or 0, "total_reach": eng[3] or 0,
+            "total_likes": eng[0] or 0,
+            "total_shares": eng[1] or 0,
+            "total_comments": eng[2] or 0,
+            "total_reach": eng[3] or 0,
         },
         "top_contributors": top_contributors,
         "daily_trend": daily_trend,

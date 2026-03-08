@@ -38,9 +38,7 @@ class InstagramCollector(BaseCollector):
         except Exception:
             return False
 
-    async def collect(
-        self, keywords: list[str], since: datetime | None = None
-    ) -> list[CollectedMention]:
+    async def collect(self, keywords: list[str], since: datetime | None = None) -> list[CollectedMention]:
         if not self.access_token:
             logger.warning("Instagram access token not configured, skipping collection")
             return []
@@ -132,9 +130,7 @@ class InstagramCollector(BaseCollector):
                     )
 
                 # Collect comments on each media
-                comment_mentions = await self._collect_media_comments(
-                    item["id"], keywords, item.get("permalink", "")
-                )
+                comment_mentions = await self._collect_media_comments(item["id"], keywords, item.get("permalink", ""))
                 mentions.extend(comment_mentions)
 
         except Exception as e:
@@ -184,9 +180,7 @@ class InstagramCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_mentioned_media(
-        self, ig_user_id: str, keywords: list[str]
-    ) -> list[CollectedMention]:
+    async def _collect_mentioned_media(self, ig_user_id: str, keywords: list[str]) -> list[CollectedMention]:
         """Collect media where the business account is tagged."""
         mentions = []
         try:
@@ -225,9 +219,7 @@ class InstagramCollector(BaseCollector):
 
         return mentions
 
-    async def _collect_hashtag(
-        self, ig_user_id: str, hashtag: str, since: datetime | None
-    ) -> list[CollectedMention]:
+    async def _collect_hashtag(self, ig_user_id: str, hashtag: str, since: datetime | None) -> list[CollectedMention]:
         """Search for recent media with a specific hashtag."""
         mentions = []
         try:
