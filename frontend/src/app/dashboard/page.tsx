@@ -37,16 +37,16 @@ import {
 } from "lucide-react";
 import { cn, formatNumber, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
-} from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
-import { Select } from "@/components/ui/Select";
-import { Spinner } from "@/components/ui/Spinner";
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 
 // ---------------------------------------------------------------------------
 // Mock data generators

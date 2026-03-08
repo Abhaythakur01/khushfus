@@ -25,6 +25,7 @@ variables:
   POSTGRES_PASSWORD: khushfus_test
   DATABASE_URL: "postgresql+asyncpg://khushfus:khushfus_test@postgres:5432/khushfus_test"
   REDIS_URL: "redis://redis:6379/0"
+  PYTHONPATH: "."
 
 # ---------------------------------------------------------------------------
 # Cache pip downloads and node_modules
@@ -66,8 +67,7 @@ test-python:
     - redis:7-alpine
   before_script:
     - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
-    - pip install --cache-dir $PIP_CACHE_DIR -r requirements.txt
-    - pip install --cache-dir $PIP_CACHE_DIR pytest pytest-asyncio pytest-cov httpx
+    - pip install --cache-dir $PIP_CACHE_DIR -e ".[dev]"
   script:
     - pytest tests/ -v --cov=src --cov=services --cov=shared --cov-report=xml --cov-report=term
   artifacts:
@@ -92,7 +92,7 @@ test-migrations:
     - postgres:16-alpine
   before_script:
     - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
-    - pip install --cache-dir $PIP_CACHE_DIR alembic asyncpg sqlalchemy psycopg2-binary
+    - pip install --cache-dir $PIP_CACHE_DIR -e .
   script:
     - alembic upgrade head
     - alembic downgrade base
