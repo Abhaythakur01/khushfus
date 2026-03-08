@@ -9,13 +9,12 @@ Responsibilities:
 Long-running FastAPI service on port 8020.
 """
 
-import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Header, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -152,7 +151,9 @@ async def health():
 
 def _project_to_out(project: Project, keywords: list[Keyword] | None = None) -> ProjectOut:
     """Convert a Project ORM object to a ProjectOut schema."""
-    kw_list = keywords if keywords is not None else (project.keywords if hasattr(project, "keywords") and project.keywords else [])
+    kw_list = keywords if keywords is not None else (
+        project.keywords if hasattr(project, "keywords") and project.keywords else []
+    )
     return ProjectOut(
         id=project.id,
         organization_id=project.organization_id,

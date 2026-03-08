@@ -80,7 +80,10 @@ class DiscordCollector(BaseCollector):
                         CollectedMention(
                             platform=self.platform,
                             source_id=msg.get("id", ""),
-                            source_url=f"https://discord.com/channels/{msg.get('guild_id', '@me')}/{channel_id}/{msg.get('id', '')}",
+                            source_url=(
+                                f"https://discord.com/channels/"
+                                f"{msg.get('guild_id', '@me')}/{channel_id}/{msg.get('id', '')}"
+                            ),
                             text=text,
                             author_name=author.get("global_name", author.get("username", "")),
                             author_handle=f"{author.get('username', '')}#{author.get('discriminator', '0')}",

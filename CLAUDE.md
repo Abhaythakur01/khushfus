@@ -144,4 +144,4 @@ make test-coverage     # With HTML coverage report
 Uses SQLite+aiosqlite for unit tests, Postgres for integration. Fixtures in `conftest.py`.
 
 ## Ruff Config
-Line length 100, Python 3.11, rules: E, F, I, N, W.
+Line length 120, Python 3.11, rules: E, F, I, N, W.

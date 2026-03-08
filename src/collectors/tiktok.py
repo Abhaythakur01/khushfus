@@ -30,7 +30,6 @@ class TikTokCollector(BaseCollector):
             return []
 
         mentions: list[CollectedMention] = []
-        query_string = " OR ".join(keywords)
         start_date = since.strftime("%Y%m%d") if since else "20200101"
         end_date = datetime.utcnow().strftime("%Y%m%d")
 

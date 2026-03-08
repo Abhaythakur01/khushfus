@@ -32,15 +32,15 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_
+from sqlalchemy import select
 
 from shared.database import create_db, init_tables
 from shared.events import (
+    STREAM_EXPORT,
     EventBus,
     ExportRequestEvent,
-    STREAM_EXPORT,
 )
 from shared.models import (
     ExportFormat,
@@ -48,8 +48,6 @@ from shared.models import (
     ExportStatus,
     Integration,
     Mention,
-    Platform,
-    Sentiment,
 )
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -244,7 +242,7 @@ async def generate_csv_export(session_factory, job: ExportJob) -> tuple[str, int
 async def generate_excel_export(session_factory, job: ExportJob) -> tuple[str, int]:
     """Generate Excel workbook with multiple sheets: Mentions, Sentiment Summary, Top Contributors."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     mentions = await _fetch_mentions(session_factory, job.project_id, job.filters_json)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -351,7 +349,10 @@ async def generate_excel_export(session_factory, job: ExportJob) -> tuple[str, i
     # Sort by mention count descending, take top 50
     top_authors = sorted(author_stats.values(), key=lambda x: x["mentions"], reverse=True)[:50]
 
-    contrib_columns = ["Name", "Handle", "Platform", "Followers", "Mentions", "Total Likes", "Total Shares", "Influence Score"]
+    contrib_columns = [
+        "Name", "Handle", "Platform", "Followers",
+        "Mentions", "Total Likes", "Total Shares", "Influence Score",
+    ]
     for col_idx, col_name in enumerate(contrib_columns, 1):
         cell = ws_contributors.cell(row=1, column=col_idx, value=col_name)
         cell.font = header_font
@@ -403,7 +404,7 @@ async def generate_pdf_export(session_factory, job: ExportJob) -> tuple[str, int
     Generate PDF export reusing report template rendering approach.
     Falls back to HTML if WeasyPrint is not available.
     """
-    from jinja2 import Environment, BaseLoader
+    from jinja2 import BaseLoader, Environment
 
     mentions = await _fetch_mentions(session_factory, job.project_id, job.filters_json)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -537,7 +538,7 @@ async def generate_pdf_export(session_factory, job: ExportJob) -> tuple[str, int
     # Try PDF via WeasyPrint, fall back to HTML
     filename_base = f"export_{job.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     try:
-        from weasyprint import HTML as WeasyprintHTML
+        from weasyprint import HTML as WeasyprintHTML  # noqa: N811
         filepath = OUTPUT_DIR / f"{filename_base}.pdf"
         WeasyprintHTML(string=html).write_pdf(str(filepath))
     except ImportError:
@@ -568,7 +569,8 @@ async def process_export_job(session_factory, job_id: int):
         await db.commit()
 
     try:
-        generator = EXPORT_GENERATORS.get(ExportFormat(job.export_format.value if hasattr(job.export_format, 'value') else job.export_format))
+        fmt_val = job.export_format.value if hasattr(job.export_format, 'value') else job.export_format
+        generator = EXPORT_GENERATORS.get(ExportFormat(fmt_val))
         if not generator:
             raise ValueError(f"Unsupported export format: {job.export_format}")
 
@@ -598,7 +600,9 @@ async def process_export_job(session_factory, job_id: int):
 # Integration Sync Logic
 # ============================================================
 
-async def sync_integration(session_factory, integration_id: int, project_id: int | None = None) -> IntegrationSyncResult:
+async def sync_integration(
+    session_factory, integration_id: int, project_id: int | None = None,
+) -> IntegrationSyncResult:
     """Push mention data to the configured external system."""
     async with session_factory() as db:
         integration = await db.get(Integration, integration_id)
@@ -1000,7 +1004,10 @@ async def create_export(payload: ExportCreate, request: Request):
     try:
         fmt = ExportFormat(payload.format)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid format: {payload.format}. Must be csv, excel, json, or pdf.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid format: {payload.format}. Must be csv, excel, json, or pdf.",
+        )
 
     filters_json = payload.filters.model_dump_json() if payload.filters else ""
 
@@ -1100,7 +1107,10 @@ async def download_export(export_id: int, request: Request):
         if job.status != ExportStatus.COMPLETED:
             raise HTTPException(
                 status_code=409,
-                detail=f"Export is not ready. Current status: {job.status.value if hasattr(job.status, 'value') else job.status}",
+                detail=(
+                    f"Export is not ready. Current status: "
+                    f"{job.status.value if hasattr(job.status, 'value') else job.status}"
+                ),
             )
 
         if not job.file_path or not Path(job.file_path).exists():

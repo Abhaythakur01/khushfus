@@ -12,7 +12,6 @@ Responsibilities:
 Long-running FastAPI service on port 8010.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -20,20 +19,18 @@ import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import delete, select, update
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database import create_db, init_tables
-from shared.events import AuditEvent, EventBus, STREAM_AUDIT
+from shared.events import STREAM_AUDIT, AuditEvent, EventBus
 from shared.models import Organization, OrgMember, OrgRole, User
 
 # ---------------------------------------------------------------------------
@@ -699,7 +696,10 @@ def _extract_saml_attr(xml_str: str, attr_name: str) -> str | None:
         m = re.search(r"<(?:\w+:)?NameID[^>]*>([^<]+)</(?:\w+:)?NameID>", xml_str)
         return m.group(1).strip() if m else None
     # Try Attribute with Name containing attr_name
-    pattern = rf'<(?:\w+:)?Attribute[^>]*Name="[^"]*{re.escape(attr_name)}[^"]*"[^>]*>.*?<(?:\w+:)?AttributeValue[^>]*>([^<]+)</(?:\w+:)?AttributeValue>'
+    pattern = (
+        rf'<(?:\w+:)?Attribute[^>]*Name="[^"]*{re.escape(attr_name)}[^"]*"[^>]*>'
+        r'.*?<(?:\w+:)?AttributeValue[^>]*>([^<]+)</(?:\w+:)?AttributeValue>'
+    )
     m = re.search(pattern, xml_str, re.DOTALL)
     return m.group(1).strip() if m else None
 

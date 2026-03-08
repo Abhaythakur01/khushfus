@@ -27,8 +27,8 @@ import httpx
 from sqlalchemy import func, select
 
 from shared.database import create_db
-from shared.events import EventBus, STREAM_ANALYZED_MENTIONS, STREAM_ALERTS
-from shared.models import AlertLog, AlertRule, AlertSeverity, Mention, Sentiment
+from shared.events import STREAM_ANALYZED_MENTIONS, EventBus
+from shared.models import AlertLog, AlertRule, AlertSeverity, Mention
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -104,7 +104,10 @@ async def evaluate_rules(session_factory, bus: EventBus, data: dict):
 
                 if avg_per_window > 0 and recent > avg_per_window * rule.threshold:
                     triggered = True
-                    severity = AlertSeverity.HIGH if recent > avg_per_window * rule.threshold * 2 else AlertSeverity.MEDIUM
+                    severity = (
+                        AlertSeverity.HIGH if recent > avg_per_window * rule.threshold * 2
+                        else AlertSeverity.MEDIUM
+                    )
                     title = f"Volume Spike: {recent} mentions in {rule.window_minutes}min"
                     description = f"Average is {avg_per_window:.0f}, current is {recent} ({recent/avg_per_window:.1f}x)"
 
@@ -117,7 +120,10 @@ async def evaluate_rules(session_factory, bus: EventBus, data: dict):
                         triggered = True
                         severity = AlertSeverity.HIGH if neg_pct > 0.5 else AlertSeverity.MEDIUM
                         title = f"Negative Sentiment Surge: {neg_pct:.0%}"
-                        description = f"{recent_negative}/{recent_total} mentions are negative in last {rule.window_minutes}min"
+                        description = (
+                            f"{recent_negative}/{recent_total} mentions are negative "
+                            f"in last {rule.window_minutes}min"
+                        )
 
             elif rule.rule_type == "influencer":
                 if author_followers >= rule.threshold:
@@ -212,7 +218,10 @@ async def send_email_notification(rule: AlertRule, title: str, description: str)
     msg["To"] = recipient
 
     # Plain text body
-    text_body = f"{title}\n\n{description}\n\nProject ID: {rule.project_id}\nRule: {rule.name}\nTimestamp: {datetime.utcnow().isoformat()}"
+    text_body = (
+        f"{title}\n\n{description}\n\nProject ID: {rule.project_id}\n"
+        f"Rule: {rule.name}\nTimestamp: {datetime.utcnow().isoformat()}"
+    )
     # HTML body
     html_body = (
         f"<html><body>"

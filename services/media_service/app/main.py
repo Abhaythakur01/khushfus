@@ -11,10 +11,8 @@ Consumer group: 'media-service'
 """
 
 import asyncio
-import io
 import json
 import logging
-import math
 import os
 import subprocess
 import tempfile
@@ -28,10 +26,10 @@ from sqlalchemy import update
 
 from shared.database import create_db
 from shared.events import (
-    EventBus,
-    MediaResultEvent,
     STREAM_MEDIA_ANALYSIS,
     STREAM_MEDIA_RESULTS,
+    EventBus,
+    MediaResultEvent,
 )
 from shared.models import Mention
 
@@ -334,7 +332,7 @@ def extract_keyframes(video_path: str, max_frames: int = MAX_VIDEO_KEYFRAMES) ->
     pattern = os.path.join(out_dir, "scene_%04d.jpg")
     scene_cmd = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vf", f"select='gt(scene,0.3)',setpts=N/FRAME_RATE/TB",
+        "-vf", "select='gt(scene,0.3)',setpts=N/FRAME_RATE/TB",
         "-frames:v", str(max_frames),
         "-vsync", "vfr", "-q:v", "2", pattern,
     ]
@@ -537,7 +535,7 @@ async def process_message(
         result = await analyze_media(media_url, media_type, tmp_dir)
 
     # Publish result event
-    logo_names = ",".join(l["label"] for l in result.get("logos", []))
+    logo_names = ",".join(logo["label"] for logo in result.get("logos", []))
     event = MediaResultEvent(
         mention_id=mention_id,
         ocr_text=result["ocr_text"][:10000],   # cap field sizes
