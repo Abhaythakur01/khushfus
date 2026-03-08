@@ -17,21 +17,23 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 # Enum types used across tables
-plan_tier = sa.Enum("free", "starter", "professional", "enterprise", name="plantier")
-org_role = sa.Enum("owner", "admin", "manager", "analyst", "viewer", name="orgrole")
-project_status = sa.Enum("active", "paused", "archived", name="projectstatus")
+# create_type=False prevents SQLAlchemy from auto-creating enums during op.create_table,
+# since we create them explicitly in upgrade() with checkfirst=True.
+plan_tier = sa.Enum("free", "starter", "professional", "enterprise", name="plantier", create_type=False)
+org_role = sa.Enum("owner", "admin", "manager", "analyst", "viewer", name="orgrole", create_type=False)
+project_status = sa.Enum("active", "paused", "archived", name="projectstatus", create_type=False)
 platform = sa.Enum(
     "twitter", "facebook", "instagram", "linkedin", "youtube",
     "news", "blog", "forum", "reddit", "telegram", "quora", "press", "other",
-    name="platform",
+    name="platform", create_type=False,
 )
-sentiment = sa.Enum("positive", "negative", "neutral", "mixed", name="sentiment")
-report_type = sa.Enum("daily", "weekly", "monthly", "custom", name="reporttype")
-alert_severity = sa.Enum("low", "medium", "high", "critical", name="alertseverity")
-export_format = sa.Enum("csv", "excel", "pdf", "json", name="exportformat")
-export_status = sa.Enum("pending", "processing", "completed", "failed", name="exportstatus")
-publish_status = sa.Enum("draft", "scheduled", "published", "failed", name="publishstatus")
-workflow_status = sa.Enum("active", "paused", "completed", "failed", name="workflowstatus")
+sentiment = sa.Enum("positive", "negative", "neutral", "mixed", name="sentiment", create_type=False)
+report_type = sa.Enum("daily", "weekly", "monthly", "custom", name="reporttype", create_type=False)
+alert_severity = sa.Enum("low", "medium", "high", "critical", name="alertseverity", create_type=False)
+export_format = sa.Enum("csv", "excel", "pdf", "json", name="exportformat", create_type=False)
+export_status = sa.Enum("pending", "processing", "completed", "failed", name="exportstatus", create_type=False)
+publish_status = sa.Enum("draft", "scheduled", "published", "failed", name="publishstatus", create_type=False)
+workflow_status = sa.Enum("active", "paused", "completed", "failed", name="workflowstatus", create_type=False)
 
 
 def upgrade() -> None:

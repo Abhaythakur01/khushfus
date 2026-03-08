@@ -10,7 +10,7 @@ type PlatformVariant =
   | "news"
   | "blog"
   | "youtube";
-type BadgeVariant = SentimentVariant | PlatformVariant | "default";
+type BadgeVariant = SentimentVariant | PlatformVariant | "default" | "destructive" | "outline";
 
 interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -29,6 +29,8 @@ const variantStyles: Record<BadgeVariant, string> = {
   blog: "bg-violet-50 text-violet-700 ring-violet-600/20",
   youtube: "bg-red-50 text-red-700 ring-red-600/20",
   default: "bg-slate-100 text-slate-600 ring-slate-500/10",
+  destructive: "bg-danger-50 text-danger-700 ring-danger-600/20",
+  outline: "bg-transparent text-slate-700 ring-slate-300",
 };
 
 const sizeStyles = {

@@ -7,17 +7,23 @@ import { X } from "lucide-react";
 
 interface DialogProps {
   open: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-function Dialog({ open, onClose, children, className }: DialogProps) {
+function Dialog({ open, onClose, onOpenChange, children, className }: DialogProps) {
+  const handleClose = useCallback(() => {
+    onClose?.();
+    onOpenChange?.(false);
+  }, [onClose, onOpenChange]);
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleClose();
     },
-    [onClose],
+    [handleClose],
   );
 
   useEffect(() => {
@@ -38,7 +44,7 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
       {/* Overlay */}
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
+        onClick={handleClose}
       />
       {/* Panel */}
       <div
