@@ -5,7 +5,8 @@ import os
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from shared.models import Base
 
@@ -38,11 +39,29 @@ async def engine():
 
 @pytest_asyncio.fixture
 async def db_session(engine):
-    """Create a fresh database session for each test."""
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with session_factory() as session:
+    """Create a fresh database session for each test.
+
+    Uses a nested transaction (savepoint) so that fixture commits
+    don't persist between tests — the outer transaction is always
+    rolled back, giving each test a clean slate.
+    """
+    async with engine.connect() as conn:
+        trans = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False)
+
+        # Start a SAVEPOINT; session.commit() will release the savepoint
+        # but the outer transaction keeps everything isolated.
+        await conn.begin_nested()
+
+        @event.listens_for(session.sync_session, "after_transaction_end")
+        def restart_savepoint(sess, transaction):
+            if transaction.nested and not transaction._parent.nested:
+                sess.begin_nested()
+
         yield session
-        await session.rollback()
+
+        await session.close()
+        await trans.rollback()
 
 
 @pytest_asyncio.fixture

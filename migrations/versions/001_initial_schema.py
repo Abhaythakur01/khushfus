@@ -36,19 +36,32 @@ publish_status = sa.Enum("draft", "scheduled", "published", "failed", name="publ
 workflow_status = sa.Enum("active", "paused", "completed", "failed", name="workflowstatus", create_type=False)
 
 
+def _create_enum_if_not_exists(name: str, values: list[str]) -> None:
+    """Create a PostgreSQL ENUM type only if it doesn't already exist."""
+    values_sql = ", ".join(f"'{v}'" for v in values)
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({values_sql});"
+        f" EXCEPTION WHEN duplicate_object THEN null; END $$;"
+    )
+
+
 def upgrade() -> None:
-    # Create enum types
-    plan_tier.create(op.get_bind(), checkfirst=True)
-    org_role.create(op.get_bind(), checkfirst=True)
-    project_status.create(op.get_bind(), checkfirst=True)
-    platform.create(op.get_bind(), checkfirst=True)
-    sentiment.create(op.get_bind(), checkfirst=True)
-    report_type.create(op.get_bind(), checkfirst=True)
-    alert_severity.create(op.get_bind(), checkfirst=True)
-    export_format.create(op.get_bind(), checkfirst=True)
-    export_status.create(op.get_bind(), checkfirst=True)
-    publish_status.create(op.get_bind(), checkfirst=True)
-    workflow_status.create(op.get_bind(), checkfirst=True)
+    # Create enum types via raw SQL to avoid SQLAlchemy's _on_table_create
+    # re-creating them when op.create_table() fires for tables that use them.
+    _create_enum_if_not_exists("plantier", ["free", "starter", "professional", "enterprise"])
+    _create_enum_if_not_exists("orgrole", ["owner", "admin", "manager", "analyst", "viewer"])
+    _create_enum_if_not_exists("projectstatus", ["active", "paused", "archived"])
+    _create_enum_if_not_exists("platform", [
+        "twitter", "facebook", "instagram", "linkedin", "youtube",
+        "news", "blog", "forum", "reddit", "telegram", "quora", "press", "other",
+    ])
+    _create_enum_if_not_exists("sentiment", ["positive", "negative", "neutral", "mixed"])
+    _create_enum_if_not_exists("reporttype", ["daily", "weekly", "monthly", "custom"])
+    _create_enum_if_not_exists("alertseverity", ["low", "medium", "high", "critical"])
+    _create_enum_if_not_exists("exportformat", ["csv", "excel", "pdf", "json"])
+    _create_enum_if_not_exists("exportstatus", ["pending", "processing", "completed", "failed"])
+    _create_enum_if_not_exists("publishstatus", ["draft", "scheduled", "published", "failed"])
+    _create_enum_if_not_exists("workflowstatus", ["active", "paused", "completed", "failed"])
 
     # ── organizations ──
     op.create_table(
@@ -354,9 +367,9 @@ def downgrade() -> None:
     op.drop_table("organizations")
 
     # Drop enum types
-    for enum_type in [
-        workflow_status, publish_status, export_status, export_format,
-        alert_severity, report_type, sentiment, platform,
-        project_status, org_role, plan_tier,
+    for name in [
+        "workflowstatus", "publishstatus", "exportstatus", "exportformat",
+        "alertseverity", "reporttype", "sentiment", "platform",
+        "projectstatus", "orgrole", "plantier",
     ]:
-        enum_type.drop(op.get_bind(), checkfirst=True)
+        op.execute(f"DROP TYPE IF EXISTS {name}")
