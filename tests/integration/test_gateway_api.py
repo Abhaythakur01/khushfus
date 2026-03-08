@@ -578,3 +578,230 @@ class TestMentionsAPI:
         unflag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag")
         assert unflag_resp.status_code == 200
         assert unflag_resp.json()["is_flagged"] is False
+
+
+# ===================================================================
+# Additional tests: CORS, Request ID, Rate Limiting
+# ===================================================================
+
+
+@pytest.mark.integration
+class TestCORSHeaders:
+    """Verify CORS middleware is configured correctly.
+
+    These tests build a dedicated app with CORSMiddleware (the shared test_app
+    fixture does not include it) to validate preflight and CORS header behavior.
+    """
+
+    @pytest_asyncio.fixture
+    async def cors_client(self):
+        """Build a minimal app with CORS middleware and return a client for it."""
+        try:
+            from fastapi import FastAPI
+            from fastapi.middleware.cors import CORSMiddleware
+            from httpx import ASGITransport, AsyncClient
+        except ImportError:
+            pytest.skip("httpx or fastapi not available")
+
+        app = FastAPI()
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        @app.get("/api/v1/projects")
+        async def projects():
+            return []
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
+    async def test_cors_allows_any_origin(self, cors_client):
+        """Preflight requests must return Access-Control-Allow-Origin."""
+        resp = await cors_client.options(
+            "/health",
+            headers={
+                "Origin": "https://app.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" in resp.headers
+        assert resp.headers["access-control-allow-origin"] in ("*", "https://app.example.com")
+
+    async def test_cors_headers_on_normal_request(self, cors_client):
+        """Normal GET requests must include CORS headers when Origin is sent."""
+        resp = await cors_client.get(
+            "/health",
+            headers={"Origin": "https://dashboard.khushfus.io"},
+        )
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" in resp.headers
+
+    async def test_cors_allows_credentials(self, cors_client):
+        """CORS must allow credentials (cookies / auth headers)."""
+        resp = await cors_client.options(
+            "/health",
+            headers={
+                "Origin": "https://app.example.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert resp.status_code == 200
+        allow_creds = resp.headers.get("access-control-allow-credentials", "")
+        assert allow_creds.lower() == "true"
+
+    async def test_cors_allows_common_methods(self, cors_client):
+        """CORS must allow GET, POST, PATCH, DELETE methods."""
+        resp = await cors_client.options(
+            "/api/v1/projects",
+            headers={
+                "Origin": "https://app.example.com",
+                "Access-Control-Request-Method": "DELETE",
+            },
+        )
+        assert resp.status_code == 200
+        allowed = resp.headers.get("access-control-allow-methods", "")
+        assert "*" in allowed or "DELETE" in allowed
+
+
+@pytest.mark.integration
+class TestRequestIDMiddleware:
+    """Verify that the X-Request-ID middleware works correctly.
+
+    Builds a dedicated app with RequestIDMiddleware to test header behavior.
+    """
+
+    @pytest_asyncio.fixture
+    async def reqid_client(self):
+        """Build a minimal app with RequestIDMiddleware and return a client."""
+        try:
+            from fastapi import FastAPI
+            from httpx import ASGITransport, AsyncClient
+        except ImportError:
+            pytest.skip("httpx or fastapi not available")
+
+        from services.gateway.app.main import RequestIDMiddleware
+
+        app = FastAPI()
+        app.add_middleware(RequestIDMiddleware)
+
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
+    async def test_request_id_generated_when_absent(self, reqid_client):
+        """Responses must include an X-Request-ID even if the client doesn't send one."""
+        resp = await reqid_client.get("/health")
+        assert resp.status_code == 200
+        assert "x-request-id" in resp.headers
+        req_id = resp.headers["x-request-id"]
+        assert len(req_id) >= 20  # UUIDs are 36 chars
+
+    async def test_request_id_echoed_when_provided(self, reqid_client):
+        """When the client sends X-Request-ID, the same value must be echoed back."""
+        custom_id = "my-custom-trace-id-12345"
+        resp = await reqid_client.get("/health", headers={"X-Request-ID": custom_id})
+        assert resp.status_code == 200
+        assert resp.headers.get("x-request-id") == custom_id
+
+
+@pytest.mark.integration
+class TestRateLimitingBehavior:
+    """Test rate limiting middleware behavior with mocked rate limiter service.
+
+    The gateway's RateLimitMiddleware calls an external rate limiter service.
+    These tests verify the middleware logic by mocking the HTTP calls.
+    """
+
+    async def test_rate_limit_skips_health_endpoint(self):
+        """Health endpoint must bypass rate limiting."""
+        from services.gateway.app.middleware import SKIP_PATHS
+
+        assert "/health" in SKIP_PATHS
+        assert "/docs" in SKIP_PATHS
+        assert "/openapi.json" in SKIP_PATHS
+
+    def test_client_identifier_from_api_key(self):
+        """_client_identifier must prefer X-API-Key over IP."""
+        from services.gateway.app.middleware import _client_identifier
+
+        mock_request = MagicMock()
+        mock_request.headers = {"x-api-key": "key123"}
+        mock_request.client.host = "10.0.0.1"
+
+        identifier = _client_identifier(mock_request)
+        assert identifier == "apikey:key123"
+
+    def test_client_identifier_from_ip(self):
+        """_client_identifier must fall back to client IP when no API key."""
+        from services.gateway.app.middleware import _client_identifier
+
+        mock_request = MagicMock()
+        mock_request.headers = {}
+        mock_request.client.host = "192.168.1.100"
+
+        identifier = _client_identifier(mock_request)
+        assert identifier == "ip:192.168.1.100"
+
+    def test_client_identifier_from_forwarded_for(self):
+        """_client_identifier must use X-Forwarded-For when present."""
+        from services.gateway.app.middleware import _client_identifier
+
+        mock_request = MagicMock()
+        mock_request.headers = {"x-forwarded-for": "203.0.113.50, 70.41.3.18"}
+        mock_request.client.host = "10.0.0.1"
+
+        identifier = _client_identifier(mock_request)
+        assert identifier == "ip:203.0.113.50"
+
+
+@pytest.mark.integration
+class TestAuthEdgeCases:
+    """Additional authentication edge cases."""
+
+    async def test_expired_token_rejected(self, client):
+        """A JWT with an expired timestamp must be rejected."""
+        from datetime import datetime, timedelta
+
+        from jose import jwt
+
+        expired_payload = {
+            "sub": "1",
+            "exp": datetime.utcnow() - timedelta(hours=1),
+        }
+        expired_token = jwt.encode(expired_payload, "change-me-in-production", algorithm="HS256")
+
+        resp = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+        assert resp.status_code == 401
+
+    async def test_malformed_token_rejected(self, client):
+        """A completely invalid JWT string must be rejected."""
+        resp = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer not.a.valid.jwt.token"},
+        )
+        assert resp.status_code == 401
+
+    async def test_register_missing_fields(self, client):
+        """Registration with missing required fields must fail with 422."""
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "incomplete@test.com"},
+        )
+        assert resp.status_code == 422

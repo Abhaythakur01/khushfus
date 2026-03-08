@@ -2,12 +2,14 @@
 
 import asyncio
 import os
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from shared.events import EventBus
 from shared.models import Base
 
 # Use test database
@@ -143,3 +145,118 @@ async def sample_mentions(db_session, sample_project):
     db_session.add_all(mentions)
     await db_session.commit()
     return mentions
+
+
+# ---------------------------------------------------------------------------
+# Mock EventBus fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_event_bus():
+    """A fully mocked EventBus that records published events.
+
+    Usage:
+        def test_something(mock_event_bus):
+            bus = mock_event_bus
+            await bus.publish("stream", some_event)
+            assert bus.published_events["stream"][0] == some_event
+    """
+    bus = MagicMock(spec=EventBus)
+    bus.redis_url = "redis://mock:6379/0"
+    bus._redis = None
+    bus.published_events = {}  # stream -> list of events
+
+    async def _mock_publish(stream, event):
+        bus.published_events.setdefault(stream, []).append(event)
+        return f"mock-{len(bus.published_events[stream])}-0"
+
+    async def _mock_publish_batch(stream, events):
+        ids = []
+        for ev in events:
+            msg_id = await _mock_publish(stream, ev)
+            ids.append(msg_id)
+        return ids
+
+    bus.connect = AsyncMock()
+    bus.close = AsyncMock()
+    bus.publish = AsyncMock(side_effect=_mock_publish)
+    bus.publish_batch = AsyncMock(side_effect=_mock_publish_batch)
+    bus.publish_raw = AsyncMock(return_value="mock-raw-0")
+    bus.ensure_group = AsyncMock()
+    bus.consume = AsyncMock(return_value=[])
+    bus.ack = AsyncMock()
+    return bus
+
+
+# ---------------------------------------------------------------------------
+# Mock Redis fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_redis():
+    """A mock Redis client with commonly used async methods.
+
+    Provides mocked versions of xadd, xreadgroup, xack, xgroup_create,
+    get, set, delete, pipeline, and other common operations.
+    """
+    redis = AsyncMock()
+    redis.xadd = AsyncMock(return_value="1-0")
+    redis.xreadgroup = AsyncMock(return_value=[])
+    redis.xack = AsyncMock(return_value=1)
+    redis.xgroup_create = AsyncMock()
+    redis.xrange = AsyncMock(return_value=[])
+    redis.xdel = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock(return_value=True)
+    redis.delete = AsyncMock(return_value=1)
+    redis.exists = AsyncMock(return_value=0)
+    redis.expire = AsyncMock(return_value=True)
+    redis.incr = AsyncMock(return_value=1)
+
+    # Pipeline support
+    mock_pipeline = MagicMock()
+    mock_pipeline.xadd = MagicMock()
+    mock_pipeline.execute = AsyncMock(return_value=[])
+    redis.pipeline = MagicMock(return_value=mock_pipeline)
+
+    redis.aclose = AsyncMock()
+    return redis
+
+
+# ---------------------------------------------------------------------------
+# Mock Elasticsearch / OpenSearch fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_elasticsearch():
+    """A mock AsyncOpenSearch client with commonly used methods.
+
+    Mocks index, search, delete, bulk, and indices operations.
+    """
+    es = AsyncMock()
+
+    # Document operations
+    es.index = AsyncMock(return_value={"result": "created", "_id": "1"})
+    es.get = AsyncMock(return_value={"_source": {}, "_id": "1", "found": True})
+    es.delete = AsyncMock(return_value={"result": "deleted"})
+    es.bulk = AsyncMock(return_value={"errors": False, "items": []})
+    es.search = AsyncMock(return_value={
+        "hits": {
+            "total": {"value": 0, "relation": "eq"},
+            "hits": [],
+        },
+    })
+    es.count = AsyncMock(return_value={"count": 0})
+
+    # Index management
+    es.indices = AsyncMock()
+    es.indices.exists = AsyncMock(return_value=True)
+    es.indices.create = AsyncMock(return_value={"acknowledged": True})
+    es.indices.delete = AsyncMock(return_value={"acknowledged": True})
+    es.indices.refresh = AsyncMock()
+
+    es.close = AsyncMock()
+    return es
