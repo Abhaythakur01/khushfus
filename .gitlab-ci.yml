@@ -9,6 +9,7 @@ stages:
   - test
   - security
   - build
+  - post-build
   - deploy-staging
   - deploy-production
 
@@ -121,7 +122,7 @@ dependency-scan:
       done
 
 container-scan:
-  stage: security
+  stage: post-build
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
