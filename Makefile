@@ -8,9 +8,11 @@ SHELL := /bin/bash
 .PHONY: help test test-all test-integration test-coverage \
         lint format \
         dev dev-phase1 dev-phase2 dev-phase3 dev-phase4 \
+        dev-tools dev-tools-down \
         logs down build \
         frontend frontend-build \
         migrate migrate-down migrate-reset \
+        load-test load-test-ws \
         clean
 
 # =============================================================================
@@ -100,6 +102,14 @@ dev-phase3:
 dev-phase4:
 	docker-compose up -d competitive scheduler audit realtime
 
+## dev-tools: Start dev-only tools (MailHog, pgAdmin, Redis Commander)
+dev-tools:
+	docker-compose --profile dev up -d mailhog pgadmin redis-commander
+
+## dev-tools-down: Stop dev-only tools
+dev-tools-down:
+	docker-compose --profile dev stop mailhog pgadmin redis-commander
+
 # =============================================================================
 # Frontend
 # =============================================================================
@@ -127,6 +137,18 @@ migrate-down:
 ## migrate-reset: Reset DB and re-run all migrations
 migrate-reset:
 	alembic downgrade base && alembic upgrade head
+
+# =============================================================================
+# Load Testing
+# =============================================================================
+
+## load-test: Run k6 gateway load test via Docker
+load-test:
+	docker run --rm -i --network host grafana/k6 run - <tests/load/gateway_load.js
+
+## load-test-ws: Run k6 WebSocket load test via Docker
+load-test-ws:
+	docker run --rm -i --network host grafana/k6 run - <tests/load/websocket_load.js
 
 # =============================================================================
 # Cleanup

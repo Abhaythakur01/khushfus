@@ -1,0 +1,77 @@
+# Development overrides — auto-loaded by docker-compose alongside docker-compose.yml
+# For production, use:  docker-compose -f docker-compose.yml up
+# To start dev tools:   docker-compose --profile dev up -d
+
+services:
+  # --------------------------------------------------------------------------
+  # Debug logging for core services in development
+  # --------------------------------------------------------------------------
+  gateway:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  collector:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  analyzer:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  query:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  notification:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  identity:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  realtime:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  # --------------------------------------------------------------------------
+  # Development-only services (started with --profile dev)
+  # --------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"   # SMTP server
+      - "8025:8025"   # Web UI
+    profiles: ["dev"]
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@khushfus.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    profiles: ["dev"]
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: "local:redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["dev"]
+
+volumes:
+  pgadmin_data:
