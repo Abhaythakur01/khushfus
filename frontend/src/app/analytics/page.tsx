@@ -82,12 +82,24 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Seeded PRNG to avoid hydration mismatches (server vs client Math.random)
+// ---------------------------------------------------------------------------
+
+function createSeededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mock data generators
 // ---------------------------------------------------------------------------
 
 function makeDateSeries(days: number) {
   const result = [];
-  const now = new Date();
+  const now = new Date(2026, 2, 8); // fixed date to avoid hydration issues
   for (let i = days; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
@@ -97,26 +109,29 @@ function makeDateSeries(days: number) {
 }
 
 function generateSentimentOverTime(days: number) {
+  const rand = createSeededRandom(days * 11 + 1);
   const dates = makeDateSeries(days);
   return dates.map((date) => {
-    const pos = 30 + Math.floor(Math.random() * 30);
-    const neg = 8 + Math.floor(Math.random() * 15);
+    const pos = 30 + Math.floor(rand() * 30);
+    const neg = 8 + Math.floor(rand() * 15);
     const neu = 100 - pos - neg;
     return { date, positive: pos, neutral: neu, negative: neg };
   });
 }
 
 function generateSentimentByPlatform() {
+  const rand = createSeededRandom(22);
   const platforms = ["Twitter", "Facebook", "Instagram", "LinkedIn", "YouTube", "Reddit"];
   return platforms.map((platform) => ({
     platform,
-    positive: 30 + Math.floor(Math.random() * 35),
-    neutral: 20 + Math.floor(Math.random() * 20),
-    negative: 5 + Math.floor(Math.random() * 15),
+    positive: 30 + Math.floor(rand() * 35),
+    neutral: 20 + Math.floor(rand() * 20),
+    negative: 5 + Math.floor(rand() * 15),
   }));
 }
 
 function generateSentimentHeatmap() {
+  const rand = createSeededRandom(33);
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const grid: { day: string; hour: number; value: number }[] = [];
@@ -128,7 +143,7 @@ function generateSentimentHeatmap() {
       grid.push({
         day,
         hour,
-        value: Math.max(-1, Math.min(1, base + weekend + (Math.random() - 0.5) * 0.6)),
+        value: Math.max(-1, Math.min(1, base + weekend + (rand() - 0.5) * 0.6)),
       });
     }
   }
@@ -136,6 +151,7 @@ function generateSentimentHeatmap() {
 }
 
 function generateTopMentions(sentiment: "positive" | "negative") {
+  const rand = createSeededRandom(sentiment === "positive" ? 44 : 55);
   const posTexts = [
     "Absolutely love the new analytics dashboard! It gives us actionable insights in real-time.",
     "Customer support was incredible today. Issue resolved in under 10 minutes!",
@@ -154,22 +170,23 @@ function generateTopMentions(sentiment: "positive" | "negative") {
   return texts.map((text, i) => ({
     id: i + 1,
     text,
-    author: `@user${Math.floor(Math.random() * 9000) + 1000}`,
+    author: `@user${Math.floor(rand() * 9000) + 1000}`,
     platform: ["Twitter", "Facebook", "Instagram", "LinkedIn", "Reddit"][i % 5],
-    engagement: Math.floor(Math.random() * 2000) + 50,
+    engagement: Math.floor(rand() * 2000) + 50,
     score: sentiment === "positive"
-      ? +(0.6 + Math.random() * 0.4).toFixed(2)
-      : +(-0.6 - Math.random() * 0.4).toFixed(2),
+      ? +(0.6 + rand() * 0.4).toFixed(2)
+      : +(-0.6 - rand() * 0.4).toFixed(2),
   }));
 }
 
 function generateEngagementOverTime(days: number) {
+  const rand = createSeededRandom(days * 7 + 66);
   const dates = makeDateSeries(days);
   return dates.map((date) => ({
     date,
-    likes: Math.floor(Math.random() * 5000) + 1000,
-    shares: Math.floor(Math.random() * 1500) + 200,
-    comments: Math.floor(Math.random() * 800) + 100,
+    likes: Math.floor(rand() * 5000) + 1000,
+    shares: Math.floor(rand() * 1500) + 200,
+    comments: Math.floor(rand() * 800) + 100,
   }));
 }
 
@@ -184,21 +201,23 @@ function generateTopEngagingPosts() {
     { author: "@cloudexperts", text: "New integration with major CRM platforms just announced...", platform: "LinkedIn" },
     { author: "@brandwatch", text: "Competitive analysis shows interesting positioning in the enterprise segment...", platform: "Instagram" },
   ];
+  const rand = createSeededRandom(77);
   return posts.map((p, i) => ({
     ...p,
     id: i + 1,
-    likes: Math.floor(Math.random() * 8000) + 500,
-    shares: Math.floor(Math.random() * 3000) + 100,
-    comments: Math.floor(Math.random() * 1200) + 50,
-    virality: +(Math.random() * 100).toFixed(1),
+    likes: Math.floor(rand() * 8000) + 500,
+    shares: Math.floor(rand() * 3000) + 100,
+    comments: Math.floor(rand() * 1200) + 50,
+    virality: +(rand() * 100).toFixed(1),
   }));
 }
 
 function generateEngagementByPlatform() {
+  const rand = createSeededRandom(88);
   const platforms = ["Twitter", "Facebook", "Instagram", "LinkedIn", "YouTube", "Reddit"];
   return platforms.map((platform) => ({
     platform,
-    engagement: Math.floor(Math.random() * 80) + 20,
+    engagement: Math.floor(rand() * 80) + 20,
   }));
 }
 
@@ -228,17 +247,19 @@ function generateTopAuthors() {
     { handle: "@cloudnative", name: "CloudNative", isBot: false },
     { handle: "@alexkim", name: "Alex Kim", isBot: false },
   ];
+  const rand = createSeededRandom(99);
   return names.map((n, i) => ({
     ...n,
-    followers: Math.floor(Math.random() * 500000) + 1000,
-    mentions: Math.floor(Math.random() * 200) + 10,
-    avgSentiment: +((Math.random() - 0.2) * 1).toFixed(2),
-    influence: +(Math.random() * 100).toFixed(1),
+    followers: Math.floor(rand() * 500000) + 1000,
+    mentions: Math.floor(rand() * 200) + 10,
+    avgSentiment: +((rand() - 0.2) * 1).toFixed(2),
+    influence: +(rand() * 100).toFixed(1),
   }));
 }
 
 function generateBotVsHuman() {
-  const botPct = 12 + Math.floor(Math.random() * 10);
+  const rand = createSeededRandom(111);
+  const botPct = 12 + Math.floor(rand() * 10);
   return [
     { name: "Human", value: 100 - botPct, color: "#22c55e" },
     { name: "Bot", value: botPct, color: "#ef4444" },
@@ -255,35 +276,38 @@ function generateWordCloud() {
     "quality", "value", "platform", "community", "feedback",
     "strategy", "market", "competition", "scalability", "design",
   ];
+  const rand = createSeededRandom(122);
   return words.map((word) => ({
     text: word,
-    weight: Math.floor(Math.random() * 80) + 20,
-    sentiment: Math.random() > 0.3 ? (Math.random() > 0.5 ? "positive" : "neutral") : "negative",
+    weight: Math.floor(rand() * 80) + 20,
+    sentiment: rand() > 0.3 ? (rand() > 0.5 ? "positive" : "neutral") : "negative",
   }));
 }
 
 function generateTopicTrends(days: number) {
+  const rand = createSeededRandom(days * 3 + 133);
   const dates = makeDateSeries(days);
   const topics = ["Product Launch", "Customer Service", "Pricing", "AI Features", "Mobile App"];
   return dates.map((date) => {
     const entry: Record<string, any> = { date };
     topics.forEach((t) => {
-      entry[t] = Math.floor(Math.random() * 80) + 10;
+      entry[t] = Math.floor(rand() * 80) + 10;
     });
     return entry;
   });
 }
 
 function generateKeywordPerformance() {
+  const rand = createSeededRandom(144);
   const keywords = [
     "brand name", "product launch", "customer support", "pricing",
     "mobile app", "AI", "integration", "dashboard", "analytics", "API",
   ];
   return keywords.map((keyword) => ({
     keyword,
-    mentions: Math.floor(Math.random() * 1500) + 100,
-    avgSentiment: +((Math.random() - 0.2) * 1).toFixed(2),
-    trend: Math.random() > 0.3 ? (Math.random() > 0.4 ? "up" : "flat") : "down",
+    mentions: Math.floor(rand() * 1500) + 100,
+    avgSentiment: +((rand() - 0.2) * 1).toFixed(2),
+    trend: rand() > 0.3 ? (rand() > 0.4 ? "up" : "flat") : "down",
   }));
 }
 

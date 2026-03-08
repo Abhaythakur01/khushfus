@@ -129,6 +129,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
     client_name: str
+    organization_id: int | None = None
     platforms: str = "twitter,facebook,instagram,linkedin,youtube"
     keywords: list[KeywordCreate] = []
     competitor_ids: str | None = None

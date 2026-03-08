@@ -49,18 +49,31 @@ import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 
 // ---------------------------------------------------------------------------
+// Seeded PRNG to avoid hydration mismatches (server vs client Math.random)
+// ---------------------------------------------------------------------------
+
+function createSeededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mock data generators
 // ---------------------------------------------------------------------------
 
 function generateMentionTimeSeries(days: number) {
+  const rand = createSeededRandom(days * 42 + 7);
   const data = [];
-  const now = new Date();
+  const now = new Date(2026, 2, 8); // fixed date to avoid hydration issues
   for (let i = days; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
-    const base = 120 + Math.floor(Math.random() * 80);
-    const positive = Math.floor(base * (0.35 + Math.random() * 0.15));
-    const negative = Math.floor(base * (0.1 + Math.random() * 0.1));
+    const base = 120 + Math.floor(rand() * 80);
+    const positive = Math.floor(base * (0.35 + rand() * 0.15));
+    const negative = Math.floor(base * (0.1 + rand() * 0.1));
     const neutral = base - positive - negative;
     data.push({
       date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -74,8 +87,9 @@ function generateMentionTimeSeries(days: number) {
 }
 
 function generateSentimentDistribution() {
-  const positive = 42 + Math.floor(Math.random() * 10);
-  const negative = 12 + Math.floor(Math.random() * 8);
+  const rand = createSeededRandom(101);
+  const positive = 42 + Math.floor(rand() * 10);
+  const negative = 12 + Math.floor(rand() * 8);
   const neutral = 100 - positive - negative;
   return [
     { name: "Positive", value: positive, color: "#22c55e" },
@@ -96,19 +110,21 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 function generatePlatformData() {
+  const rand = createSeededRandom(202);
   return [
-    { platform: "Twitter", mentions: 1840 + Math.floor(Math.random() * 400) },
-    { platform: "Facebook", mentions: 920 + Math.floor(Math.random() * 200) },
-    { platform: "Instagram", mentions: 760 + Math.floor(Math.random() * 200) },
-    { platform: "LinkedIn", mentions: 540 + Math.floor(Math.random() * 150) },
-    { platform: "YouTube", mentions: 320 + Math.floor(Math.random() * 100) },
-    { platform: "Reddit", mentions: 680 + Math.floor(Math.random() * 200) },
-    { platform: "News", mentions: 440 + Math.floor(Math.random() * 120) },
-    { platform: "Blogs", mentions: 210 + Math.floor(Math.random() * 80) },
+    { platform: "Twitter", mentions: 1840 + Math.floor(rand() * 400) },
+    { platform: "Facebook", mentions: 920 + Math.floor(rand() * 200) },
+    { platform: "Instagram", mentions: 760 + Math.floor(rand() * 200) },
+    { platform: "LinkedIn", mentions: 540 + Math.floor(rand() * 150) },
+    { platform: "YouTube", mentions: 320 + Math.floor(rand() * 100) },
+    { platform: "Reddit", mentions: 680 + Math.floor(rand() * 200) },
+    { platform: "News", mentions: 440 + Math.floor(rand() * 120) },
+    { platform: "Blogs", mentions: 210 + Math.floor(rand() * 80) },
   ].sort((a, b) => b.mentions - a.mentions);
 }
 
 function generateTrendingTopics() {
+  const rand = createSeededRandom(303);
   const topics = [
     "Product Launch",
     "Customer Service",
@@ -123,9 +139,9 @@ function generateTrendingTopics() {
   ];
   return topics.map((name, i) => ({
     name,
-    mentions: Math.floor(600 - i * 50 + Math.random() * 80),
-    sentiment: Math.random() > 0.3 ? (Math.random() > 0.5 ? "positive" : "neutral") : "negative",
-    trend: Math.random() > 0.3 ? (Math.random() > 0.4 ? "up" : "flat") : "down",
+    mentions: Math.floor(600 - i * 50 + rand() * 80),
+    sentiment: rand() > 0.3 ? (rand() > 0.5 ? "positive" : "neutral") : "negative",
+    trend: rand() > 0.3 ? (rand() > 0.4 ? "up" : "flat") : "down",
   }));
 }
 
@@ -147,6 +163,7 @@ function generateAlerts() {
 }
 
 function generateRecentMentions() {
+  const rand = createSeededRandom(404);
   const platforms = ["Twitter", "Facebook", "Instagram", "LinkedIn", "Reddit"] as const;
   const authors = [
     { name: "Sarah Chen", handle: "@sarahchen" },
@@ -179,10 +196,10 @@ function generateRecentMentions() {
     author,
     text: texts[i],
     sentiment: sentiments[i],
-    likes: Math.floor(Math.random() * 500),
-    shares: Math.floor(Math.random() * 120),
-    comments: Math.floor(Math.random() * 80),
-    time: `${Math.floor(Math.random() * 23) + 1}h ago`,
+    likes: Math.floor(rand() * 500),
+    shares: Math.floor(rand() * 120),
+    comments: Math.floor(rand() * 80),
+    time: `${Math.floor(rand() * 23) + 1}h ago`,
   }));
 }
 
@@ -293,17 +310,18 @@ export default function DashboardPage() {
     () => mentionTimeSeries.reduce((s, d) => s + d.total, 0),
     [mentionTimeSeries]
   );
-  const prevPeriodMentions = Math.floor(totalMentions * (0.85 + Math.random() * 0.25));
+  const statsRand = useMemo(() => createSeededRandom(days * 13 + 505), [days]);
+  const prevPeriodMentions = Math.floor(totalMentions * (0.85 + statsRand() * 0.25));
   const mentionChange = ((totalMentions - prevPeriodMentions) / prevPeriodMentions) * 100;
-  const avgSentiment = 0.24 + Math.random() * 0.2;
-  const totalReach = 1_240_000 + Math.floor(Math.random() * 500_000);
+  const avgSentiment = 0.24 + statsRand() * 0.2;
+  const totalReach = 1_240_000 + Math.floor(statsRand() * 500_000);
   const activeAlerts = alerts.length;
 
   // Sparkline data for stat cards
   const sparkMentions = mentionTimeSeries.slice(-14).map((d) => d.total);
   const sparkSentiment = mentionTimeSeries.slice(-14).map((d) => d.positive / (d.total || 1));
-  const sparkReach = mentionTimeSeries.slice(-14).map((_, i) => 40000 + Math.floor(Math.random() * 20000));
-  const sparkAlerts = mentionTimeSeries.slice(-14).map(() => Math.floor(Math.random() * 5));
+  const sparkReach = mentionTimeSeries.slice(-14).map(() => 40000 + Math.floor(statsRand() * 20000));
+  const sparkAlerts = mentionTimeSeries.slice(-14).map(() => Math.floor(statsRand() * 5));
 
   if (isLoading) {
     return (

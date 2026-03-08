@@ -48,14 +48,12 @@ services:
       retries: 10
 
   jaeger:
-    image: jaegertracing/all-in-one:1.55
+    image: jaegertracing/all-in-one:1.54
     ports:
-      - "16686:16686"  # Jaeger UI
-      - "4317:4317"    # OTLP gRPC
-      - "4318:4318"    # OTLP HTTP
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
     environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    restart: unless-stopped
+      COLLECTOR_OTLP_ENABLED: "true"
 
   # ============================================================
   # Core Services (Phase 1)
@@ -74,6 +72,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus
       REDIS_URL: redis://redis:6379/0
       ELASTICSEARCH_URL: http://elasticsearch:9200
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

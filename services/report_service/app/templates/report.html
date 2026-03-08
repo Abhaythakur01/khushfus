@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project_name }} — {{ report_type|capitalize }} Report{% endblock %}
+
+{% block content %}
+{# ── Compute helper values ──────────────────────────────────── #}
+{% set sentiment = report.sentiment.breakdown %}
+{% set total = report.total_mentions %}
+{% set positive = sentiment.get('positive', 0) %}
+{% set negative = sentiment.get('negative', 0) %}
+{% set neutral = sentiment.get('neutral', 0) %}
+{% set mixed = sentiment.get('mixed', 0) %}
+{% set avg_score = report.sentiment.average_score %}
+{% set platforms = report.platforms %}
+{% set engagement = report.engagement %}
+{% set top_contributors = report.top_contributors %}
+{% set keyword_frequency = report.keyword_frequency %}
+{% set influencers = report.influencers %}
+{% set flagged = report.flagged_mentions %}
+{% set max_platform_count = platforms.values()|list|max if platforms else 1 %}
+{% set sorted_keywords = keyword_frequency|dictsort(by='value', reverse=true) %}
+
+{# ── Header ─────────────────────────────────────────────────── #}
+<div class="report-header">
+  <div class="brand">
+    <div class="brand-logo">Kf</div>
+    <div>
+      <div class="brand-name">KhushFus</div>
+      <div class="brand-tagline">Social Listening &amp; Intelligence</div>
+    </div>
+  </div>
+  <div class="report-meta">
+    <div class="report-type-badge">{{ report_type }} report</div>
+    <div class="project-name">{{ project_name }}</div>
+    <div class="date-range">{{ report.period.start[:10] }} &mdash; {{ report.period.end[:10] }}</div>
+  </div>
+</div>
+
+{# ── Executive Summary ──────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: var(--color-primary-light); color: var(--color-primary);">&#9733;</div>
+    <h2>Executive Summary</h2>
+  </div>
+  <div class="exec-summary">
+    <p>
+      During the reporting period, <strong>{{ project_name }}</strong> received a total of
+      <strong>{{ "{:,}".format(total) }}</strong> mentions across
+      <strong>{{ platforms|length }}</strong> platform{{ 's' if platforms|length != 1 else '' }}.
+      {% if total > 0 %}
+        Sentiment was
+        {% if avg_score > 0.3 %}<strong>predominantly positive</strong> (avg score: {{ avg_score }})
+        {% elif avg_score < -0.3 %}<strong>predominantly negative</strong> (avg score: {{ avg_score }})
+        {% else %}<strong>mostly neutral</strong> (avg score: {{ avg_score }})
+        {% endif %}
+        with <strong>{{ positive }}</strong> positive, <strong>{{ negative }}</strong> negative,
+        and <strong>{{ neutral }}</strong> neutral mentions.
+      {% else %}
+        No mentions were recorded during this period.
+      {% endif %}
+      {% if flagged > 0 %}
+        <strong>{{ flagged }}</strong> mention{{ 's' if flagged != 1 else '' }} {{ 'were' if flagged != 1 else 'was' }} flagged for review.
+      {% endif %}
+      Total engagement reached <strong>{{ "{:,}".format(engagement.total_reach) }}</strong> impressions
+      with <strong>{{ "{:,}".format(engagement.total_likes) }}</strong> likes,
+      <strong>{{ "{:,}".format(engagement.total_shares) }}</strong> shares, and
+      <strong>{{ "{:,}".format(engagement.total_comments) }}</strong> comments.
+    </p>
+  </div>
+</div>
+
+{# ── Key Metrics ─────────────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #dbeafe; color: #2563eb;">&#9776;</div>
+    <h2>Mention Volume &amp; Engagement</h2>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card primary">
+      <div class="stat-label">Total Mentions</div>
+      <div class="stat-value">{{ "{:,}".format(total) }}</div>
+      <div class="stat-sub">across {{ platforms|length }} platforms</div>
+    </div>
+    <div class="stat-card positive">
+      <div class="stat-label">Total Reach</div>
+      <div class="stat-value">{{ "{:,}".format(engagement.total_reach) }}</div>
+      <div class="stat-sub">impressions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Likes</div>
+      <div class="stat-value">{{ "{:,}".format(engagement.total_likes) }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Shares</div>
+      <div class="stat-value">{{ "{:,}".format(engagement.total_shares) }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Comments</div>
+      <div class="stat-value">{{ "{:,}".format(engagement.total_comments) }}</div>
+    </div>
+    {% if flagged > 0 %}
+    <div class="stat-card warning">
+      <div class="stat-label">Flagged</div>
+      <div class="stat-value">{{ flagged }}</div>
+      <div class="stat-sub">needs review</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Sentiment Analysis ─────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #d1fae5; color: #059669;">&#9829;</div>
+    <h2>Sentiment Analysis</h2>
+  </div>
+
+  <div class="two-col">
+    {# Sentiment breakdown bars #}
+    <div>
+      <h3>Sentiment Distribution</h3>
+      {% if total > 0 %}
+      <div class="h-bar-chart">
+        {% set max_sent = [positive, negative, neutral, mixed]|max or 1 %}
+        <div class="h-bar-row">
+          <div class="h-bar-label">Positive</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill sentiment-positive" style="width: {{ (positive / max_sent * 100)|round(1) }}%;">
+              <span>{{ ((positive / total) * 100)|round(1) if total > 0 else 0 }}%</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(positive) }}</div>
+        </div>
+        <div class="h-bar-row">
+          <div class="h-bar-label">Neutral</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill sentiment-neutral" style="width: {{ (neutral / max_sent * 100)|round(1) }}%;">
+              <span>{{ ((neutral / total) * 100)|round(1) if total > 0 else 0 }}%</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(neutral) }}</div>
+        </div>
+        <div class="h-bar-row">
+          <div class="h-bar-label">Negative</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill sentiment-negative" style="width: {{ (negative / max_sent * 100)|round(1) }}%;">
+              <span>{{ ((negative / total) * 100)|round(1) if total > 0 else 0 }}%</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(negative) }}</div>
+        </div>
+        {% if mixed > 0 %}
+        <div class="h-bar-row">
+          <div class="h-bar-label">Mixed</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill sentiment-mixed" style="width: {{ (mixed / max_sent * 100)|round(1) }}%;">
+              <span>{{ ((mixed / total) * 100)|round(1) if total > 0 else 0 }}%</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(mixed) }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="no-data">No sentiment data available for this period.</div>
+      {% endif %}
+    </div>
+
+    {# Sentiment score card #}
+    <div>
+      <h3>Sentiment Score</h3>
+      <div class="stat-card {% if avg_score > 0.3 %}positive{% elif avg_score < -0.3 %}negative{% endif %}" style="text-align: center; padding: 20px;">
+        <div class="stat-value" style="font-size: 36px;">
+          {% if avg_score > 0 %}+{% endif %}{{ avg_score }}
+        </div>
+        <div class="stat-sub" style="font-size: 10px; margin-top: 6px;">
+          {% if avg_score > 0.3 %}
+            <span class="badge badge-positive">Positive Sentiment</span>
+          {% elif avg_score > 0 %}
+            <span class="badge badge-positive">Slightly Positive</span>
+          {% elif avg_score > -0.3 %}
+            <span class="badge badge-neutral">Neutral Sentiment</span>
+          {% else %}
+            <span class="badge badge-negative">Negative Sentiment</span>
+          {% endif %}
+        </div>
+        <div class="stat-sub mt-8">Scale: -1.0 (negative) to +1.0 (positive)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Platform Breakdown ─────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #ede9fe; color: #7c3aed;">&#9775;</div>
+    <h2>Platform Breakdown</h2>
+  </div>
+
+  {% if platforms %}
+  <div class="two-col">
+    <div>
+      <div class="h-bar-chart">
+        {% for platform, count in platforms|dictsort(by='value', reverse=true) %}
+        {% set platform_lower = platform|lower %}
+        <div class="h-bar-row">
+          <div class="h-bar-label">{{ platform|capitalize }}</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill platform-{{ platform_lower if platform_lower in ['twitter','facebook','instagram','linkedin','youtube','reddit','tiktok','news'] else 'default' }}"
+                 style="width: {{ (count / max_platform_count * 100)|round(1) }}%;">
+              <span>{{ ((count / total) * 100)|round(1) if total > 0 else 0 }}%</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(count) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th class="text-right">Mentions</th>
+              <th class="text-right">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for platform, count in platforms|dictsort(by='value', reverse=true) %}
+            <tr>
+              <td><strong>{{ platform|capitalize }}</strong></td>
+              <td class="text-right font-mono">{{ "{:,}".format(count) }}</td>
+              <td class="text-right font-mono">{{ ((count / total) * 100)|round(1) if total > 0 else 0 }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="no-data">No platform data available for this period.</div>
+  {% endif %}
+</div>
+
+{# ── Top Contributors ───────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #fef3c7; color: #d97706;">&#9734;</div>
+    <h2>Top Contributors</h2>
+  </div>
+
+  {% if top_contributors %}
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Handle</th>
+          <th>Platform</th>
+          <th class="text-right">Followers</th>
+          <th class="text-right">Mentions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in top_contributors[:15] %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><strong>{{ c.name or '—' }}</strong></td>
+          <td class="text-muted">{{ c.handle or '—' }}</td>
+          <td>{{ c.platform|capitalize if c.platform else '—' }}</td>
+          <td class="text-right font-mono">{{ "{:,}".format(c.followers) if c.followers else '—' }}</td>
+          <td class="text-right font-mono"><strong>{{ c.mentions }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="no-data">No contributor data available for this period.</div>
+  {% endif %}
+</div>
+
+{# ── Influencers ─────────────────────────────────────────────── #}
+{% if influencers %}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #fce7f3; color: #db2777;">&#9733;</div>
+    <h2>Key Influencers</h2>
+  </div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Handle</th>
+          <th>Platform</th>
+          <th class="text-right">Followers</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inf in influencers %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><strong>{{ inf.name or '—' }}</strong></td>
+          <td class="text-muted">{{ inf.handle or '—' }}</td>
+          <td>{{ inf.platform|capitalize if inf.platform else '—' }}</td>
+          <td class="text-right font-mono"><strong>{{ "{:,}".format(inf.followers) if inf.followers else '—' }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Keyword Performance ─────────────────────────────────────── #}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #e0e7ff; color: #4f46e5;">&#9881;</div>
+    <h2>Keyword Performance</h2>
+  </div>
+
+  {% if sorted_keywords %}
+  {% set max_kw_count = sorted_keywords[0][1] if sorted_keywords else 1 %}
+  <div class="two-col">
+    <div>
+      <div class="h-bar-chart">
+        {% for kw, count in sorted_keywords[:12] %}
+        <div class="h-bar-row">
+          <div class="h-bar-label">{{ kw }}</div>
+          <div class="h-bar-track">
+            <div class="h-bar-fill" style="width: {{ (count / max_kw_count * 100)|round(1) }}%; background: linear-gradient(90deg, #6366f1, #8b5cf6);">
+              <span>{{ count }}</span>
+            </div>
+          </div>
+          <div class="h-bar-count">{{ "{:,}".format(count) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Keyword</th>
+              <th class="text-right">Frequency</th>
+              <th class="text-right">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set total_kw = sorted_keywords|map(attribute=1)|sum %}
+            {% for kw, count in sorted_keywords[:15] %}
+            <tr>
+              <td><strong>{{ kw }}</strong></td>
+              <td class="text-right font-mono">{{ "{:,}".format(count) }}</td>
+              <td class="text-right font-mono">{{ ((count / total_kw) * 100)|round(1) if total_kw > 0 else 0 }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="no-data">No keyword data available for this period.</div>
+  {% endif %}
+</div>
+
+{# ── Daily Trend (Bar Chart) ─────────────────────────────────── #}
+{% if platforms %}
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background: #ccfbf1; color: #0d9488;">&#9650;</div>
+    <h2>Platform Volume Comparison</h2>
+  </div>
+
+  <div style="border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px;">
+    <div class="bar-chart">
+      {% for platform, count in platforms|dictsort(by='value', reverse=true) %}
+      <div class="bar-group">
+        <div class="bar-value">{{ "{:,}".format(count) }}</div>
+        <div class="bar"
+             style="height: {{ (count / max_platform_count * 100)|round(1) }}%;
+                    {% set platform_lower = platform|lower %}
+                    {% if platform_lower == 'twitter' %}background: linear-gradient(180deg, #1da1f2, #0d8bd9);
+                    {% elif platform_lower == 'facebook' %}background: linear-gradient(180deg, #1877f2, #0d65d9);
+                    {% elif platform_lower == 'instagram' %}background: linear-gradient(180deg, #e4405f, #c13584);
+                    {% elif platform_lower == 'linkedin' %}background: linear-gradient(180deg, #0a66c2, #004182);
+                    {% elif platform_lower == 'youtube' %}background: linear-gradient(180deg, #ff0000, #cc0000);
+                    {% elif platform_lower == 'reddit' %}background: linear-gradient(180deg, #ff4500, #cc3700);
+                    {% elif platform_lower == 'tiktok' %}background: linear-gradient(180deg, #25f4ee, #fe2c55);
+                    {% else %}background: linear-gradient(180deg, var(--color-primary), var(--color-primary-dark));
+                    {% endif %}">
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="bar-chart-labels">
+      {% for platform, count in platforms|dictsort(by='value', reverse=true) %}
+      <div class="bar-label">{{ platform|capitalize }}</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Footer ──────────────────────────────────────────────────── #}
+<div class="report-footer">
+  <div class="confidential">Confidential &mdash; Internal Use Only</div>
+  <div>
+    Generated by <strong>KhushFus</strong> on {{ generated_at }}
+  </div>
+</div>
+
+{% endblock %}

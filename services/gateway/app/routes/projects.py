@@ -36,6 +36,7 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
         description=data.description,
         client_name=data.client_name,
         platforms=data.platforms,
+        organization_id=data.organization_id or 0,
     )
     db.add(project)
     await db.flush()

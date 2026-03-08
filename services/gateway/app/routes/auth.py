@@ -31,8 +31,8 @@ class UserOut(BaseModel):
     id: int
     email: str
     full_name: str
-    organization: str | None
-    is_admin: bool
+    is_active: bool = True
+    is_superadmin: bool = False
     model_config = {"from_attributes": True}
 
 
@@ -53,7 +53,6 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
-        organization=data.organization,
     )
     db.add(user)
     await db.commit()
@@ -74,7 +73,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": str(user.id)})
     return TokenResponse(access_token=token)
 
 

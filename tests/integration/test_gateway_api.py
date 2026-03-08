@@ -1,11 +1,11 @@
 """Integration tests for Gateway API.
 
 These tests create a standalone FastAPI test app that reuses the gateway's
-routers but swaps the database dependency for an in-memory SQLite session.
-This avoids needing Postgres/Redis while still exercising the real route logic.
+routers but uses FastAPI dependency overrides to inject an in-memory SQLite
+session instead of requiring Postgres/Redis.
 """
 
-from contextlib import asynccontextmanager
+import hashlib
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,11 +13,31 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-from shared.models import Base, Keyword, Mention, Organization, Platform, Project, Sentiment
+from sqlalchemy.pool import StaticPool
 
 # ---------------------------------------------------------------------------
-# Test-local engine and session factory (in-memory SQLite)
+# Monkey-patch passlib bcrypt to avoid version incompatibility with bcrypt>=4.1
+# We replace hash_password / verify_password in the gateway deps module with
+# simple SHA-256 based implementations that are sufficient for testing.
+# ---------------------------------------------------------------------------
+import services.gateway.app.deps as _deps  # noqa: E402
+from shared.models import Base, Keyword, Mention, Organization, Platform, Project, Sentiment
+
+
+def _test_hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def _test_verify_password(plain: str, hashed: str) -> bool:
+    return hashlib.sha256(plain.encode()).hexdigest() == hashed
+
+
+_deps.hash_password = _test_hash_password
+_deps.verify_password = _test_verify_password
+
+
+# ---------------------------------------------------------------------------
+# Test-local engine and session factory (in-memory SQLite, shared connection)
 # ---------------------------------------------------------------------------
 
 _test_engine = None
@@ -25,12 +45,20 @@ _TestSessionLocal = None
 
 
 async def _get_test_engine():
+    """Lazily create the in-memory SQLite engine + sessionmaker."""
     global _test_engine, _TestSessionLocal
     if _test_engine is None:
-        _test_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+        _test_engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            echo=False,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
         async with _test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        _TestSessionLocal = sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)
+        _TestSessionLocal = sessionmaker(
+            _test_engine, class_=AsyncSession, expire_on_commit=False
+        )
     return _test_engine, _TestSessionLocal
 
 
@@ -43,29 +71,25 @@ async def _dispose_test_engine():
 
 
 # ---------------------------------------------------------------------------
-# Build a test-specific FastAPI app that mirrors the gateway but uses SQLite
+# Build a test-specific FastAPI app
 # ---------------------------------------------------------------------------
 
+
 def _build_test_app():
-    """Build a minimal FastAPI app with gateway routes but test-friendly deps."""
-    from fastapi import FastAPI
+    """Build a minimal FastAPI app with gateway routes and dependency overrides.
 
-    from services.gateway.app.routes import auth, mentions, projects
+    Uses dependency_overrides to replace get_db and get_event_bus so the
+    real gateway lifespan (which needs Postgres + Redis) is never invoked.
+    """
+    try:
+        from fastapi import FastAPI
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        engine, sf = await _get_test_engine()
-        app.state.db_session = sf
-        # Provide a mock event bus so routes that use it don't crash
-        mock_bus = MagicMock()
-        mock_bus.publish = AsyncMock()
-        mock_bus.connect = AsyncMock()
-        mock_bus.close = AsyncMock()
-        app.state.event_bus = mock_bus
-        yield
-        await _dispose_test_engine()
+        from services.gateway.app.deps import get_db, get_event_bus
+        from services.gateway.app.routes import auth, mentions, projects
+    except ImportError:
+        pytest.skip("Gateway dependencies not available")
 
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI()
     app.include_router(auth.router, prefix="/api/v1/auth")
     app.include_router(projects.router, prefix="/api/v1/projects")
     app.include_router(mentions.router, prefix="/api/v1/mentions")
@@ -74,6 +98,25 @@ def _build_test_app():
     async def health():
         return {"status": "ok", "service": "gateway"}
 
+    # --- Dependency overrides ---
+
+    async def _override_get_db():
+        """Yield a test DB session from the in-memory SQLite engine."""
+        _, sf = await _get_test_engine()
+        async with sf() as session:
+            yield session
+
+    mock_bus = MagicMock()
+    mock_bus.publish = AsyncMock()
+    mock_bus.connect = AsyncMock()
+    mock_bus.close = AsyncMock()
+
+    def _override_get_event_bus():
+        return mock_bus
+
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_event_bus] = _override_get_event_bus
+
     return app
 
 
@@ -81,14 +124,13 @@ def _build_test_app():
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest_asyncio.fixture(scope="module")
 async def test_app():
     """Create the test app once per module."""
-    try:
-        app = _build_test_app()
-        yield app
-    except ImportError:
-        pytest.skip("Gateway dependencies not available")
+    app = _build_test_app()
+    yield app
+    await _dispose_test_engine()
 
 
 @pytest_asyncio.fixture
@@ -100,7 +142,7 @@ async def client(test_app):
         pytest.skip("httpx not available")
 
     transport = ASGITransport(app=test_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as ac:
         yield ac
 
 
@@ -117,7 +159,7 @@ async def _clean_tables():
 @pytest_asyncio.fixture
 async def auth_headers(client):
     """Register a user and return Authorization headers with a valid JWT."""
-    await client.post(
+    reg_resp = await client.post(
         "/api/v1/auth/register",
         json={
             "email": "admin@test.com",
@@ -125,26 +167,35 @@ async def auth_headers(client):
             "full_name": "Admin User",
         },
     )
-    resp = await client.post(
+    assert reg_resp.status_code == 201, f"Registration failed: {reg_resp.text}"
+    login_resp = await client.post(
         "/api/v1/auth/login",
         json={"email": "admin@test.com", "password": "Str0ngP@ss!"},
     )
-    token = resp.json()["access_token"]
+    assert login_resp.status_code == 200, f"Login failed: {login_resp.text}"
+    token = login_resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
-async def seeded_project(client, auth_headers):
-    """Create an org and project directly in the DB, return the project id."""
-    engine, sf = await _get_test_engine()
+async def seeded_org():
+    """Create a test organization directly in the DB."""
+    _, sf = await _get_test_engine()
     async with sf() as session:
         org = Organization(name="Test Org", slug="test-org", plan="professional")
         session.add(org)
         await session.commit()
         await session.refresh(org)
+        return org.id
 
+
+@pytest_asyncio.fixture
+async def seeded_project(seeded_org):
+    """Create a project with keywords for the seeded org."""
+    _, sf = await _get_test_engine()
+    async with sf() as session:
         project = Project(
-            organization_id=org.id,
+            organization_id=seeded_org,
             name="Integration Project",
             client_name="Test Client",
             platforms="twitter,facebook",
@@ -156,15 +207,14 @@ async def seeded_project(client, auth_headers):
         kw = Keyword(project_id=project.id, term="test brand", keyword_type="brand")
         session.add(kw)
         await session.commit()
-
-        return project.id, org.id
+        return project.id
 
 
 @pytest_asyncio.fixture
 async def seeded_mentions(seeded_project):
     """Insert 15 mentions for the seeded project."""
-    project_id, org_id = seeded_project
-    engine, sf = await _get_test_engine()
+    project_id = seeded_project
+    _, sf = await _get_test_engine()
     async with sf() as session:
         sentiments = [Sentiment.POSITIVE, Sentiment.NEGATIVE, Sentiment.NEUTRAL]
         platforms = [Platform.TWITTER, Platform.FACEBOOK, Platform.INSTAGRAM]
@@ -236,7 +286,7 @@ class TestAuthFlow:
         token_data = login_resp.json()
         assert "access_token" in token_data
         assert token_data["token_type"] == "bearer"
-        assert len(token_data["access_token"]) > 10  # JWT is a non-trivial string
+        assert len(token_data["access_token"]) > 10
 
     async def test_register_duplicate_email(self, client):
         """Test that registering the same email twice returns 400."""
@@ -254,7 +304,6 @@ class TestAuthFlow:
 
     async def test_login_invalid_credentials(self, client):
         """Test login with wrong password returns 401."""
-        # Register a user first
         await client.post(
             "/api/v1/auth/register",
             json={
@@ -263,8 +312,6 @@ class TestAuthFlow:
                 "full_name": "Valid User",
             },
         )
-
-        # Attempt login with wrong password
         resp = await client.post(
             "/api/v1/auth/login",
             json={"email": "valid@example.com", "password": "wr0ngpassword"},
@@ -283,7 +330,7 @@ class TestAuthFlow:
     async def test_me_endpoint_authenticated(self, client, auth_headers):
         """Test GET /auth/me returns current user profile when authenticated."""
         resp = await client.get("/api/v1/auth/me", headers=auth_headers)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
         data = resp.json()
         assert data["email"] == "admin@test.com"
         assert data["full_name"] == "Admin User"
@@ -296,13 +343,14 @@ class TestAuthFlow:
 
 @pytest.mark.integration
 class TestProjectsCRUD:
-    async def test_create_project(self, client):
+    async def test_create_project(self, client, seeded_org):
         """Test creating a new project via POST /api/v1/projects."""
         resp = await client.post(
             "/api/v1/projects",
             json={
                 "name": "My New Project",
                 "client_name": "Acme Corp",
+                "organization_id": seeded_org,
                 "platforms": "twitter,reddit",
                 "keywords": [
                     {"term": "acme", "keyword_type": "brand"},
@@ -321,13 +369,17 @@ class TestProjectsCRUD:
         assert "acme" in kw_terms
         assert "competitor-x" in kw_terms
 
-    async def test_list_projects(self, client):
+    async def test_list_projects(self, client, seeded_org):
         """Test listing projects returns all created projects."""
-        # Create two projects
         for name in ["Project Alpha", "Project Beta"]:
             await client.post(
                 "/api/v1/projects",
-                json={"name": name, "client_name": "Client", "platforms": "twitter"},
+                json={
+                    "name": name,
+                    "client_name": "Client",
+                    "organization_id": seeded_org,
+                    "platforms": "twitter",
+                },
             )
 
         resp = await client.get("/api/v1/projects")
@@ -339,33 +391,23 @@ class TestProjectsCRUD:
         assert "Project Alpha" in names
         assert "Project Beta" in names
 
-    async def test_get_project_by_id(self, client):
+    async def test_get_project_by_id(self, client, seeded_project):
         """Test retrieving a single project by its ID."""
-        create_resp = await client.post(
-            "/api/v1/projects",
-            json={"name": "Fetch Me", "client_name": "Client", "platforms": "twitter"},
-        )
-        project_id = create_resp.json()["id"]
-
-        resp = await client.get(f"/api/v1/projects/{project_id}")
+        resp = await client.get(f"/api/v1/projects/{seeded_project}")
         assert resp.status_code == 200
-        assert resp.json()["name"] == "Fetch Me"
+        data = resp.json()
+        assert data["name"] == "Integration Project"
+        assert data["id"] == seeded_project
 
     async def test_get_project_not_found(self, client):
         """Test fetching a non-existent project returns 404."""
         resp = await client.get("/api/v1/projects/99999")
         assert resp.status_code == 404
 
-    async def test_update_project(self, client):
+    async def test_update_project(self, client, seeded_project):
         """Test updating a project via PATCH."""
-        create_resp = await client.post(
-            "/api/v1/projects",
-            json={"name": "Original Name", "client_name": "Client", "platforms": "twitter"},
-        )
-        project_id = create_resp.json()["id"]
-
         patch_resp = await client.patch(
-            f"/api/v1/projects/{project_id}",
+            f"/api/v1/projects/{seeded_project}",
             json={"name": "Updated Name", "description": "Now with a description"},
         )
         assert patch_resp.status_code == 200
@@ -373,40 +415,26 @@ class TestProjectsCRUD:
         assert data["name"] == "Updated Name"
         assert data["description"] == "Now with a description"
 
-    async def test_update_project_status(self, client):
+    async def test_update_project_status(self, client, seeded_project):
         """Test updating a project's status to paused."""
-        create_resp = await client.post(
-            "/api/v1/projects",
-            json={"name": "Status Test", "client_name": "Client", "platforms": "twitter"},
-        )
-        project_id = create_resp.json()["id"]
-        assert create_resp.json()["status"] == "active"
-
         patch_resp = await client.patch(
-            f"/api/v1/projects/{project_id}",
+            f"/api/v1/projects/{seeded_project}",
             json={"status": "paused"},
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["status"] == "paused"
 
-    async def test_delete_project(self, client):
+    async def test_delete_project(self, client, seeded_project):
         """Test archiving a project (setting status to 'archived')."""
-        create_resp = await client.post(
-            "/api/v1/projects",
-            json={"name": "To Archive", "client_name": "Client", "platforms": "twitter"},
-        )
-        project_id = create_resp.json()["id"]
-
-        # Archive the project by setting status
         patch_resp = await client.patch(
-            f"/api/v1/projects/{project_id}",
+            f"/api/v1/projects/{seeded_project}",
             json={"status": "archived"},
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["status"] == "archived"
 
-        # Confirm it persists
-        get_resp = await client.get(f"/api/v1/projects/{project_id}")
+        # Confirm it persists on re-fetch
+        get_resp = await client.get(f"/api/v1/projects/{seeded_project}")
         assert get_resp.json()["status"] == "archived"
 
 
@@ -427,7 +455,7 @@ class TestMentionsAPI:
         assert len(data["items"]) == 15
         assert data["page"] == 1
 
-        # Filter by platform=twitter — every 3rd mention (indices 0, 3, 6, 9, 12)
+        # Filter by platform=twitter (indices 0, 3, 6, 9, 12 = 5 mentions)
         resp = await client.get(
             "/api/v1/mentions/",
             params={"project_id": project_id, "platform": "twitter"},
@@ -448,7 +476,7 @@ class TestMentionsAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["total"] == 5  # indices 0, 3, 6, 9, 12
+        assert data["total"] == 5
         for item in data["items"]:
             assert item["sentiment"] == "positive"
 
@@ -456,7 +484,7 @@ class TestMentionsAPI:
         """Test mention list pagination with page and page_size params."""
         project_id = seeded_mentions
 
-        # Request page 1 with page_size=5
+        # Page 1 of 3
         resp1 = await client.get(
             "/api/v1/mentions/",
             params={"project_id": project_id, "page": 1, "page_size": 5},
@@ -468,7 +496,7 @@ class TestMentionsAPI:
         assert data1["page_size"] == 5
         assert len(data1["items"]) == 5
 
-        # Request page 2
+        # Page 2 of 3
         resp2 = await client.get(
             "/api/v1/mentions/",
             params={"project_id": project_id, "page": 2, "page_size": 5},
@@ -477,7 +505,7 @@ class TestMentionsAPI:
         assert data2["page"] == 2
         assert len(data2["items"]) == 5
 
-        # Request page 3 (last page)
+        # Page 3 of 3
         resp3 = await client.get(
             "/api/v1/mentions/",
             params={"project_id": project_id, "page": 3, "page_size": 5},
@@ -486,7 +514,7 @@ class TestMentionsAPI:
         assert data3["page"] == 3
         assert len(data3["items"]) == 5
 
-        # Ensure no overlap between pages
+        # Pages must not overlap
         ids_1 = {item["id"] for item in data1["items"]}
         ids_2 = {item["id"] for item in data2["items"]}
         ids_3 = {item["id"] for item in data3["items"]}
@@ -511,7 +539,7 @@ class TestMentionsAPI:
         """Test fetching a single mention by ID."""
         project_id = seeded_mentions
 
-        # Get the list first to find a valid mention ID
+        # Find a valid mention ID from the list
         list_resp = await client.get(
             "/api/v1/mentions/",
             params={"project_id": project_id, "page_size": 1},
@@ -524,6 +552,7 @@ class TestMentionsAPI:
         assert data["id"] == mention_id
         assert "text" in data
         assert "sentiment" in data
+        assert "platform" in data
 
     async def test_get_mention_not_found(self, client):
         """Test fetching a non-existent mention returns 404."""
@@ -545,7 +574,7 @@ class TestMentionsAPI:
         assert flag_resp.status_code == 200
         assert flag_resp.json()["is_flagged"] is True
 
-        # Toggle again — unflag
+        # Toggle again to unflag
         unflag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag")
         assert unflag_resp.status_code == 200
         assert unflag_resp.json()["is_flagged"] is False
