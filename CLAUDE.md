@@ -102,7 +102,7 @@ Client → [Gateway :8000]
 - `analyzer.py`: 3-tier sentiment (VADER → DeBERTa → Claude API), aspect-based sentiment, spaCy NER, emotion detection (7 emotions), BERTopic topic modeling, sarcasm detection. All model loading is lazy.
 - `llm_insights.py`: Claude API integration for mention summarization, Q&A, crisis detection, report narrative generation.
 
-### Database Migrations (`alembic/`)
+### Database Migrations (`migrations/`)
 - Alembic with async asyncpg support
 - `001_initial_schema.py`: All 17 tables + 11 enum types
 - `002_row_level_security.py`: RLS policies on 14 tenant-scoped tables

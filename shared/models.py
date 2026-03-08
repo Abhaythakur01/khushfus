@@ -470,6 +470,8 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(String(45))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
+    organization: Mapped["Organization"] = relationship(back_populates="audit_logs")
+
 
 # ============================================================
 # Rate Limiting

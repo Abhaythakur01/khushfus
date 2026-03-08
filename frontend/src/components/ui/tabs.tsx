@@ -103,3 +103,4 @@ function TabPanel({ value, children, className }: TabPanelProps) {
 }
 
 export { Tabs, TabList, TabTrigger, TabPanel };
+export { TabList as TabsList, TabTrigger as TabsTrigger, TabPanel as TabsContent };
