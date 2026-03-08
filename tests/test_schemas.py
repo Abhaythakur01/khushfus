@@ -3,6 +3,7 @@
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 
 from shared.schemas import (
     AlertRuleCreate,
@@ -27,7 +28,7 @@ class TestAuthSchemas:
         assert req.full_name == "John Doe"
 
     def test_register_request_missing_field(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             RegisterRequest(email="user@example.com")  # missing password and full_name
 
     def test_login_request(self):

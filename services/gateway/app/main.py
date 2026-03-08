@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.database import create_db, init_tables
 from shared.events import EventBus
+from shared.schemas import HealthResponse
 from shared.tracing import setup_tracing
 
 from .middleware import RateLimitMiddleware, close_http_client
@@ -40,10 +41,48 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+tags_metadata = [
+    {
+        "name": "Auth",
+        "description": "User registration, login, and profile retrieval.",
+    },
+    {
+        "name": "Projects",
+        "description": "Project CRUD, keyword management, and collection triggers.",
+    },
+    {
+        "name": "Mentions",
+        "description": "Browse, search, and flag social mentions.",
+    },
+    {
+        "name": "Reports",
+        "description": "Generate and retrieve analytics reports.",
+    },
+    {
+        "name": "Dashboard",
+        "description": "Aggregated dashboard metrics and trends.",
+    },
+    {
+        "name": "Alerts",
+        "description": "Alert rules and alert log management.",
+    },
+    {
+        "name": "Health",
+        "description": "Service health checks.",
+    },
+]
+
 app = FastAPI(
     title="KhushFus API Gateway",
-    description="Enterprise Social Listening Platform",
+    description=(
+        "Enterprise Social Listening Platform -- the single entry point for all client requests.\n\n"
+        "Handles JWT authentication, request routing, rate limiting, and exposes the core "
+        "social-listening REST API including projects, mentions, reports, dashboards, and alerts."
+    ),
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=tags_metadata,
     lifespan=lifespan,
 )
 
@@ -73,6 +112,13 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboar
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Gateway health check",
+    description="Returns the health status of the API gateway.",
+    response_model=HealthResponse,
+)
 async def health():
+    """Return current health status of the gateway service."""
     return {"status": "ok", "service": "gateway", "version": "0.1.0"}
