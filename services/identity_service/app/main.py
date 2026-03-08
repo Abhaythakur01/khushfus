@@ -32,6 +32,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.database import create_db, init_tables
 from shared.events import STREAM_AUDIT, AuditEvent, EventBus
 from shared.models import Organization, OrgMember, OrgRole, User
+from shared.tracing import setup_tracing
+
+setup_tracing("identity")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -362,6 +365,14 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 @app.get("/health")

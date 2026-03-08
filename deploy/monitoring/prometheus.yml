@@ -1,0 +1,92 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'gateway'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['gateway:8000']
+        labels:
+          service: gateway
+
+  - job_name: 'identity'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['identity:8010']
+        labels:
+          service: identity
+
+  - job_name: 'tenant'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['tenant:8011']
+        labels:
+          service: tenant
+
+  - job_name: 'search'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['search:8012']
+        labels:
+          service: search
+
+  - job_name: 'publishing'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['publishing:8013']
+        labels:
+          service: publishing
+
+  - job_name: 'rate-limiter'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['rate-limiter:8014']
+        labels:
+          service: rate-limiter
+
+  - job_name: 'export'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['export:8015']
+        labels:
+          service: export
+
+  - job_name: 'competitive'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['competitive:8016']
+        labels:
+          service: competitive
+
+  - job_name: 'scheduler'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['scheduler:8017']
+        labels:
+          service: scheduler
+
+  - job_name: 'audit'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['audit:8018']
+        labels:
+          service: audit
+
+  - job_name: 'realtime'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['realtime:8019']
+        labels:
+          service: realtime
+
+  - job_name: 'project'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['project:8020']
+        labels:
+          service: project
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

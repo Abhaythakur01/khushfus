@@ -40,6 +40,9 @@ from shared.models import (
     Project,
     User,
 )
+from shared.tracing import setup_tracing
+
+setup_tracing("tenant")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -324,6 +327,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 @app.get("/health")

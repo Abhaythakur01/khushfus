@@ -24,6 +24,9 @@ from sqlalchemy import and_, select
 
 from shared.database import create_db, init_tables
 from shared.models import Platform, PlatformQuota
+from shared.tracing import setup_tracing
+
+setup_tracing("rate-limiter")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -325,6 +328,14 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 @app.get("/health")

@@ -39,6 +39,9 @@ from shared.models import (
     PublishStatus,
     ScheduledPost,
 )
+from shared.tracing import setup_tracing
+
+setup_tracing("publishing")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -462,6 +465,14 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 @app.get("/health")

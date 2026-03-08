@@ -36,6 +36,14 @@ dependencies = [
     "pandas>=2.2.0",
     "matplotlib>=3.10.0",
     "wordcloud>=1.9.0",
+    "opentelemetry-api>=1.23.0",
+    "opentelemetry-sdk>=1.23.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.23.0",
+    "opentelemetry-instrumentation-fastapi>=0.44b0",
+    "opentelemetry-instrumentation-httpx>=0.44b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.44b0",
+    "opentelemetry-instrumentation-redis>=0.44b0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]
 
 [project.optional-dependencies]

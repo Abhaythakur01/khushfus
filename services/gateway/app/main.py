@@ -16,8 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.database import create_db, init_tables
 from shared.events import EventBus
+from shared.tracing import setup_tracing
 
+from .middleware import RateLimitMiddleware, close_http_client
 from .routes import alerts, auth, dashboard, mentions, projects, reports
+
+setup_tracing("gateway")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -31,6 +35,7 @@ async def lifespan(app: FastAPI):
     await init_tables(engine)
     await app.state.event_bus.connect()
     yield
+    await close_http_client()
     await app.state.event_bus.close()
     await engine.dispose()
 
@@ -49,6 +54,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting via centralized Rate Limiter service (fail-open if unreachable)
+app.add_middleware(RateLimitMiddleware)
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"])

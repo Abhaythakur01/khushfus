@@ -30,6 +30,9 @@ from shared.models import (
     Project,
     Sentiment,
 )
+from shared.tracing import setup_tracing
+
+setup_tracing("competitive")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -148,6 +151,14 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 async def get_db():

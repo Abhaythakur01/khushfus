@@ -46,6 +46,9 @@ from shared.models import (
     Report,
     User,
 )
+from shared.tracing import setup_tracing
+
+setup_tracing("audit")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -235,6 +238,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 async def get_db():

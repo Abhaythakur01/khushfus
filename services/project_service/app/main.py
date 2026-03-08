@@ -26,6 +26,9 @@ from shared.models import (
     Project,
     ProjectStatus,
 )
+from shared.tracing import setup_tracing
+
+setup_tracing("project")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -126,6 +129,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 async def get_db() -> AsyncSession:

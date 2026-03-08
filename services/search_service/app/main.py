@@ -30,6 +30,9 @@ from sqlalchemy import delete, select
 
 from shared.database import create_db, init_tables
 from shared.models import SavedSearch
+from shared.tracing import setup_tracing
+
+setup_tracing("search")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -160,6 +163,13 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(app)
+except ImportError:
+    pass
 
 
 # ---------------------------------------------------------------------------
