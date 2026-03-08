@@ -228,6 +228,14 @@ app = FastAPI(
     title="KhushFus Audit/Compliance Service",
     description="Audit logging, data retention policies, and GDPR compliance",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Audit Logs", "description": "Query and retrieve audit log entries."},
+        {"name": "Data Retention", "description": "Configure and execute data retention policies."},
+        {"name": "GDPR", "description": "GDPR compliance: data export and right-to-be-forgotten."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -259,9 +267,20 @@ async def get_db():
 # ============================================================
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Audit health check",
+    description="Returns the health status of the Audit/Compliance service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "audit-service", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("audit-service", checks=checks)
 
 
 # ============================================================
@@ -269,7 +288,13 @@ async def health():
 # ============================================================
 
 
-@app.get("/audit-logs", response_model=AuditLogListOut)
+@app.get(
+    "/audit-logs",
+    response_model=AuditLogListOut,
+    tags=["Audit Logs"],
+    summary="List audit logs",
+    description="List audit logs with optional filters for user, action, resource type, and date range.",
+)
 async def list_audit_logs(
     org_id: int = Query(..., description="Organization ID"),
     user_id: Optional[int] = Query(None),
@@ -312,7 +337,13 @@ async def list_audit_logs(
     )
 
 
-@app.get("/audit-logs/summary", response_model=AuditSummaryOut)
+@app.get(
+    "/audit-logs/summary",
+    response_model=AuditSummaryOut,
+    tags=["Audit Logs"],
+    summary="Audit summary statistics",
+    description="Get summary statistics including actions per user, actions per type, and daily activity timeline.",
+)
 async def audit_summary(
     org_id: int = Query(..., description="Organization ID"),
     days: int = Query(30, ge=1, le=365),
@@ -369,7 +400,13 @@ async def audit_summary(
     )
 
 
-@app.get("/audit-logs/{log_id}", response_model=AuditLogOut)
+@app.get(
+    "/audit-logs/{log_id}",
+    response_model=AuditLogOut,
+    tags=["Audit Logs"],
+    summary="Get audit log by ID",
+    description="Retrieve a single audit log entry by its unique identifier.",
+)
 async def get_audit_log(
     log_id: int,
     db: AsyncSession = Depends(get_db),
@@ -386,7 +423,13 @@ async def get_audit_log(
 # ============================================================
 
 
-@app.post("/data-retention", response_model=RetentionPolicyOut)
+@app.post(
+    "/data-retention",
+    response_model=RetentionPolicyOut,
+    tags=["Data Retention"],
+    summary="Configure retention policy",
+    description="Create or update a retention policy specifying periods for mentions, audit logs, and reports.",
+)
 async def configure_retention(
     payload: RetentionPolicyCreate,
     db: AsyncSession = Depends(get_db),
@@ -415,7 +458,13 @@ async def configure_retention(
     return RetentionPolicyOut.model_validate(policy)
 
 
-@app.get("/data-retention", response_model=RetentionPolicyOut)
+@app.get(
+    "/data-retention",
+    response_model=RetentionPolicyOut,
+    tags=["Data Retention"],
+    summary="Get retention policy",
+    description="Get the current data retention policy for an organization.",
+)
 async def get_retention(
     org_id: int = Query(..., description="Organization ID"),
     db: AsyncSession = Depends(get_db),
@@ -431,7 +480,13 @@ async def get_retention(
     return RetentionPolicyOut.model_validate(policy)
 
 
-@app.post("/data-retention/execute", response_model=RetentionExecuteOut)
+@app.post(
+    "/data-retention/execute",
+    response_model=RetentionExecuteOut,
+    tags=["Data Retention"],
+    summary="Execute retention cleanup",
+    description="Delete old mentions, audit logs, and reports per the organization's retention policy.",
+)
 async def execute_retention(
     org_id: int = Query(..., description="Organization ID"),
     db: AsyncSession = Depends(get_db),
@@ -507,7 +562,13 @@ async def execute_retention(
 # ============================================================
 
 
-@app.get("/compliance/export", response_model=GDPRExportOut)
+@app.get(
+    "/compliance/export",
+    response_model=GDPRExportOut,
+    tags=["GDPR"],
+    summary="GDPR data export",
+    description="Export all data associated with a user within an organization for GDPR data portability compliance.",
+)
 async def gdpr_export(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),
@@ -589,7 +650,13 @@ async def gdpr_export(
     )
 
 
-@app.delete("/compliance/purge", response_model=GDPRPurgeOut)
+@app.delete(
+    "/compliance/purge",
+    response_model=GDPRPurgeOut,
+    tags=["GDPR"],
+    summary="GDPR data purge",
+    description="Right to be forgotten: anonymize and delete all user data for GDPR compliance.",
+)
 async def gdpr_purge(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),

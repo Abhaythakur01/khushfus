@@ -167,6 +167,13 @@ app = FastAPI(
     title="KhushFus Scheduler / Workflow Service",
     description="Automation engine: workflow evaluation, action execution, and report scheduling",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Workflows", "description": "Workflow CRUD and execution statistics."},
+        {"name": "Report Schedules", "description": "Custom report schedule management."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -189,12 +196,30 @@ async def get_db():
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Scheduler health check",
+    description="Returns the health status of the Scheduler/Workflow service and its dependencies.",
+)
 async def health():
-    return HealthResponse()
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("scheduler", checks=checks)
 
 
-@app.post("/workflows", response_model=WorkflowOut, status_code=201)
+@app.post(
+    "/workflows",
+    response_model=WorkflowOut,
+    status_code=201,
+    tags=["Workflows"],
+    summary="Create a workflow",
+    description="Create a new automation workflow with trigger conditions and actions for a project.",
+)
 async def create_workflow(
     payload: WorkflowCreate,
     db: AsyncSession = Depends(get_db),
@@ -221,7 +246,13 @@ async def create_workflow(
     return _workflow_to_out(workflow)
 
 
-@app.get("/workflows", response_model=list[WorkflowOut])
+@app.get(
+    "/workflows",
+    response_model=list[WorkflowOut],
+    tags=["Workflows"],
+    summary="List workflows",
+    description="List workflows for a project, optionally filtered by status (active, paused).",
+)
 async def list_workflows(
     project_id: int = Query(...),
     status: str | None = Query(None),
@@ -238,7 +269,13 @@ async def list_workflows(
     return [_workflow_to_out(w) for w in rows]
 
 
-@app.patch("/workflows/{workflow_id}", response_model=WorkflowOut)
+@app.patch(
+    "/workflows/{workflow_id}",
+    response_model=WorkflowOut,
+    tags=["Workflows"],
+    summary="Update a workflow",
+    description="Update a workflow's name, trigger conditions, actions, or status.",
+)
 async def update_workflow(
     workflow_id: int,
     payload: WorkflowUpdate,
@@ -264,7 +301,13 @@ async def update_workflow(
     return _workflow_to_out(workflow)
 
 
-@app.delete("/workflows/{workflow_id}", status_code=204)
+@app.delete(
+    "/workflows/{workflow_id}",
+    status_code=204,
+    tags=["Workflows"],
+    summary="Delete a workflow",
+    description="Permanently delete a workflow by its ID.",
+)
 async def delete_workflow(
     workflow_id: int,
     db: AsyncSession = Depends(get_db),
@@ -279,7 +322,13 @@ async def delete_workflow(
     logger.info(f"Deleted workflow {workflow_id}")
 
 
-@app.get("/workflows/{workflow_id}/stats", response_model=WorkflowStatsOut)
+@app.get(
+    "/workflows/{workflow_id}/stats",
+    response_model=WorkflowStatsOut,
+    tags=["Workflows"],
+    summary="Get workflow stats",
+    description="Get execution count and last trigger time for a specific workflow.",
+)
 async def workflow_stats(
     workflow_id: int,
     db: AsyncSession = Depends(get_db),
@@ -305,7 +354,14 @@ async def workflow_stats(
 # ---------------------------------------------------------------------------
 
 
-@app.post("/report-schedules", response_model=ReportScheduleOut, status_code=201)
+@app.post(
+    "/report-schedules",
+    response_model=ReportScheduleOut,
+    status_code=201,
+    tags=["Report Schedules"],
+    summary="Create a report schedule",
+    description="Create a custom report schedule for a project with configurable cron-like timing.",
+)
 async def create_report_schedule(payload: ReportScheduleCreate):
     """Create a custom report schedule for a project."""
     entry = payload.model_dump()
@@ -314,14 +370,26 @@ async def create_report_schedule(payload: ReportScheduleCreate):
     return ReportScheduleOut(**entry)
 
 
-@app.get("/report-schedules", response_model=list[ReportScheduleOut])
+@app.get(
+    "/report-schedules",
+    response_model=list[ReportScheduleOut],
+    tags=["Report Schedules"],
+    summary="List report schedules",
+    description="List all custom report schedules for a project.",
+)
 async def list_report_schedules(project_id: int = Query(...)):
     """List custom report schedules for a project."""
     entries = _report_schedules.get(project_id, [])
     return [ReportScheduleOut(**e) for e in entries]
 
 
-@app.delete("/report-schedules/{project_id}", status_code=204)
+@app.delete(
+    "/report-schedules/{project_id}",
+    status_code=204,
+    tags=["Report Schedules"],
+    summary="Delete report schedules",
+    description="Delete all custom report schedules for a project.",
+)
 async def delete_report_schedules(project_id: int):
     """Delete all custom report schedules for a project."""
     _report_schedules.pop(project_id, None)

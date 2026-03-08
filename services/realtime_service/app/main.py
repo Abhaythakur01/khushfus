@@ -391,6 +391,15 @@ app = FastAPI(
     title="KhushFus Realtime/WebSocket Service",
     description="Real-time mention feeds, dashboard updates, and alert notifications",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "WebSocket", "description": "WebSocket endpoints for live data streams."},
+        {"name": "SSE", "description": "Server-Sent Events fallback endpoint."},
+        {"name": "Stats", "description": "Connection statistics."},
+        {"name": "Publish", "description": "Internal message publishing for testing."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -416,14 +425,24 @@ except ImportError:
 # ============================================================
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Realtime health check",
+    description="Returns the health status of the Realtime service including active connection and project counts.",
+)
 async def health():
+    from shared.health import check_redis
+
+    redis_check = await check_redis(REDIS_URL)
+    all_up = redis_check.get("status") == "up"
     return {
-        "status": "ok",
+        "status": "ok" if all_up else "degraded",
         "service": "realtime-service",
         "version": "0.1.0",
         "active_connections": manager.total_connections(),
         "active_projects": len(manager.active_projects()),
+        "dependencies": {"redis": redis_check},
     }
 
 
@@ -561,7 +580,12 @@ async def ws_alerts(websocket: WebSocket, project_id: int):
 # ============================================================
 
 
-@app.get("/sse/mentions/{project_id}")
+@app.get(
+    "/sse/mentions/{project_id}",
+    tags=["SSE"],
+    summary="SSE mention stream",
+    description="SSE stream of new mentions for a project. Fallback for non-WebSocket clients.",
+)
 async def sse_mentions(project_id: int):
     """Server-Sent Events stream of new mentions for a project.
 
@@ -599,7 +623,12 @@ async def sse_mentions(project_id: int):
 # ============================================================
 
 
-@app.get("/stats")
+@app.get(
+    "/stats",
+    tags=["Stats"],
+    summary="Connection statistics",
+    description="Return current WebSocket and SSE connection statistics per project.",
+)
 async def connection_stats():
     """Return current connection statistics."""
     active = manager.active_projects()
@@ -621,7 +650,12 @@ async def connection_stats():
 # ============================================================
 
 
-@app.post("/publish/{project_id}")
+@app.post(
+    "/publish/{project_id}",
+    tags=["Publish"],
+    summary="Publish a message",
+    description="Directly publish a message to connected WebSocket and SSE clients for testing or internal use.",
+)
 async def publish_message(project_id: int, payload: dict):
     """Directly publish a message to connected clients (for testing/internal use).
 

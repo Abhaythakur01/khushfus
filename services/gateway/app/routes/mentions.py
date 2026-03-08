@@ -12,7 +12,12 @@ from ..deps import get_db
 router = APIRouter()
 
 
-@router.get("/", response_model=MentionListOut)
+@router.get(
+    "/",
+    response_model=MentionListOut,
+    summary="List mentions",
+    description="Retrieve a paginated, filterable list of social mentions for a project.",
+)
 async def list_mentions(
     project_id: int,
     platform: str | None = None,
@@ -25,6 +30,7 @@ async def list_mentions(
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
+    """List mentions with optional filters for platform, sentiment, keyword, date range, and flagged status."""
     query = select(Mention).where(Mention.project_id == project_id)
     count_query = select(func.count(Mention.id)).where(Mention.project_id == project_id)
 
@@ -55,16 +61,27 @@ async def list_mentions(
     return MentionListOut(items=result.scalars().all(), total=total, page=page, page_size=page_size)
 
 
-@router.get("/{mention_id}", response_model=MentionOut)
+@router.get(
+    "/{mention_id}",
+    response_model=MentionOut,
+    summary="Get mention by ID",
+    description="Retrieve a single mention by its unique identifier.",
+)
 async def get_mention(mention_id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch a single mention by ID."""
     mention = await db.get(Mention, mention_id)
     if not mention:
         raise HTTPException(status_code=404, detail="Mention not found")
     return mention
 
 
-@router.patch("/{mention_id}/flag")
+@router.patch(
+    "/{mention_id}/flag",
+    summary="Toggle mention flag",
+    description="Toggle the flagged status of a mention for review or follow-up.",
+)
 async def toggle_flag(mention_id: int, db: AsyncSession = Depends(get_db)):
+    """Toggle the is_flagged boolean on a mention."""
     mention = await db.get(Mention, mention_id)
     if not mention:
         raise HTTPException(status_code=404, detail="Mention not found")

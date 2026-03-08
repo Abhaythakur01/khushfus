@@ -317,6 +317,16 @@ app = FastAPI(
     title="KhushFus Tenant Service",
     description="Organization management, members, API keys, plans, and quotas",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Organizations", "description": "Organization CRUD operations."},
+        {"name": "Members", "description": "Organization member management."},
+        {"name": "API Keys", "description": "API key generation, listing, and revocation."},
+        {"name": "Plans", "description": "Plan and quota management."},
+        {"name": "Usage", "description": "Usage statistics and quota checks."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -337,9 +347,20 @@ except ImportError:
     pass
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Tenant health check",
+    description="Returns the health status of the Tenant service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "tenant", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("tenant", checks=checks)
 
 
 # ===================================================================
@@ -347,7 +368,14 @@ async def health():
 # ===================================================================
 
 
-@app.post("/api/v1/orgs", response_model=OrgOut, status_code=201)
+@app.post(
+    "/api/v1/orgs",
+    response_model=OrgOut,
+    status_code=201,
+    tags=["Organizations"],
+    summary="Create an organization",
+    description="Create a new organization. The creating user becomes the owner with plan defaults applied.",
+)
 async def create_org(
     data: OrgCreateRequest,
     request: Request,
@@ -402,7 +430,13 @@ async def create_org(
     return org
 
 
-@app.get("/api/v1/orgs", response_model=OrgListOut)
+@app.get(
+    "/api/v1/orgs",
+    response_model=OrgListOut,
+    tags=["Organizations"],
+    summary="List organizations",
+    description="List organizations the current user belongs to. Superadmins see all organizations.",
+)
 async def list_orgs(
     user: User = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
@@ -440,7 +474,13 @@ async def list_orgs(
     return OrgListOut(items=orgs, total=total)
 
 
-@app.get("/api/v1/orgs/{org_id}", response_model=OrgOut)
+@app.get(
+    "/api/v1/orgs/{org_id}",
+    response_model=OrgOut,
+    tags=["Organizations"],
+    summary="Get organization details",
+    description="Retrieve organization details. User must be a member or superadmin.",
+)
 async def get_org(
     org_id: int,
     user: User = Depends(require_auth),
@@ -461,7 +501,13 @@ async def get_org(
     return org
 
 
-@app.patch("/api/v1/orgs/{org_id}", response_model=OrgOut)
+@app.patch(
+    "/api/v1/orgs/{org_id}",
+    response_model=OrgOut,
+    tags=["Organizations"],
+    summary="Update organization",
+    description="Update organization fields (name, logo, branding, SSO). Requires owner or admin.",
+)
 async def update_org(
     org_id: int,
     data: OrgUpdateRequest,
@@ -523,7 +569,13 @@ async def update_org(
 # ===================================================================
 
 
-@app.get("/api/v1/orgs/{org_id}/members", response_model=list[MemberOut])
+@app.get(
+    "/api/v1/orgs/{org_id}/members",
+    response_model=list[MemberOut],
+    tags=["Members"],
+    summary="List organization members",
+    description="List all members of an organization. Any member of the organization can view the member list.",
+)
 async def list_members(
     org_id: int,
     user: User = Depends(require_auth),
@@ -566,7 +618,14 @@ async def list_members(
     return members
 
 
-@app.post("/api/v1/orgs/{org_id}/members", response_model=MemberOut, status_code=201)
+@app.post(
+    "/api/v1/orgs/{org_id}/members",
+    response_model=MemberOut,
+    status_code=201,
+    tags=["Members"],
+    summary="Invite a member",
+    description="Invite a user to the organization with a specified role. Enforces max_users quota.",
+)
 async def invite_member(
     org_id: int,
     data: MemberInviteRequest,
@@ -647,7 +706,13 @@ async def invite_member(
     )
 
 
-@app.patch("/api/v1/orgs/{org_id}/members/{member_user_id}", response_model=MemberOut)
+@app.patch(
+    "/api/v1/orgs/{org_id}/members/{member_user_id}",
+    response_model=MemberOut,
+    tags=["Members"],
+    summary="Update member role",
+    description="Change a member's role. Only owners can promote to owner; cannot demote the last owner.",
+)
 async def update_member_role(
     org_id: int,
     member_user_id: int,
@@ -722,7 +787,13 @@ async def update_member_role(
     )
 
 
-@app.delete("/api/v1/orgs/{org_id}/members/{member_user_id}", status_code=204)
+@app.delete(
+    "/api/v1/orgs/{org_id}/members/{member_user_id}",
+    status_code=204,
+    tags=["Members"],
+    summary="Remove a member",
+    description="Remove a member from the organization. Users can remove themselves; owner/admin can remove others.",
+)
 async def remove_member(
     org_id: int,
     member_user_id: int,
@@ -780,7 +851,14 @@ async def remove_member(
 # ===================================================================
 
 
-@app.post("/api/v1/orgs/{org_id}/api-keys", response_model=ApiKeyCreatedOut, status_code=201)
+@app.post(
+    "/api/v1/orgs/{org_id}/api-keys",
+    response_model=ApiKeyCreatedOut,
+    status_code=201,
+    tags=["API Keys"],
+    summary="Create an API key",
+    description="Generate an API key with configurable scopes and expiration. Raw key returned once.",
+)
 async def create_api_key(
     org_id: int,
     data: ApiKeyCreateRequest,
@@ -853,7 +931,13 @@ async def create_api_key(
     )
 
 
-@app.get("/api/v1/orgs/{org_id}/api-keys", response_model=list[ApiKeyOut])
+@app.get(
+    "/api/v1/orgs/{org_id}/api-keys",
+    response_model=list[ApiKeyOut],
+    tags=["API Keys"],
+    summary="List API keys",
+    description="List all API keys for the organization, sorted by creation date. Requires owner or admin role.",
+)
 async def list_api_keys(
     org_id: int,
     user: User = Depends(require_auth),
@@ -870,7 +954,13 @@ async def list_api_keys(
     return result.scalars().all()
 
 
-@app.delete("/api/v1/orgs/{org_id}/api-keys/{key_id}", status_code=204)
+@app.delete(
+    "/api/v1/orgs/{org_id}/api-keys/{key_id}",
+    status_code=204,
+    tags=["API Keys"],
+    summary="Revoke an API key",
+    description="Deactivate an API key so it can no longer be used for authentication.",
+)
 async def revoke_api_key(
     org_id: int,
     key_id: int,
@@ -907,7 +997,12 @@ async def revoke_api_key(
 # ===================================================================
 
 
-@app.get("/api/v1/api-keys/validate")
+@app.get(
+    "/api/v1/api-keys/validate",
+    tags=["API Keys"],
+    summary="Validate an API key",
+    description="Validate a raw API key and return the associated organization info and scopes.",
+)
 async def validate_api_key(
     key: str = Query(..., description="The raw API key to validate"),
     db: AsyncSession = Depends(get_db),
@@ -947,7 +1042,13 @@ async def validate_api_key(
 # ===================================================================
 
 
-@app.patch("/api/v1/orgs/{org_id}/plan", response_model=OrgOut)
+@app.patch(
+    "/api/v1/orgs/{org_id}/plan",
+    response_model=OrgOut,
+    tags=["Plans"],
+    summary="Update organization plan",
+    description="Change an organization's subscription plan and adjust quotas. Requires owner role or superadmin.",
+)
 async def update_plan(
     org_id: int,
     data: PlanUpdateRequest,
@@ -1003,7 +1104,12 @@ async def update_plan(
     return org
 
 
-@app.post("/api/v1/orgs/{org_id}/mentions/increment")
+@app.post(
+    "/api/v1/orgs/{org_id}/mentions/increment",
+    tags=["Usage"],
+    summary="Increment mentions counter",
+    description="Increment the mentions_used counter for an organization when new mentions are stored.",
+)
 async def increment_mentions_used(
     org_id: int,
     count: int = Query(1, ge=1),
@@ -1032,7 +1138,13 @@ async def increment_mentions_used(
     }
 
 
-@app.post("/api/v1/orgs/{org_id}/mentions/reset", status_code=200)
+@app.post(
+    "/api/v1/orgs/{org_id}/mentions/reset",
+    status_code=200,
+    tags=["Usage"],
+    summary="Reset mentions counter",
+    description="Reset the monthly mentions_used counter to zero. Requires owner role or superadmin.",
+)
 async def reset_mentions_used(
     org_id: int,
     request: Request,
@@ -1065,7 +1177,12 @@ async def reset_mentions_used(
     return {"organization_id": org_id, "mentions_used": 0}
 
 
-@app.get("/api/v1/orgs/{org_id}/quota-check")
+@app.get(
+    "/api/v1/orgs/{org_id}/quota-check",
+    tags=["Usage"],
+    summary="Check project quota",
+    description="Check whether the organization can create a new project and is within quota.",
+)
 async def check_project_quota(
     org_id: int,
     db: AsyncSession = Depends(get_db),
@@ -1098,7 +1215,13 @@ async def check_project_quota(
 # ===================================================================
 
 
-@app.get("/api/v1/orgs/{org_id}/usage", response_model=UsageOut)
+@app.get(
+    "/api/v1/orgs/{org_id}/usage",
+    response_model=UsageOut,
+    tags=["Usage"],
+    summary="Get usage statistics",
+    description="Current usage statistics: mention consumption, project count, and user count.",
+)
 async def get_usage(
     org_id: int,
     user: User = Depends(require_auth),

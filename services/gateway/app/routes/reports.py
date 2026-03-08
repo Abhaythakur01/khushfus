@@ -13,12 +13,18 @@ from ..deps import get_db, get_event_bus
 router = APIRouter()
 
 
-@router.get("/", response_model=list[ReportOut])
+@router.get(
+    "/",
+    response_model=list[ReportOut],
+    summary="List reports",
+    description="List generated reports for a project, optionally filtered by report type.",
+)
 async def list_reports(
     project_id: int,
     report_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
+    """Return all reports for a project, newest first."""
     query = select(Report).where(Report.project_id == project_id)
     if report_type:
         query = query.where(Report.report_type == report_type)
@@ -27,7 +33,11 @@ async def list_reports(
     return result.scalars().all()
 
 
-@router.post("/generate", response_model=dict)
+@router.post(
+    "/generate",
+    summary="Trigger report generation",
+    description="Publish a report generation request to the Report Service via Redis Streams.",
+)
 async def trigger_report(
     project_id: int,
     report_type: str = Query(default="daily"),
@@ -39,8 +49,13 @@ async def trigger_report(
     return {"status": "report_generation_started", "project_id": project_id, "type": report_type}
 
 
-@router.get("/{report_id}")
+@router.get(
+    "/{report_id}",
+    summary="Get report by ID",
+    description="Retrieve a single report with its full data payload.",
+)
 async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch a report by ID and return its metadata and parsed data."""
     report = await db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")

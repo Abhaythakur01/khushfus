@@ -997,6 +997,13 @@ app = FastAPI(
     title="KhushFus Export & Integration Service",
     description="Export data and sync with external platforms",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Exports", "description": "Create, list, check status, and download export jobs."},
+        {"name": "Integrations", "description": "Configure and manage external platform integrations."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -1022,9 +1029,20 @@ except ImportError:
 # ============================================================
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Export health check",
+    description="Returns the health status of the Export & Integration service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "export-service", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("export-service", checks=checks)
 
 
 # ============================================================
@@ -1032,7 +1050,14 @@ async def health():
 # ============================================================
 
 
-@app.post("/exports", response_model=ExportJobOut, status_code=201)
+@app.post(
+    "/exports",
+    response_model=ExportJobOut,
+    status_code=201,
+    tags=["Exports"],
+    summary="Create an export job",
+    description="Create a new export job. Supports CSV, Excel, JSON, and PDF formats with filters.",
+)
 async def create_export(payload: ExportCreate, request: Request):
     """Create a new export job. Publishes to the export stream for async processing."""
     session_factory = request.app.state.db_session
@@ -1085,7 +1110,13 @@ async def create_export(payload: ExportCreate, request: Request):
         )
 
 
-@app.get("/exports", response_model=list[ExportJobOut])
+@app.get(
+    "/exports",
+    response_model=list[ExportJobOut],
+    tags=["Exports"],
+    summary="List export jobs",
+    description="List all export jobs for a project, sorted by creation date descending.",
+)
 async def list_exports(request: Request, project_id: int = Query(...)):
     """List export jobs for a project."""
     session_factory = request.app.state.db_session
@@ -1112,7 +1143,12 @@ async def list_exports(request: Request, project_id: int = Query(...)):
         ]
 
 
-@app.get("/exports/{export_id}/status")
+@app.get(
+    "/exports/{export_id}/status",
+    tags=["Exports"],
+    summary="Check export status",
+    description="Check the current status of an export job including row count and any error messages.",
+)
 async def get_export_status(export_id: int, request: Request):
     """Check the status of an export job."""
     session_factory = request.app.state.db_session
@@ -1133,7 +1169,12 @@ async def get_export_status(export_id: int, request: Request):
         }
 
 
-@app.get("/exports/{export_id}/download")
+@app.get(
+    "/exports/{export_id}/download",
+    tags=["Exports"],
+    summary="Download export file",
+    description="Download the completed export file. Returns 409 if the export is not yet complete.",
+)
 async def download_export(export_id: int, request: Request):
     """Download the completed export file."""
     session_factory = request.app.state.db_session
@@ -1177,7 +1218,14 @@ async def download_export(export_id: int, request: Request):
 # ============================================================
 
 
-@app.post("/integrations", response_model=IntegrationOut, status_code=201)
+@app.post(
+    "/integrations",
+    response_model=IntegrationOut,
+    status_code=201,
+    tags=["Integrations"],
+    summary="Create an integration",
+    description="Configure a new integration with Salesforce, HubSpot, Slack, Tableau, or a custom webhook.",
+)
 async def create_integration(payload: IntegrationCreate, request: Request):
     """Configure a new integration (Salesforce, HubSpot, Slack, Tableau, webhook)."""
     session_factory = request.app.state.db_session
@@ -1212,7 +1260,13 @@ async def create_integration(payload: IntegrationCreate, request: Request):
         )
 
 
-@app.get("/integrations", response_model=list[IntegrationOut])
+@app.get(
+    "/integrations",
+    response_model=list[IntegrationOut],
+    tags=["Integrations"],
+    summary="List integrations",
+    description="List all configured integrations for an organization.",
+)
 async def list_integrations(request: Request, org_id: int = Query(...)):
     """List integrations for an organization."""
     session_factory = request.app.state.db_session
@@ -1237,7 +1291,13 @@ async def list_integrations(request: Request, org_id: int = Query(...)):
         ]
 
 
-@app.post("/integrations/{integration_id}/sync", response_model=IntegrationSyncResult)
+@app.post(
+    "/integrations/{integration_id}/sync",
+    response_model=IntegrationSyncResult,
+    tags=["Integrations"],
+    summary="Trigger integration sync",
+    description="Manually trigger a sync for an integration, pushing mention data to the external platform.",
+)
 async def trigger_sync(integration_id: int, request: Request, project_id: int = Query(None)):
     """Trigger a manual sync for an integration."""
     session_factory = request.app.state.db_session
@@ -1250,7 +1310,13 @@ async def trigger_sync(integration_id: int, request: Request, project_id: int = 
     return result
 
 
-@app.delete("/integrations/{integration_id}", status_code=204)
+@app.delete(
+    "/integrations/{integration_id}",
+    status_code=204,
+    tags=["Integrations"],
+    summary="Delete an integration",
+    description="Remove an integration configuration permanently.",
+)
 async def delete_integration(integration_id: int, request: Request):
     """Delete an integration."""
     session_factory = request.app.state.db_session

@@ -240,6 +240,7 @@ services:
     depends_on:
       elasticsearch: { condition: service_healthy }
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   # ============================================================
   # Phase 3: Competitive Parity
@@ -323,6 +324,7 @@ services:
       <<: *common-env
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   scheduler:
     build:
@@ -367,6 +369,36 @@ services:
       <<: *common-env
     depends_on:
       redis: { condition: service_healthy }
+
+  project:
+    build:
+      context: .
+      dockerfile: services/project_service/Dockerfile
+    command: uvicorn services.project_service.app.main:app --host 0.0.0.0 --port 8020 --reload
+    ports:
+      - "8020:8020"
+    volumes:
+      - .:/app
+    environment:
+      <<: *common-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  # ============================================================
+  # Frontend
+  # ============================================================
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://gateway:8000
+    depends_on:
+      - gateway
 
   # ============================================================
   # Monitoring

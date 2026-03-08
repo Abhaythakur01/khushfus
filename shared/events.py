@@ -11,6 +11,7 @@ Streams:
 Each service uses a consumer group so multiple instances can share the load.
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -275,3 +276,89 @@ class EventBus:
             flat = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in data.items()}
             pipe.xadd(stream, flat)
         return await pipe.execute()
+
+    async def publish_raw(self, stream: str, data: dict) -> str:
+        """Publish a flat dict directly to a stream (no dataclass conversion)."""
+        r = await self.connect()
+        flat = {k: str(v) for k, v in data.items()}
+        msg_id = await r.xadd(stream, flat)
+        logger.debug(f"Published raw to {stream}: {msg_id}")
+        return msg_id
+
+    async def consume_with_retry(
+        self,
+        stream: str,
+        group: str,
+        consumer: str,
+        handler,
+        max_retries: int = 3,
+        count: int = 10,
+        block_ms: int = 5000,
+    ):
+        """Consume messages with automatic retry and DLQ on failure."""
+        messages = await self.consume(stream, group, consumer, count, block_ms)
+        for msg_id, data in messages:
+            retries = int(data.get("_retry_count", "0"))
+            try:
+                await handler(data)
+                await self.ack(stream, group, msg_id)
+            except Exception as e:
+                logger.error(f"Failed processing {msg_id} on {stream}: {e}")
+                if retries >= max_retries:
+                    # Move to DLQ
+                    dlq_stream = f"{stream}:dlq"
+                    data["_original_stream"] = stream
+                    data["_error"] = str(e)
+                    data["_retry_count"] = str(retries + 1)
+                    await self.publish_raw(dlq_stream, data)
+                    await self.ack(stream, group, msg_id)
+                    logger.warning(f"Message {msg_id} moved to DLQ {dlq_stream}")
+                else:
+                    # Re-publish with incremented retry count for retry
+                    data["_retry_count"] = str(retries + 1)
+                    await self.publish_raw(stream, data)
+                    await self.ack(stream, group, msg_id)
+                    backoff = 2 ** retries * 0.1  # Exponential backoff
+                    logger.info(f"Retrying message {msg_id} (attempt {retries + 1}), backoff {backoff:.1f}s")
+                    await asyncio.sleep(backoff)
+
+    async def get_dlq_messages(self, stream: str, count: int = 100) -> list[tuple[str, dict]]:
+        """Read messages from a DLQ stream.
+
+        Args:
+            stream: The original stream name (`:dlq` suffix is appended automatically).
+            count: Maximum number of messages to return.
+
+        Returns:
+            List of (msg_id, data) tuples from the DLQ.
+        """
+        r = await self.connect()
+        dlq_stream = f"{stream}:dlq"
+        results = await r.xrange(dlq_stream, count=count)
+        return [(msg_id, data) for msg_id, data in results]
+
+    async def reprocess_dlq(self, stream: str, count: int = 100) -> int:
+        """Move messages from a DLQ back to the original stream for reprocessing.
+
+        Args:
+            stream: The original stream name (`:dlq` suffix is appended automatically).
+            count: Maximum number of messages to reprocess.
+
+        Returns:
+            Number of messages moved back to the original stream.
+        """
+        r = await self.connect()
+        dlq_stream = f"{stream}:dlq"
+        messages = await r.xrange(dlq_stream, count=count)
+        moved = 0
+        for msg_id, data in messages:
+            # Reset retry count and remove DLQ metadata
+            data.pop("_error", None)
+            data.pop("_original_stream", None)
+            data["_retry_count"] = "0"
+            await self.publish_raw(stream, data)
+            await r.xdel(dlq_stream, msg_id)
+            moved += 1
+        if moved:
+            logger.info(f"Reprocessed {moved} messages from {dlq_stream} back to {stream}")
+        return moved

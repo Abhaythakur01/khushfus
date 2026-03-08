@@ -350,6 +350,17 @@ app = FastAPI(
     title="KhushFus Identity Service",
     description="Authentication, SSO, JWT, sessions, and user profiles",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Auth", "description": "Password-based registration, login, token refresh, and logout."},
+        {"name": "Token", "description": "Token validation for inter-service communication."},
+        {"name": "SSO", "description": "SAML and OIDC single sign-on endpoints."},
+        {"name": "Profile", "description": "User profile retrieval, update, and password change."},
+        {"name": "Sessions", "description": "Session listing and revocation."},
+        {"name": "Admin", "description": "Administrative user lookup."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -375,9 +386,20 @@ except ImportError:
     pass
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Identity health check",
+    description="Returns the health status of the Identity service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "identity", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("identity", checks=checks)
 
 
 # ===================================================================
@@ -385,7 +407,14 @@ async def health():
 # ===================================================================
 
 
-@app.post("/api/v1/auth/register", response_model=UserOut, status_code=201)
+@app.post(
+    "/api/v1/auth/register",
+    response_model=UserOut,
+    status_code=201,
+    tags=["Auth"],
+    summary="Register a new user",
+    description="Create a new user account with email and password. Optionally join an organization by slug.",
+)
 async def register(
     data: RegisterRequest,
     request: Request,
@@ -424,7 +453,13 @@ async def register(
     return user
 
 
-@app.post("/api/v1/auth/login", response_model=TokenResponse)
+@app.post(
+    "/api/v1/auth/login",
+    response_model=TokenResponse,
+    tags=["Auth"],
+    summary="Login with credentials",
+    description="Authenticate with email and password to receive JWT access and refresh tokens.",
+)
 async def login(
     data: LoginRequest,
     request: Request,
@@ -468,7 +503,13 @@ async def login(
     )
 
 
-@app.post("/api/v1/auth/refresh", response_model=TokenResponse)
+@app.post(
+    "/api/v1/auth/refresh",
+    response_model=TokenResponse,
+    tags=["Auth"],
+    summary="Refresh tokens",
+    description="Exchange a valid refresh token for a new access and refresh token pair with session rotation.",
+)
 async def refresh_tokens(
     body: RefreshRequest,
     request: Request,
@@ -516,7 +557,13 @@ async def refresh_tokens(
     )
 
 
-@app.post("/api/v1/auth/logout", status_code=204)
+@app.post(
+    "/api/v1/auth/logout",
+    status_code=204,
+    tags=["Auth"],
+    summary="Logout",
+    description="Revoke all active sessions for the current user, effectively logging out everywhere.",
+)
 async def logout(
     request: Request,
     user: User = Depends(require_auth),
@@ -535,7 +582,13 @@ async def logout(
 # ===================================================================
 
 
-@app.get("/api/v1/auth/validate", response_model=TokenValidateResponse)
+@app.get(
+    "/api/v1/auth/validate",
+    response_model=TokenValidateResponse,
+    tags=["Token"],
+    summary="Validate access token",
+    description="Validate a Bearer access token and return the associated user ID and email.",
+)
 async def validate_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
@@ -561,7 +614,12 @@ async def validate_token(
 # ===================================================================
 
 
-@app.post("/api/v1/sso/saml/init")
+@app.post(
+    "/api/v1/sso/saml/init",
+    tags=["SSO"],
+    summary="Initiate SAML login",
+    description="Start a SAML SSO flow by returning the IdP redirect URL for the specified organization.",
+)
 async def saml_init(
     body: SAMLInitRequest,
     request: Request,
@@ -603,7 +661,13 @@ async def saml_init(
     }
 
 
-@app.post("/api/v1/sso/saml/acs")
+@app.post(
+    "/api/v1/sso/saml/acs",
+    response_model=TokenResponse,
+    tags=["SSO"],
+    summary="SAML assertion consumer",
+    description="Process the SAML assertion from the IdP and issue JWT tokens for the user.",
+)
 async def saml_acs(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -718,7 +782,12 @@ def _extract_saml_attr(xml_str: str, attr_name: str) -> str | None:
 # ===================================================================
 
 
-@app.post("/api/v1/sso/oidc/init")
+@app.post(
+    "/api/v1/sso/oidc/init",
+    tags=["SSO"],
+    summary="Initiate OIDC login",
+    description="Start an OIDC SSO flow by returning the authorization URL for the specified organization.",
+)
 async def oidc_init(
     body: OIDCInitRequest,
     request: Request,
@@ -774,7 +843,13 @@ async def oidc_init(
     return {"redirect_url": auth_url, "state": state}
 
 
-@app.get("/api/v1/sso/oidc/callback")
+@app.get(
+    "/api/v1/sso/oidc/callback",
+    response_model=TokenResponse,
+    tags=["SSO"],
+    summary="OIDC callback",
+    description="Handle the OIDC authorization code callback, exchange for tokens, and issue KhushFus JWT tokens.",
+)
 async def oidc_callback(
     code: str = Query(...),
     state: str = Query(...),
@@ -945,13 +1020,25 @@ async def _find_or_create_sso_user(
 # ===================================================================
 
 
-@app.get("/api/v1/users/me", response_model=UserOut)
+@app.get(
+    "/api/v1/users/me",
+    response_model=UserOut,
+    tags=["Profile"],
+    summary="Get current user profile",
+    description="Return the authenticated user's profile information.",
+)
 async def get_profile(user: User = Depends(require_auth)):
     """Get the current authenticated user's profile."""
     return user
 
 
-@app.patch("/api/v1/users/me", response_model=UserOut)
+@app.patch(
+    "/api/v1/users/me",
+    response_model=UserOut,
+    tags=["Profile"],
+    summary="Update user profile",
+    description="Update the current user's display name or avatar URL.",
+)
 async def update_profile(
     data: ProfileUpdateRequest,
     request: Request,
@@ -970,7 +1057,13 @@ async def update_profile(
     return user
 
 
-@app.post("/api/v1/users/me/change-password", status_code=204)
+@app.post(
+    "/api/v1/users/me/change-password",
+    status_code=204,
+    tags=["Profile"],
+    summary="Change password",
+    description="Change the current user's password. Requires current password and revokes all sessions.",
+)
 async def change_password(
     data: PasswordChangeRequest,
     request: Request,
@@ -1001,7 +1094,13 @@ async def change_password(
 # ===================================================================
 
 
-@app.get("/api/v1/sessions", response_model=list[SessionOut])
+@app.get(
+    "/api/v1/sessions",
+    response_model=list[SessionOut],
+    tags=["Sessions"],
+    summary="List active sessions",
+    description="List all active sessions for the current authenticated user.",
+)
 async def list_sessions(
     user: User = Depends(require_auth),
     bus: EventBus = Depends(get_event_bus),
@@ -1020,7 +1119,13 @@ async def list_sessions(
     ]
 
 
-@app.delete("/api/v1/sessions/{session_id}", status_code=204)
+@app.delete(
+    "/api/v1/sessions/{session_id}",
+    status_code=204,
+    tags=["Sessions"],
+    summary="Revoke a session",
+    description="Revoke a specific session by ID. Only sessions owned by the current user can be revoked.",
+)
 async def revoke_session(
     session_id: str,
     request: Request,
@@ -1035,7 +1140,13 @@ async def revoke_session(
     return Response(status_code=204)
 
 
-@app.delete("/api/v1/sessions", status_code=204)
+@app.delete(
+    "/api/v1/sessions",
+    status_code=204,
+    tags=["Sessions"],
+    summary="Revoke all sessions",
+    description="Revoke all active sessions for the current user, forcing re-authentication on all devices.",
+)
 async def revoke_all_sessions(
     request: Request,
     user: User = Depends(require_auth),
@@ -1052,7 +1163,13 @@ async def revoke_all_sessions(
 # ===================================================================
 
 
-@app.get("/api/v1/users/{user_id}", response_model=UserOut)
+@app.get(
+    "/api/v1/users/{user_id}",
+    response_model=UserOut,
+    tags=["Admin"],
+    summary="Get user by ID",
+    description="Retrieve a user by ID. Requires authentication and either superadmin privileges or matching user ID.",
+)
 async def get_user(
     user_id: int,
     current_user: User = Depends(require_auth),

@@ -149,6 +149,12 @@ app = FastAPI(
     title="KhushFus Competitive Intelligence Service",
     description="Benchmarking and competitive analysis for social listening",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Benchmarks", "description": "Competitive benchmarking and analysis endpoints."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -306,12 +312,26 @@ async def _collect_all_brand_metrics(
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Competitive health check",
+    description="Returns the health status of the Competitive Intelligence service and its dependencies.",
+)
 async def health():
-    return HealthResponse()
+    from shared.health import build_health_response, check_postgres
+
+    checks = {"postgres": await check_postgres(database_url=DATABASE_URL)}
+    return await build_health_response("competitive-intelligence", checks=checks)
 
 
-@app.get("/benchmark/{project_id}", response_model=BenchmarkResponse)
+@app.get(
+    "/benchmark/{project_id}",
+    response_model=BenchmarkResponse,
+    tags=["Benchmarks"],
+    summary="Full competitive benchmark",
+    description="Full competitive benchmark: share of voice, sentiment, engagement, and trending keywords.",
+)
 async def get_benchmark(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
@@ -353,7 +373,13 @@ async def get_benchmark(
     )
 
 
-@app.get("/benchmark/{project_id}/share-of-voice", response_model=SOVResponse)
+@app.get(
+    "/benchmark/{project_id}/share-of-voice",
+    response_model=SOVResponse,
+    tags=["Benchmarks"],
+    summary="Share of voice breakdown",
+    description="Calculate share of voice as a percentage of total mentions across the project and its competitors.",
+)
 async def share_of_voice(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
@@ -413,6 +439,9 @@ async def share_of_voice(
 @app.get(
     "/benchmark/{project_id}/sentiment-comparison",
     response_model=SentimentComparisonResponse,
+    tags=["Benchmarks"],
+    summary="Sentiment comparison",
+    description="Compare sentiment distribution and average scores across the project and its competitors.",
 )
 async def sentiment_comparison(
     project_id: int,
@@ -474,6 +503,9 @@ async def sentiment_comparison(
 @app.get(
     "/benchmark/{project_id}/trending",
     response_model=TrendingComparisonResponse,
+    tags=["Benchmarks"],
+    summary="Trending comparison",
+    description="Compare trending topics and keywords between the project and its competitors.",
 )
 async def trending_comparison(
     project_id: int,
@@ -537,7 +569,13 @@ async def trending_comparison(
     return TrendingComparisonResponse(project_id=project_id, brands=brands)
 
 
-@app.post("/benchmark/{project_id}/generate", response_model=GenerateResponse)
+@app.post(
+    "/benchmark/{project_id}/generate",
+    response_model=GenerateResponse,
+    tags=["Benchmarks"],
+    summary="Generate benchmark records",
+    description="Calculate and store benchmark records for each competitor as a landscape snapshot.",
+)
 async def generate_benchmark(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
@@ -614,7 +652,13 @@ async def generate_benchmark(
     )
 
 
-@app.get("/benchmark/{project_id}/history", response_model=list[BenchmarkRecordOut])
+@app.get(
+    "/benchmark/{project_id}/history",
+    response_model=list[BenchmarkRecordOut],
+    tags=["Benchmarks"],
+    summary="Benchmark history",
+    description="List past benchmark records for a project, optionally filtered by a specific competitor.",
+)
 async def benchmark_history(
     project_id: int,
     competitor_id: int | None = Query(None),

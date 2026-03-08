@@ -36,8 +36,15 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.post("/register", response_model=UserOut, status_code=201)
+@router.post(
+    "/register",
+    response_model=UserOut,
+    status_code=201,
+    summary="Register a new user",
+    description="Create a new user account with email, password, and full name.",
+)
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Register a new user. Returns the created user profile."""
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -54,8 +61,14 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Authenticate user",
+    description="Authenticate with email and password to receive a JWT access token.",
+)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Validate credentials and return a JWT access token."""
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.hashed_password):
@@ -65,6 +78,12 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
-@router.get("/me", response_model=UserOut)
+@router.get(
+    "/me",
+    response_model=UserOut,
+    summary="Get current user profile",
+    description="Return the authenticated user's profile information.",
+)
 async def get_me(user: User = Depends(require_auth)):
+    """Return the profile of the currently authenticated user."""
     return user

@@ -161,6 +161,15 @@ app = FastAPI(
     title="KhushFus Search Service",
     description="Full-text search and analytics over social mentions",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Search", "description": "Full-text and advanced Elasticsearch queries."},
+        {"name": "Suggest", "description": "Autocomplete and suggestion endpoints."},
+        {"name": "Analytics", "description": "Trending topics and faceted counts."},
+        {"name": "Saved Searches", "description": "CRUD for saved search configurations."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -247,15 +256,32 @@ def _build_es_query(req: SearchRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Search health check",
+    description="Returns the health status of the Search service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "search-service", "version": "0.1.0"}
+    from shared.health import build_health_response, check_elasticsearch, check_postgres
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "elasticsearch": await check_elasticsearch(ELASTICSEARCH_URL),
+    }
+    return await build_health_response("search-service", checks=checks)
 
 
 # ---- Full-text search ----
 
 
-@app.post("/search", response_model=SearchResponse)
+@app.post(
+    "/search",
+    response_model=SearchResponse,
+    tags=["Search"],
+    summary="Full-text search",
+    description="Search mentions with full-text queries and filters for platform, sentiment, and more.",
+)
 async def search(req: SearchRequest):
     """Full-text search with filters across mentions."""
     es: AsyncElasticsearch = app.state.es
@@ -284,7 +310,12 @@ async def search(req: SearchRequest):
 # ---- Advanced (raw DSL) search ----
 
 
-@app.post("/search/advanced")
+@app.post(
+    "/search/advanced",
+    tags=["Search"],
+    summary="Advanced DSL search",
+    description="Execute a raw Elasticsearch DSL query for maximum flexibility.",
+)
 async def search_advanced(req: AdvancedSearchRequest):
     """Execute a raw Elasticsearch DSL query."""
     es: AsyncElasticsearch = app.state.es
@@ -301,7 +332,13 @@ async def search_advanced(req: AdvancedSearchRequest):
 # ---- Autocomplete / suggest ----
 
 
-@app.get("/search/suggest", response_model=SuggestResponse)
+@app.get(
+    "/search/suggest",
+    response_model=SuggestResponse,
+    tags=["Suggest"],
+    summary="Autocomplete suggestions",
+    description="Get autocomplete suggestions for keywords, authors, or topics based on a prefix query.",
+)
 async def suggest(
     q: str = Query(..., min_length=1, description="Prefix to autocomplete"),
     field: str = Query("text", description="Field to suggest from: text, author_name, author_handle, topics"),
@@ -349,7 +386,13 @@ async def suggest(
 # ---- Trending topics ----
 
 
-@app.get("/search/trending", response_model=TrendingResponse)
+@app.get(
+    "/search/trending",
+    response_model=TrendingResponse,
+    tags=["Analytics"],
+    summary="Trending topics",
+    description="Trending topics and keywords via Elasticsearch significant_terms aggregation.",
+)
 async def trending(
     project_id: int | None = Query(None),
     hours: int = Query(24, ge=1, le=720, description="Look-back window in hours"),
@@ -412,7 +455,13 @@ async def trending(
 # ---- Faceted counts ----
 
 
-@app.get("/search/facets", response_model=FacetsResponse)
+@app.get(
+    "/search/facets",
+    response_model=FacetsResponse,
+    tags=["Analytics"],
+    summary="Faceted counts",
+    description="Faceted aggregation counts by platform, sentiment, and language with optional filters.",
+)
 async def facets(
     q: str = Query("", description="Optional full-text query to scope facets"),
     project_id: int | None = Query(None),
@@ -478,7 +527,14 @@ async def facets(
 # ---- Saved searches (CRUD) ----
 
 
-@app.post("/saved-searches", response_model=SavedSearchOut, status_code=201)
+@app.post(
+    "/saved-searches",
+    response_model=SavedSearchOut,
+    status_code=201,
+    tags=["Saved Searches"],
+    summary="Create a saved search",
+    description="Save a search configuration with filters for quick re-use later.",
+)
 async def create_saved_search(req: SavedSearchCreate):
     """Create a saved search."""
     session_factory = app.state.db_session
@@ -495,7 +551,13 @@ async def create_saved_search(req: SavedSearchCreate):
         return obj
 
 
-@app.get("/saved-searches", response_model=list[SavedSearchOut])
+@app.get(
+    "/saved-searches",
+    response_model=list[SavedSearchOut],
+    tags=["Saved Searches"],
+    summary="List saved searches",
+    description="List all saved searches for a project, sorted by creation date descending.",
+)
 async def list_saved_searches(
     project_id: int = Query(..., description="Project to list saved searches for"),
 ):
@@ -508,7 +570,13 @@ async def list_saved_searches(
         return result.scalars().all()
 
 
-@app.delete("/saved-searches/{search_id}", status_code=204)
+@app.delete(
+    "/saved-searches/{search_id}",
+    status_code=204,
+    tags=["Saved Searches"],
+    summary="Delete a saved search",
+    description="Remove a saved search by its ID.",
+)
 async def delete_saved_search(search_id: int):
     """Delete a saved search by ID."""
     session_factory = app.state.db_session

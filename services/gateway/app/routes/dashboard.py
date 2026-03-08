@@ -11,7 +11,11 @@ from ..deps import get_db
 router = APIRouter()
 
 
-@router.get("/{project_id}")
+@router.get(
+    "/{project_id}",
+    summary="Get dashboard metrics",
+    description="Aggregated dashboard: mentions, sentiment, platforms, engagement, top contributors, and trends.",
+)
 async def get_dashboard(
     project_id: int,
     days: int = Query(7, ge=1, le=90),

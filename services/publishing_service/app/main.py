@@ -463,6 +463,13 @@ app = FastAPI(
     title="KhushFus Publishing Service",
     description="Scheduled content publishing and reply management",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Posts", "description": "Scheduled post CRUD, approval, and immediate publishing."},
+        {"name": "Replies", "description": "Reply to social mentions."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -475,9 +482,20 @@ except ImportError:
     pass
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Publishing health check",
+    description="Returns the health status of the Publishing service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "publishing", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("publishing", checks=checks)
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +503,14 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@app.post("/posts", response_model=PostOut, status_code=201)
+@app.post(
+    "/posts",
+    response_model=PostOut,
+    status_code=201,
+    tags=["Posts"],
+    summary="Create a scheduled post",
+    description="Create a new post in DRAFT status, scheduled for future publishing to a social platform.",
+)
 async def create_post(body: PostCreate):
     """Create a new scheduled post (defaults to DRAFT status)."""
     session_factory = app.state.db_session
@@ -529,7 +554,13 @@ async def create_post(body: PostCreate):
         return PostOut.model_validate(post)
 
 
-@app.get("/posts", response_model=list[PostOut])
+@app.get(
+    "/posts",
+    response_model=list[PostOut],
+    tags=["Posts"],
+    summary="List scheduled posts",
+    description="List scheduled posts for a project with optional status and platform filters.",
+)
 async def list_posts(
     project_id: int = Query(..., description="Filter by project ID"),
     status: Optional[str] = Query(None, description="Filter by status: draft, scheduled, published, failed"),
@@ -552,7 +583,13 @@ async def list_posts(
         return [PostOut.model_validate(p) for p in posts]
 
 
-@app.patch("/posts/{post_id}/approve", response_model=PostOut)
+@app.patch(
+    "/posts/{post_id}/approve",
+    response_model=PostOut,
+    tags=["Posts"],
+    summary="Approve a draft post",
+    description="Approve a draft post and move it to SCHEDULED status for background publishing.",
+)
 async def approve_post(post_id: int, body: ApproveRequest):
     """Approve a draft post and move it to SCHEDULED status."""
     session_factory = app.state.db_session
@@ -592,7 +629,13 @@ async def approve_post(post_id: int, body: ApproveRequest):
         return PostOut.model_validate(post)
 
 
-@app.delete("/posts/{post_id}", status_code=204)
+@app.delete(
+    "/posts/{post_id}",
+    status_code=204,
+    tags=["Posts"],
+    summary="Delete a scheduled post",
+    description="Cancel and delete a scheduled post. Already-published posts cannot be deleted.",
+)
 async def delete_post(post_id: int):
     """Cancel and delete a scheduled post. Cannot delete already-published posts."""
     session_factory = app.state.db_session
@@ -630,7 +673,13 @@ async def delete_post(post_id: int):
     return None
 
 
-@app.post("/posts/{post_id}/publish-now", response_model=PostOut)
+@app.post(
+    "/posts/{post_id}/publish-now",
+    response_model=PostOut,
+    tags=["Posts"],
+    summary="Publish immediately",
+    description="Immediately publish a post to the target platform, bypassing the scheduled time.",
+)
 async def publish_now(post_id: int):
     """Immediately publish a post, bypassing the schedule."""
     session_factory = app.state.db_session
@@ -661,7 +710,14 @@ async def publish_now(post_id: int):
         return PostOut.model_validate(updated)
 
 
-@app.post("/reply", response_model=PostOut, status_code=201)
+@app.post(
+    "/reply",
+    response_model=PostOut,
+    status_code=201,
+    tags=["Replies"],
+    summary="Create a reply",
+    description="Create a reply to a specific social mention. Can be scheduled or drafted for later publishing.",
+)
 async def create_reply(body: ReplyCreate):
     """Create a reply to a specific mention. Optionally schedule it or draft it."""
     session_factory = app.state.db_session

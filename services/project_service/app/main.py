@@ -119,6 +119,13 @@ app = FastAPI(
     title="KhushFus Project Service",
     description="Project and keyword management for social listening",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Projects", "description": "Project CRUD operations scoped by organization."},
+        {"name": "Keywords", "description": "Keyword management per project."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -154,9 +161,17 @@ def get_org_id(x_org_id: int = Header(..., alias="X-Org-Id")) -> int:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Project health check",
+    description="Returns the health status of the Project service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "project", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres
+
+    checks = {"postgres": await check_postgres(database_url=DATABASE_URL)}
+    return await build_health_response("project", checks=checks)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +215,14 @@ def _project_to_out(project: Project, keywords: list[Keyword] | None = None) -> 
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/v1/projects", response_model=ProjectOut, status_code=201)
+@app.post(
+    "/api/v1/projects",
+    response_model=ProjectOut,
+    status_code=201,
+    tags=["Projects"],
+    summary="Create a project",
+    description="Create a new social listening project with optional keywords, scoped by X-Org-Id.",
+)
 async def create_project(
     payload: ProjectCreateRequest,
     org_id: int = Depends(get_org_id),
@@ -244,7 +266,13 @@ async def create_project(
         raise HTTPException(status_code=500, detail="Failed to create project")
 
 
-@app.get("/api/v1/projects", response_model=ProjectListOut)
+@app.get(
+    "/api/v1/projects",
+    response_model=ProjectListOut,
+    tags=["Projects"],
+    summary="List projects",
+    description="List projects for an organization with optional status filtering and pagination.",
+)
 async def list_projects(
     org_id: int = Depends(get_org_id),
     db: AsyncSession = Depends(get_db),
@@ -284,7 +312,13 @@ async def list_projects(
         raise HTTPException(status_code=500, detail="Failed to list projects")
 
 
-@app.get("/api/v1/projects/{project_id}", response_model=ProjectOut)
+@app.get(
+    "/api/v1/projects/{project_id}",
+    response_model=ProjectOut,
+    tags=["Projects"],
+    summary="Get project by ID",
+    description="Retrieve a single project with its keywords. Archived projects return 404.",
+)
 async def get_project(
     project_id: int,
     org_id: int = Depends(get_org_id),
@@ -311,7 +345,13 @@ async def get_project(
         raise HTTPException(status_code=500, detail="Failed to get project")
 
 
-@app.put("/api/v1/projects/{project_id}", response_model=ProjectOut)
+@app.put(
+    "/api/v1/projects/{project_id}",
+    response_model=ProjectOut,
+    tags=["Projects"],
+    summary="Update a project",
+    description="Update project fields (name, description, status, platforms). Archived projects cannot be updated.",
+)
 async def update_project(
     project_id: int,
     payload: ProjectUpdateRequest,
@@ -359,7 +399,13 @@ async def update_project(
         raise HTTPException(status_code=500, detail="Failed to update project")
 
 
-@app.delete("/api/v1/projects/{project_id}", status_code=204)
+@app.delete(
+    "/api/v1/projects/{project_id}",
+    status_code=204,
+    tags=["Projects"],
+    summary="Archive a project",
+    description="Soft delete a project by setting its status to archived. The project data is retained.",
+)
 async def delete_project(
     project_id: int,
     org_id: int = Depends(get_org_id),
@@ -389,7 +435,14 @@ async def delete_project(
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/v1/projects/{project_id}/keywords", response_model=KeywordOut, status_code=201)
+@app.post(
+    "/api/v1/projects/{project_id}/keywords",
+    response_model=KeywordOut,
+    status_code=201,
+    tags=["Keywords"],
+    summary="Add a keyword",
+    description="Add a tracking keyword to a project. Duplicate keywords are rejected.",
+)
 async def add_keyword(
     project_id: int,
     payload: KeywordCreate,
@@ -441,7 +494,13 @@ async def add_keyword(
         raise HTTPException(status_code=500, detail="Failed to add keyword")
 
 
-@app.delete("/api/v1/projects/{project_id}/keywords/{keyword_id}", status_code=204)
+@app.delete(
+    "/api/v1/projects/{project_id}/keywords/{keyword_id}",
+    status_code=204,
+    tags=["Keywords"],
+    summary="Remove a keyword",
+    description="Remove a tracking keyword from a project by keyword ID.",
+)
 async def remove_keyword(
     project_id: int,
     keyword_id: int,

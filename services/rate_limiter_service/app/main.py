@@ -326,6 +326,13 @@ app = FastAPI(
     title="KhushFus Rate Limiter Service",
     description="Centralized platform API rate limit tracking and enforcement",
     version="0.1.0",
+    contact={"name": "KhushFus Engineering", "email": "engineering@khushfus.io"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "Rate Limiting", "description": "Acquire rate limit slots and check quota status."},
+        {"name": "Quotas", "description": "Configure and list platform quota definitions."},
+        {"name": "Health", "description": "Service health check."},
+    ],
     lifespan=lifespan,
 )
 
@@ -338,9 +345,20 @@ except ImportError:
     pass
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Rate limiter health check",
+    description="Returns the health status of the Rate Limiter service and its dependencies.",
+)
 async def health():
-    return {"status": "ok", "service": "rate-limiter", "version": "0.1.0"}
+    from shared.health import build_health_response, check_postgres, check_redis
+
+    checks = {
+        "postgres": await check_postgres(database_url=DATABASE_URL),
+        "redis": await check_redis(REDIS_URL),
+    }
+    return await build_health_response("rate-limiter", checks=checks)
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +366,13 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@app.post("/acquire", response_model=AcquireResponse)
+@app.post(
+    "/acquire",
+    response_model=AcquireResponse,
+    tags=["Rate Limiting"],
+    summary="Acquire a rate limit slot",
+    description="Request permission to call a platform endpoint. Returns allow/deny with wait time.",
+)
 async def acquire(body: AcquireRequest):
     """
     Request permission to make an API call to a platform endpoint.
@@ -374,7 +398,13 @@ async def acquire(body: AcquireRequest):
     return result
 
 
-@app.get("/quotas", response_model=list[QuotaOut])
+@app.get(
+    "/quotas",
+    response_model=list[QuotaOut],
+    tags=["Quotas"],
+    summary="List quota configurations",
+    description="List all configured platform quota definitions sorted by platform and endpoint.",
+)
 async def list_quotas():
     """List all configured platform quota definitions."""
     session_factory = app.state.db_session
@@ -385,7 +415,14 @@ async def list_quotas():
         return [QuotaOut.model_validate(q) for q in quotas]
 
 
-@app.post("/quotas", response_model=QuotaOut, status_code=201)
+@app.post(
+    "/quotas",
+    response_model=QuotaOut,
+    status_code=201,
+    tags=["Quotas"],
+    summary="Create or update a quota",
+    description="Create or update a platform quota configuration with custom max_requests and window_seconds.",
+)
 async def configure_quota(body: QuotaConfigRequest):
     """Create or update a platform quota configuration."""
     session_factory = app.state.db_session
@@ -430,7 +467,13 @@ async def configure_quota(body: QuotaConfigRequest):
             return QuotaOut.model_validate(quota)
 
 
-@app.get("/quotas/{platform}/status", response_model=list[QuotaStatusOut])
+@app.get(
+    "/quotas/{platform}/status",
+    response_model=list[QuotaStatusOut],
+    tags=["Rate Limiting"],
+    summary="Get platform quota status",
+    description="Real-time usage status for all endpoints of a platform with utilization and backoff.",
+)
 async def platform_status(platform: str):
     """Get current usage status for all endpoints of a platform."""
     session_factory = app.state.db_session
