@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: publishing
-          image: registry.gitlab.com/khushfus/khushfus/publishing:latest
+          image: registry.gitlab.com/khushfus/khushfus/publishing:REPLACE_WITH_TAG
           ports:
             - containerPort: 8013
           envFrom:
@@ -86,7 +86,7 @@ spec:
     spec:
       containers:
         - name: rate-limiter
-          image: registry.gitlab.com/khushfus/khushfus/rate-limiter:latest
+          image: registry.gitlab.com/khushfus/khushfus/rate-limiter:REPLACE_WITH_TAG
           ports:
             - containerPort: 8014
           envFrom:
@@ -152,7 +152,7 @@ spec:
     spec:
       containers:
         - name: enrichment
-          image: registry.gitlab.com/khushfus/khushfus/enrichment:latest
+          image: registry.gitlab.com/khushfus/khushfus/enrichment:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -188,7 +188,7 @@ spec:
     spec:
       containers:
         - name: export
-          image: registry.gitlab.com/khushfus/khushfus/export:latest
+          image: registry.gitlab.com/khushfus/khushfus/export:REPLACE_WITH_TAG
           ports:
             - containerPort: 8015
           envFrom:

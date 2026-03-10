@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import re
+import signal
 from datetime import datetime
 
 from sqlalchemy import select
@@ -412,12 +413,12 @@ async def enrich_mention(session_factory, mention_id: int, data: dict) -> Enrich
         )
 
 
-async def process_loop(bus: EventBus, session_factory):
+async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Main consumer loop: read enrichment requests, process, publish results."""
     await bus.ensure_group(STREAM_ENRICHMENT, GROUP_NAME)
     logger.info("Enrichment Service listening on '%s'...", STREAM_ENRICHMENT)
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_ENRICHMENT,
@@ -449,15 +450,27 @@ async def process_loop(bus: EventBus, session_factory):
             await asyncio.sleep(1)
 
 
+shutdown_event = asyncio.Event()
+
+
 async def main():
     engine, session_factory = create_db(DATABASE_URL)
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Data Enrichment Service started")
     try:
-        await process_loop(bus, session_factory)
+        await process_loop(bus, session_factory, shutdown_event)
     finally:
+        logger.info("Data Enrichment Service shutting down gracefully")
         await bus.close()
         await engine.dispose()
 

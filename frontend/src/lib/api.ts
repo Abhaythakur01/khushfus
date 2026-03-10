@@ -31,6 +31,7 @@ export interface SearchParams {
 
 class ApiClient {
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   setToken(token: string) {
     this.token = token;
@@ -38,6 +39,14 @@ class ApiClient {
 
   clearToken() {
     this.token = null;
+  }
+
+  /**
+   * Register a callback that fires when the server returns a 401.
+   * The AuthProvider uses this to clear credentials and redirect to login.
+   */
+  setOnUnauthorized(cb: (() => void) | null) {
+    this.onUnauthorized = cb;
   }
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -52,7 +61,11 @@ class ApiClient {
       headers: { ...headers, ...options?.headers },
     });
     if (!res.ok) {
-      throw new ApiError(res.status, await res.text());
+      const body = await res.text();
+      if (res.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
+      throw new ApiError(res.status, body);
     }
     return res.json();
   }

@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from shared.sanitize import strip_html
 from shared.url_validator import validate_url
 from src.collectors.base import BaseCollector, CollectedMention
 
@@ -119,6 +120,7 @@ class WebScraperCollector(BaseCollector):
             for article in articles:
                 text = article.get_text(separator=" ", strip=True)
                 text = re.sub(r"\s+", " ", text)[:5000]  # limit text length
+                text = strip_html(text)  # defense-in-depth XSS prevention
 
                 if not self._matches_keywords(text, keywords):
                     continue

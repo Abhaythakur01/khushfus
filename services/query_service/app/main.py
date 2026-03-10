@@ -11,6 +11,7 @@ Consumes from 'mentions:analyzed' stream:
 import asyncio
 import logging
 import os
+import signal
 from datetime import datetime
 
 from opensearchpy import AsyncOpenSearch
@@ -149,12 +150,12 @@ async def store_mention(db_session, es: AsyncOpenSearch, data: dict) -> bool:
         return True
 
 
-async def process_loop(bus: EventBus, db_session, es: AsyncOpenSearch):
+async def process_loop(bus: EventBus, db_session, es: AsyncOpenSearch, shutdown_event: asyncio.Event):
     """Main loop: consume analyzed mentions, store, index."""
     await bus.ensure_group(STREAM_ANALYZED_MENTIONS, GROUP_NAME)
     logger.info("Query Service listening for analyzed mentions...")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_ANALYZED_MENTIONS,
@@ -186,6 +187,9 @@ async def process_loop(bus: EventBus, db_session, es: AsyncOpenSearch):
             await asyncio.sleep(1)
 
 
+shutdown_event = asyncio.Event()
+
+
 async def main():
     engine, session_factory = create_db(DATABASE_URL)
     bus = EventBus(REDIS_URL)
@@ -194,10 +198,19 @@ async def main():
     es = AsyncOpenSearch(hosts=[ELASTICSEARCH_URL])
     await init_elasticsearch(es)
 
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Query Service started")
     try:
-        await process_loop(bus, session_factory, es)
+        await process_loop(bus, session_factory, es, shutdown_event)
     finally:
+        logger.info("Query Service shutting down gracefully")
         await es.close()
         await bus.close()
         await engine.dispose()

@@ -1,8 +1,9 @@
 """Shared Pydantic schemas used across services for API contracts."""
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 # ============================================================
 # Auth & Identity
@@ -10,13 +11,13 @@ from pydantic import BaseModel
 
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    full_name: str
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(max_length=200)
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 
@@ -51,9 +52,9 @@ class SSOConfigRequest(BaseModel):
 
 
 class OrgCreate(BaseModel):
-    name: str
-    slug: str
-    plan: str = "free"
+    name: str = Field(max_length=200)
+    slug: str = Field(max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    plan: Literal["free", "starter", "professional", "enterprise"] = "free"
 
 
 class OrgUpdate(BaseModel):
@@ -78,7 +79,7 @@ class OrgOut(BaseModel):
 
 
 class OrgMemberAdd(BaseModel):
-    email: str
+    email: EmailStr
     role: str = "viewer"
 
 
@@ -92,9 +93,9 @@ class OrgMemberOut(BaseModel):
 
 
 class ApiKeyCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=200)
     scopes: str = "read"
-    rate_limit: int = 1000
+    rate_limit: int = Field(default=1000, ge=1, le=100000)
 
 
 class ApiKeyOut(BaseModel):
@@ -126,9 +127,9 @@ class KeywordCreate(BaseModel):
 
 
 class ProjectCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=200)
     description: str | None = None
-    client_name: str
+    client_name: str = Field(max_length=200)
     organization_id: int | None = None
     platforms: str = "twitter,facebook,instagram,linkedin,youtube"
     keywords: list[KeywordCreate] = []
@@ -271,8 +272,8 @@ class SearchRequest(BaseModel):
     author: str | None = None
     since: datetime | None = None
     until: datetime | None = None
-    page: int = 1
-    page_size: int = 50
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=200)
 
 
 class SavedSearchCreate(BaseModel):
@@ -323,7 +324,7 @@ class ScheduledPostOut(BaseModel):
 
 class ExportCreate(BaseModel):
     project_id: int
-    export_format: str = "csv"
+    export_format: Literal["csv", "xlsx", "json"] = "csv"
     filters_json: str | None = None
 
 
@@ -374,7 +375,7 @@ class BenchmarkOut(BaseModel):
 
 class WorkflowCreate(BaseModel):
     project_id: int
-    name: str
+    name: str = Field(max_length=200)
     trigger_json: str
     actions_json: str
 
@@ -414,7 +415,7 @@ class AuditLogOut(BaseModel):
 
 
 class CollectRequest(BaseModel):
-    hours_back: int = 24
+    hours_back: int = Field(default=24, ge=1, le=720)
 
 
 class HealthResponse(BaseModel):

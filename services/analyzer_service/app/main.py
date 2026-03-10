@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 
 from shared.events import (
     STREAM_ANALYZED_MENTIONS,
@@ -88,12 +89,12 @@ def analyze_mention(data: dict) -> AnalyzedMentionEvent:
     )
 
 
-async def process_loop(bus: EventBus):
+async def process_loop(bus: EventBus, shutdown_event: asyncio.Event):
     """Main processing loop: consume raw mentions, analyze, publish."""
     await bus.ensure_group(STREAM_RAW_MENTIONS, GROUP_NAME)
     logger.info("Analyzer Service listening for raw mentions...")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_RAW_MENTIONS,
@@ -111,7 +112,8 @@ async def process_loop(bus: EventBus):
 
             for msg_id, data in messages:
                 try:
-                    event = analyze_mention(data)
+                    loop = asyncio.get_running_loop()
+                    event = await loop.run_in_executor(None, analyze_mention, data)
                     analyzed_events.append(event)
                     ack_ids.append(msg_id)
                 except Exception as e:
@@ -132,11 +134,27 @@ async def process_loop(bus: EventBus):
             await asyncio.sleep(1)
 
 
+shutdown_event = asyncio.Event()
+
+
 async def main():
     bus = EventBus(REDIS_URL)
     await bus.connect()
+
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Analyzer Service started")
-    await process_loop(bus)
+    try:
+        await process_loop(bus, shutdown_event)
+    finally:
+        logger.info("Analyzer Service shutting down gracefully")
+        await bus.close()
 
 
 if __name__ == "__main__":

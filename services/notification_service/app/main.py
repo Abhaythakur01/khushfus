@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 from collections import defaultdict
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -279,12 +280,12 @@ def _send_email_sync(msg: MIMEMultipart, recipient: str):
         logger.error(f"Email notification failed (sync): {e}")
 
 
-async def process_loop(bus: EventBus, session_factory):
+async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Main loop: consume analyzed mentions, check alert rules."""
     await bus.ensure_group(STREAM_ANALYZED_MENTIONS, GROUP_NAME)
     logger.info("Notification Service listening for analyzed mentions...")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_ANALYZED_MENTIONS,
@@ -306,13 +307,29 @@ async def process_loop(bus: EventBus, session_factory):
             await asyncio.sleep(1)
 
 
+shutdown_event = asyncio.Event()
+
+
 async def main():
     engine, session_factory = create_db(DATABASE_URL)
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Notification Service started")
-    await process_loop(bus, session_factory)
+    try:
+        await process_loop(bus, session_factory, shutdown_event)
+    finally:
+        logger.info("Notification Service shutting down gracefully")
+        await bus.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

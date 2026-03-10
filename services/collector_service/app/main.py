@@ -11,6 +11,7 @@ Runs as a long-lived async process:
 import asyncio
 import logging
 import os
+import signal
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -50,6 +51,7 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
     platforms = [p.strip() for p in project.platforms.split(",")]
 
     total = 0
+    r = bus._redis  # access underlying redis for dedup checks
     for platform_name in platforms:
         collector_cls = PLATFORM_COLLECTORS.get(platform_name)
         if not collector_cls:
@@ -60,9 +62,16 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
             raw_mentions = await collector.collect(keywords, since)
             logger.info(f"[{project.name}] {platform_name}: collected {len(raw_mentions)} mentions")
 
-            # Publish each mention to the event bus
+            # Publish each mention to the event bus (with dedup)
             events = []
             for m in raw_mentions:
+                # Skip duplicates using Redis-based dedup (24h TTL)
+                dedup_key = f"dedup:{platform_name}:{m.source_id}"
+                if r and await r.exists(dedup_key):
+                    continue
+                if r:
+                    await r.setex(dedup_key, 86400, "1")
+
                 matched = [kw for kw in keywords if kw.lower() in m.text.lower()]
                 events.append(
                     RawMentionEvent(
@@ -107,12 +116,12 @@ async def collect_all_active(bus: EventBus, session_factory):
             logger.error(f"Collection failed for project {project.id}: {e}")
 
 
-async def listen_for_requests(bus: EventBus, session_factory):
+async def listen_for_requests(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Listen for on-demand collection requests from the Gateway."""
     await bus.ensure_group("collection:request", GROUP_NAME)
     logger.info("Listening for collection requests...")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume("collection:request", GROUP_NAME, CONSUMER_NAME, block_ms=2000)
             for msg_id, data in messages:
@@ -126,9 +135,9 @@ async def listen_for_requests(bus: EventBus, session_factory):
             await asyncio.sleep(1)
 
 
-async def periodic_collection(bus: EventBus, session_factory):
+async def periodic_collection(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Run collection for all projects on a fixed interval."""
-    while True:
+    while not shutdown_event.is_set():
         logger.info("Starting periodic collection for all active projects")
         try:
             await collect_all_active(bus, session_factory)
@@ -136,7 +145,13 @@ async def periodic_collection(bus: EventBus, session_factory):
             logger.error(f"Periodic collection error: {e}")
 
         logger.info(f"Next collection in {COLLECTION_INTERVAL_SECONDS}s")
-        await asyncio.sleep(COLLECTION_INTERVAL_SECONDS)
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=COLLECTION_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+
+shutdown_event = asyncio.Event()
 
 
 async def main():
@@ -144,13 +159,26 @@ async def main():
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Collector Service started")
 
-    # Run both: on-demand listener + periodic scheduler
-    await asyncio.gather(
-        listen_for_requests(bus, session_factory),
-        periodic_collection(bus, session_factory),
-    )
+    try:
+        # Run both: on-demand listener + periodic scheduler
+        await asyncio.gather(
+            listen_for_requests(bus, session_factory, shutdown_event),
+            periodic_collection(bus, session_factory, shutdown_event),
+        )
+    finally:
+        logger.info("Collector Service shutting down gracefully")
+        await bus.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

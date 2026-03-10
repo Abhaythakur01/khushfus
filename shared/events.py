@@ -213,19 +213,63 @@ STREAM_COLLECTION_REQUEST = "collection:request"
 class EventBus:
     """Async Redis Streams event bus for microservice communication."""
 
-    def __init__(self, redis_url: str):
+    def __init__(self, redis_url: str, max_reconnect_attempts: int = 5, reconnect_delay: float = 1.0):
         self.redis_url = redis_url
         self._redis: aioredis.Redis | None = None
+        self._max_reconnect_attempts = max_reconnect_attempts
+        self._reconnect_delay = reconnect_delay
 
     async def connect(self):
-        if not self._redis:
-            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
-        return self._redis
+        """Connect to Redis, retrying with exponential backoff on failure."""
+        if self._redis:
+            return self._redis
+        last_err = None
+        for attempt in range(1, self._max_reconnect_attempts + 1):
+            try:
+                self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+                # Verify the connection is alive
+                await self._redis.ping()
+                logger.info("Connected to Redis at %s", self.redis_url)
+                return self._redis
+            except (aioredis.ConnectionError, aioredis.TimeoutError, OSError) as e:
+                last_err = e
+                delay = self._reconnect_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "Redis connection attempt %d/%d failed: %s — retrying in %.1fs",
+                    attempt, self._max_reconnect_attempts, e, delay,
+                )
+                self._redis = None
+                if attempt < self._max_reconnect_attempts:
+                    await asyncio.sleep(delay)
+        raise ConnectionError(
+            f"Failed to connect to Redis after {self._max_reconnect_attempts} attempts: {last_err}"
+        )
+
+    async def _ensure_connected(self) -> aioredis.Redis:
+        """Return a live Redis connection, reconnecting if the current one is dead."""
+        if self._redis is not None:
+            try:
+                await self._redis.ping()
+                return self._redis
+            except (aioredis.ConnectionError, aioredis.TimeoutError, OSError):
+                logger.warning("Redis connection lost, reconnecting...")
+                try:
+                    await self._redis.aclose()
+                except Exception:
+                    pass
+                self._redis = None
+        return await self.connect()
 
     async def close(self):
+        """Cleanly close the Redis connection and release resources."""
         if self._redis:
-            await self._redis.aclose()
-            self._redis = None
+            try:
+                await self._redis.aclose()
+                logger.info("Redis connection closed")
+            except Exception as e:
+                logger.warning("Error closing Redis connection: %s", e)
+            finally:
+                self._redis = None
 
     @staticmethod
     def _serialize_value(v):
@@ -238,7 +282,7 @@ class EventBus:
 
     async def publish(self, stream: str, event, maxlen: int = 100_000) -> str:
         """Publish an event to a stream. Returns the message ID."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         data = asdict(event) if dataclasses.is_dataclass(event) else event
         flat = {k: self._serialize_value(v) for k, v in data.items()}
         msg_id = await r.xadd(stream, flat, maxlen=maxlen, approximate=True)
@@ -247,7 +291,7 @@ class EventBus:
 
     async def ensure_group(self, stream: str, group: str):
         """Create a consumer group if it doesn't exist."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         try:
             await r.xgroup_create(stream, group, id="0", mkstream=True)
         except aioredis.ResponseError as e:
@@ -263,7 +307,7 @@ class EventBus:
         block_ms: int = 5000,
     ) -> list[tuple[str, dict]]:
         """Read messages from a consumer group. Returns list of (msg_id, data)."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         results = await r.xreadgroup(group, consumer, {stream: ">"}, count=count, block=block_ms)
         messages = []
         for stream_name, entries in results:
@@ -273,12 +317,47 @@ class EventBus:
 
     async def ack(self, stream: str, group: str, msg_id: str):
         """Acknowledge a processed message."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         await r.xack(stream, group, msg_id)
+
+    async def move_to_dlq(self, stream: str, group: str, msg_id: str, error_reason: str):
+        """Move a failed message to the dead-letter queue.
+
+        Reads the original message data from the stream, publishes it to
+        ``{stream}:dlq`` with error metadata, and acknowledges the original
+        message so it is no longer pending.
+
+        Args:
+            stream: The source stream name.
+            group: The consumer group that owns the message.
+            msg_id: The message ID to move.
+            error_reason: Human-readable description of the failure.
+        """
+        r = await self._ensure_connected()
+        dlq_stream = f"{stream}:dlq"
+
+        # Fetch the original message data
+        entries = await r.xrange(stream, min=msg_id, max=msg_id, count=1)
+        if not entries:
+            logger.warning("Cannot move %s to DLQ: message not found in %s", msg_id, stream)
+            return
+
+        _, data = entries[0]
+        data["_original_stream"] = stream
+        data["_original_msg_id"] = msg_id
+        data["_error"] = str(error_reason)
+
+        # Publish to DLQ and ack the original
+        dlq_msg_id = await self.publish_raw(dlq_stream, data)
+        await r.xack(stream, group, msg_id)
+        logger.info(
+            "Moved message %s from %s to %s (dlq_id=%s): %s",
+            msg_id, stream, dlq_stream, dlq_msg_id, error_reason,
+        )
 
     async def publish_batch(self, stream: str, events: list, maxlen: int = 100_000) -> list[str]:
         """Publish multiple events efficiently using pipeline."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         pipe = r.pipeline()
         for event in events:
             data = asdict(event) if dataclasses.is_dataclass(event) else event
@@ -288,7 +367,7 @@ class EventBus:
 
     async def publish_raw(self, stream: str, data: dict, maxlen: int = 100_000) -> str:
         """Publish a flat dict directly to a stream (no dataclass conversion)."""
-        r = await self.connect()
+        r = await self._ensure_connected()
         flat = {k: self._serialize_value(v) for k, v in data.items()}
         msg_id = await r.xadd(stream, flat, maxlen=maxlen, approximate=True)
         logger.debug(f"Published raw to {stream}: {msg_id}")
@@ -341,7 +420,7 @@ class EventBus:
         Returns:
             List of (msg_id, data) tuples from the DLQ.
         """
-        r = await self.connect()
+        r = await self._ensure_connected()
         dlq_stream = f"{stream}:dlq"
         results = await r.xrange(dlq_stream, count=count)
         return [(msg_id, data) for msg_id, data in results]
@@ -356,7 +435,7 @@ class EventBus:
         Returns:
             Number of messages moved back to the original stream.
         """
-        r = await self.connect()
+        r = await self._ensure_connected()
         dlq_stream = f"{stream}:dlq"
         messages = await r.xrange(dlq_stream, count=count)
         moved = 0

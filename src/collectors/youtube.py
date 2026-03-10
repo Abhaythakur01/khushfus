@@ -3,6 +3,7 @@ from datetime import datetime
 
 import httpx
 
+from shared.sanitize import strip_html
 from src.collectors.base import BaseCollector, CollectedMention
 from src.config.settings import settings
 
@@ -103,7 +104,7 @@ class YouTubeCollector(BaseCollector):
 
             for item in data.get("items", []):
                 comment = item["snippet"]["topLevelComment"]["snippet"]
-                text = comment["textDisplay"]
+                text = strip_html(comment["textDisplay"])
 
                 # Only include comments that match keywords
                 if not self._matches_keywords(text, keywords):

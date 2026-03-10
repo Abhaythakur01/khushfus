@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -653,12 +654,12 @@ async def process_message(
     )
 
 
-async def process_loop(bus: EventBus, session_factory):
+async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Main consumer loop: read from media:analyze stream."""
     await bus.ensure_group(STREAM_MEDIA_ANALYSIS, GROUP_NAME)
     logger.info("Media Analysis Service listening on '%s'...", STREAM_MEDIA_ANALYSIS)
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_MEDIA_ANALYSIS,
@@ -689,16 +690,28 @@ async def process_loop(bus: EventBus, session_factory):
 # ---------------------------------------------------------------------------
 
 
+shutdown_event = asyncio.Event()
+
+
 async def main():
     engine, session_factory = create_db(DATABASE_URL)
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, shutdown_event.set)
+    except NotImplementedError:
+        # Windows does not support add_signal_handler
+        pass
+
     logger.info("Media Analysis Service started (group=%s, consumer=%s)", GROUP_NAME, CONSUMER_NAME)
 
     try:
-        await process_loop(bus, session_factory)
+        await process_loop(bus, session_factory, shutdown_event)
     finally:
+        logger.info("Media Analysis Service shutting down gracefully")
         await bus.close()
         await engine.dispose()
 

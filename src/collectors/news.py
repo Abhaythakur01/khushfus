@@ -4,6 +4,7 @@ from datetime import datetime
 import feedparser
 import httpx
 
+from shared.sanitize import strip_html
 from src.collectors.base import BaseCollector, CollectedMention
 from src.config.settings import settings
 
@@ -60,7 +61,7 @@ class NewsCollector(BaseCollector):
                 data = resp.json()
 
             for article in data.get("articles", []):
-                text = f"{article.get('title', '')} {article.get('description', '')}"
+                text = strip_html(f"{article.get('title', '')} {article.get('description', '')}")
                 published = None
                 if article.get("publishedAt"):
                     published = datetime.fromisoformat(article["publishedAt"].replace("Z", "+00:00"))
@@ -94,7 +95,7 @@ class NewsCollector(BaseCollector):
                         feed = feedparser.parse(resp.text)
 
                     for entry in feed.entries[:50]:
-                        text = f"{entry.get('title', '')} {entry.get('summary', '')}"
+                        text = strip_html(f"{entry.get('title', '')} {entry.get('summary', '')}")
 
                         published = None
                         if hasattr(entry, "published_parsed") and entry.published_parsed:

@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: collector
-          image: registry.gitlab.com/khushfus/khushfus/collector:latest
+          image: registry.gitlab.com/khushfus/khushfus/collector:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -56,7 +56,7 @@ spec:
     spec:
       containers:
         - name: analyzer
-          image: registry.gitlab.com/khushfus/khushfus/analyzer:latest
+          image: registry.gitlab.com/khushfus/khushfus/analyzer:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -92,7 +92,7 @@ spec:
     spec:
       containers:
         - name: query
-          image: registry.gitlab.com/khushfus/khushfus/query:latest
+          image: registry.gitlab.com/khushfus/khushfus/query:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -128,7 +128,7 @@ spec:
     spec:
       containers:
         - name: report
-          image: registry.gitlab.com/khushfus/khushfus/report:latest
+          image: registry.gitlab.com/khushfus/khushfus/report:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -164,7 +164,7 @@ spec:
     spec:
       containers:
         - name: notification
-          image: registry.gitlab.com/khushfus/khushfus/notification:latest
+          image: registry.gitlab.com/khushfus/khushfus/notification:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config

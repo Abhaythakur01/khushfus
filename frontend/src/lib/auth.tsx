@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { api } from "./api";
 
 interface User {
@@ -44,6 +45,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = "khushfus_token";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [state, setState] = useState<AuthState>({
     user: null,
     org: null,
@@ -78,6 +82,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: false,
     });
   }, []);
+
+  // Wire up the API client to auto-logout on 401 responses
+  useEffect(() => {
+    api.setOnUnauthorized(() => {
+      clearAuth();
+      router.push("/login");
+    });
+    return () => {
+      api.setOnUnauthorized(null);
+    };
+  }, [clearAuth, router]);
+
+  // Redirect unauthenticated users away from protected pages
+  useEffect(() => {
+    const publicPaths = ["/login", "/register"];
+    if (!state.isLoading && !state.isAuthenticated && !publicPaths.includes(pathname)) {
+      router.push("/login");
+    }
+  }, [state.isLoading, state.isAuthenticated, pathname, router]);
 
   // Validate existing token on mount
   useEffect(() => {

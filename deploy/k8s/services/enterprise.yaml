@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: identity
-          image: registry.gitlab.com/khushfus/khushfus/identity:latest
+          image: registry.gitlab.com/khushfus/khushfus/identity:REPLACE_WITH_TAG
           ports:
             - containerPort: 8010
           envFrom:
@@ -86,7 +86,7 @@ spec:
     spec:
       containers:
         - name: tenant
-          image: registry.gitlab.com/khushfus/khushfus/tenant:latest
+          image: registry.gitlab.com/khushfus/khushfus/tenant:REPLACE_WITH_TAG
           ports:
             - containerPort: 8011
           envFrom:
@@ -152,7 +152,7 @@ spec:
     spec:
       containers:
         - name: media
-          image: registry.gitlab.com/khushfus/khushfus/media:latest
+          image: registry.gitlab.com/khushfus/khushfus/media:REPLACE_WITH_TAG
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -188,7 +188,7 @@ spec:
     spec:
       containers:
         - name: search
-          image: registry.gitlab.com/khushfus/khushfus/search:latest
+          image: registry.gitlab.com/khushfus/khushfus/search:REPLACE_WITH_TAG
           ports:
             - containerPort: 8012
           envFrom:

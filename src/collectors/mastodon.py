@@ -4,6 +4,7 @@ from datetime import datetime
 
 import httpx
 
+from shared.sanitize import strip_html
 from shared.url_validator import validate_url
 from src.collectors.base import BaseCollector, CollectedMention
 
@@ -71,7 +72,7 @@ class MastodonCollector(BaseCollector):
                 for status in data.get("statuses", []):
                     # Strip HTML tags from content
                     content = status.get("content", "")
-                    text = self._strip_html(content)
+                    text = strip_html(content)
 
                     published = None
                     if status.get("created_at"):
@@ -108,11 +109,3 @@ class MastodonCollector(BaseCollector):
         logger.info(f"Collected {len(mentions)} Mastodon mentions for keywords: {keywords}")
         return mentions
 
-    @staticmethod
-    def _strip_html(html: str) -> str:
-        """Remove HTML tags from Mastodon content."""
-        import re
-
-        text = re.sub(r"<br\s*/?>", "\n", html)
-        text = re.sub(r"<[^>]+>", "", text)
-        return text.strip()

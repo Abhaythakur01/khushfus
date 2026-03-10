@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: registry.gitlab.com/khushfus/khushfus/frontend:latest
+          image: registry.gitlab.com/khushfus/khushfus/frontend:REPLACE_WITH_TAG
           ports:
             - containerPort: 3000
           resources:

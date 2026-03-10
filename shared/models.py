@@ -6,7 +6,7 @@ Single source of truth for the database schema.
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -131,6 +131,7 @@ class Organization(Base):
     primary_color: Mapped[str | None] = mapped_column(String(7))  # hex
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     members: Mapped[list["OrgMember"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     projects: Mapped[list["Project"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
@@ -151,16 +152,20 @@ class User(Base):
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     memberships: Mapped[list["OrgMember"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class OrgMember(Base):
     __tablename__ = "org_members"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_org_member"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     role: Mapped[OrgRole] = mapped_column(Enum(OrgRole), default=OrgRole.VIEWER)
     invited_by: Mapped[int | None] = mapped_column(Integer)
     joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -219,7 +224,7 @@ class Keyword(Base):
     __tablename__ = "keywords"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     term: Mapped[str] = mapped_column(String(255))
     keyword_type: Mapped[str] = mapped_column(String(50), default="brand")
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -235,11 +240,18 @@ class Keyword(Base):
 
 class Mention(Base):
     __tablename__ = "mentions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "source_id", name="uq_mention_source"),
+        Index("ix_mention_project_published", "project_id", "published_at"),
+        Index("ix_mention_project_sentiment", "project_id", "sentiment"),
+        Index("ix_mention_project_platform", "project_id", "platform"),
+        Index("ix_mention_collected", "collected_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     platform: Mapped[Platform] = mapped_column(Enum(Platform), index=True)
-    source_id: Mapped[str | None] = mapped_column(String(255))
+    source_id: Mapped[str | None] = mapped_column(String(255), index=True)
     source_url: Mapped[str | None] = mapped_column(Text)
 
     text: Mapped[str] = mapped_column(Text)
@@ -311,7 +323,7 @@ class AlertRule(Base):
     __tablename__ = "alert_rules"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     rule_type: Mapped[str] = mapped_column(String(50))
     threshold: Mapped[float] = mapped_column(Float, default=0.0)
@@ -320,12 +332,16 @@ class AlertRule(Base):
     webhook_url: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="alert_rules")
 
 
 class AlertLog(Base):
     __tablename__ = "alert_logs"
+    __table_args__ = (
+        Index("ix_alert_log_project_created", "project_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
@@ -349,7 +365,7 @@ class SavedSearch(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     query_json: Mapped[str] = mapped_column(Text)  # full ES query as JSON
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -373,7 +389,7 @@ class ScheduledPost(Base):
     media_urls: Mapped[str | None] = mapped_column(Text)  # comma-separated
     scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
-    status: Mapped[PublishStatus] = mapped_column(Enum(PublishStatus), default=PublishStatus.DRAFT)
+    status: Mapped[PublishStatus] = mapped_column(Enum(PublishStatus), default=PublishStatus.DRAFT, index=True)
     platform_post_id: Mapped[str | None] = mapped_column(String(255))
     approved_by: Mapped[int | None] = mapped_column(Integer)
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -396,12 +412,13 @@ class ExportJob(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     export_format: Mapped[ExportFormat] = mapped_column(Enum(ExportFormat))
     filters_json: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[ExportStatus] = mapped_column(Enum(ExportStatus), default=ExportStatus.PENDING)
+    status: Mapped[ExportStatus] = mapped_column(Enum(ExportStatus), default=ExportStatus.PENDING, index=True)
     file_path: Mapped[str | None] = mapped_column(Text)
     row_count: Mapped[int | None] = mapped_column(Integer)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
 
 class Integration(Base):
@@ -415,6 +432,7 @@ class Integration(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
 
 # ============================================================
@@ -450,6 +468,7 @@ class Workflow(Base):
     status: Mapped[WorkflowStatus] = mapped_column(Enum(WorkflowStatus), default=WorkflowStatus.ACTIVE)
     executions: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
 
 # ============================================================
@@ -459,6 +478,9 @@ class Workflow(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_log_org_created", "organization_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
@@ -480,6 +502,9 @@ class AuditLog(Base):
 
 class PlatformQuota(Base):
     __tablename__ = "platform_quotas"
+    __table_args__ = (
+        UniqueConstraint("platform", "endpoint", name="uq_platform_quota"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     platform: Mapped[Platform] = mapped_column(Enum(Platform), index=True)

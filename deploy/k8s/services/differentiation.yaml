@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: competitive
-          image: registry.gitlab.com/khushfus/khushfus/competitive:latest
+          image: registry.gitlab.com/khushfus/khushfus/competitive:REPLACE_WITH_TAG
           ports:
             - containerPort: 8016
           envFrom:
@@ -86,7 +86,7 @@ spec:
     spec:
       containers:
         - name: scheduler
-          image: registry.gitlab.com/khushfus/khushfus/scheduler:latest
+          image: registry.gitlab.com/khushfus/khushfus/scheduler:REPLACE_WITH_TAG
           ports:
             - containerPort: 8017
           envFrom:
@@ -152,7 +152,7 @@ spec:
     spec:
       containers:
         - name: audit
-          image: registry.gitlab.com/khushfus/khushfus/audit:latest
+          image: registry.gitlab.com/khushfus/khushfus/audit:REPLACE_WITH_TAG
           ports:
             - containerPort: 8018
           envFrom:
@@ -218,7 +218,7 @@ spec:
     spec:
       containers:
         - name: realtime
-          image: registry.gitlab.com/khushfus/khushfus/realtime:latest
+          image: registry.gitlab.com/khushfus/khushfus/realtime:REPLACE_WITH_TAG
           ports:
             - containerPort: 8019
           envFrom:
@@ -284,7 +284,7 @@ spec:
     spec:
       containers:
         - name: project
-          image: registry.gitlab.com/khushfus/khushfus/project:latest
+          image: registry.gitlab.com/khushfus/khushfus/project:REPLACE_WITH_TAG
           ports:
             - containerPort: 8020
           envFrom:
