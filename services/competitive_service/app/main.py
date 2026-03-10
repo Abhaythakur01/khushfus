@@ -19,6 +19,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +38,25 @@ setup_tracing("competitive")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 
@@ -338,6 +359,7 @@ async def get_benchmark(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """
     Full competitive benchmark: share of voice, sentiment comparison,
@@ -386,6 +408,7 @@ async def share_of_voice(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Dedicated share-of-voice breakdown across project and competitors."""
     project = await _get_project_or_404(db, project_id)
@@ -449,6 +472,7 @@ async def sentiment_comparison(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Sentiment comparison chart data across project and competitors."""
     project = await _get_project_or_404(db, project_id)
@@ -514,6 +538,7 @@ async def trending_comparison(
     days: int = Query(30, ge=1, le=365),
     top_n: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Trending topics and keywords comparison between brand and competitors."""
     project = await _get_project_or_404(db, project_id)
@@ -582,6 +607,7 @@ async def generate_benchmark(
     project_id: int,
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Generate and store CompetitorBenchmark records for each competitor."""
     project = await _get_project_or_404(db, project_id)
@@ -667,6 +693,7 @@ async def benchmark_history(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """List past benchmark records for a project, optionally filtered by competitor."""
     await _get_project_or_404(db, project_id)

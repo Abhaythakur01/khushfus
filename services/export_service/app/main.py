@@ -30,12 +30,15 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import (
     STREAM_EXPORT,
@@ -55,6 +58,25 @@ setup_tracing("export")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -1009,7 +1031,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1060,7 +1082,7 @@ async def health():
     summary="Create an export job",
     description="Create a new export job. Supports CSV, Excel, JSON, and PDF formats with filters.",
 )
-async def create_export(payload: ExportCreate, request: Request):
+async def create_export(payload: ExportCreate, request: Request, user: dict = Depends(require_auth)):
     """Create a new export job. Publishes to the export stream for async processing."""
     session_factory = request.app.state.db_session
     bus: EventBus = request.app.state.event_bus
@@ -1119,7 +1141,7 @@ async def create_export(payload: ExportCreate, request: Request):
     summary="List export jobs",
     description="List all export jobs for a project, sorted by creation date descending.",
 )
-async def list_exports(request: Request, project_id: int = Query(...)):
+async def list_exports(request: Request, project_id: int = Query(...), user: dict = Depends(require_auth)):
     """List export jobs for a project."""
     session_factory = request.app.state.db_session
 
@@ -1151,7 +1173,7 @@ async def list_exports(request: Request, project_id: int = Query(...)):
     summary="Check export status",
     description="Check the current status of an export job including row count and any error messages.",
 )
-async def get_export_status(export_id: int, request: Request):
+async def get_export_status(export_id: int, request: Request, user: dict = Depends(require_auth)):
     """Check the status of an export job."""
     session_factory = request.app.state.db_session
 
@@ -1177,7 +1199,7 @@ async def get_export_status(export_id: int, request: Request):
     summary="Download export file",
     description="Download the completed export file. Returns 409 if the export is not yet complete.",
 )
-async def download_export(export_id: int, request: Request):
+async def download_export(export_id: int, request: Request, user: dict = Depends(require_auth)):
     """Download the completed export file."""
     session_factory = request.app.state.db_session
 
@@ -1228,7 +1250,7 @@ async def download_export(export_id: int, request: Request):
     summary="Create an integration",
     description="Configure a new integration with Salesforce, HubSpot, Slack, Tableau, or a custom webhook.",
 )
-async def create_integration(payload: IntegrationCreate, request: Request):
+async def create_integration(payload: IntegrationCreate, request: Request, user: dict = Depends(require_auth)):
     """Configure a new integration (Salesforce, HubSpot, Slack, Tableau, webhook)."""
     session_factory = request.app.state.db_session
 
@@ -1269,7 +1291,7 @@ async def create_integration(payload: IntegrationCreate, request: Request):
     summary="List integrations",
     description="List all configured integrations for an organization.",
 )
-async def list_integrations(request: Request, org_id: int = Query(...)):
+async def list_integrations(request: Request, org_id: int = Query(...), user: dict = Depends(require_auth)):
     """List integrations for an organization."""
     session_factory = request.app.state.db_session
 
@@ -1300,7 +1322,9 @@ async def list_integrations(request: Request, org_id: int = Query(...)):
     summary="Trigger integration sync",
     description="Manually trigger a sync for an integration, pushing mention data to the external platform.",
 )
-async def trigger_sync(integration_id: int, request: Request, project_id: int = Query(None)):
+async def trigger_sync(
+    integration_id: int, request: Request, project_id: int = Query(None), user: dict = Depends(require_auth),
+):
     """Trigger a manual sync for an integration."""
     session_factory = request.app.state.db_session
 
@@ -1319,7 +1343,7 @@ async def trigger_sync(integration_id: int, request: Request, project_id: int = 
     summary="Delete an integration",
     description="Remove an integration configuration permanently.",
 )
-async def delete_integration(integration_id: int, request: Request):
+async def delete_integration(integration_id: int, request: Request, user: dict = Depends(require_auth)):
     """Delete an integration."""
     session_factory = request.app.state.db_session
 

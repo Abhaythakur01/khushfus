@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import secrets
+import time as _time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import STREAM_AUDIT, AuditEvent, EventBus
 from shared.models import Organization, OrgMember, OrgRole, User
@@ -366,7 +368,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -713,11 +715,32 @@ async def saml_acs(
     # Below we simulate the parsed attributes for the wiring to be complete.
 
     import base64
+    import re as _re
 
     try:
         decoded_xml = base64.b64decode(saml_response).decode("utf-8", errors="replace")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid SAMLResponse encoding")
+
+    # Validate SAML conditions (NotBefore/NotOnOrAfter)
+    not_before_match = _re.search(r'NotBefore="([^"]+)"', decoded_xml)
+    not_on_or_after_match = _re.search(r'NotOnOrAfter="([^"]+)"', decoded_xml)
+    if not_before_match:
+        nb = datetime.fromisoformat(not_before_match.group(1).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) < nb:
+            raise HTTPException(status_code=400, detail="SAML assertion not yet valid")
+    if not_on_or_after_match:
+        noa = datetime.fromisoformat(not_on_or_after_match.group(1).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) >= noa:
+            raise HTTPException(status_code=400, detail="SAML assertion has expired")
+
+    # Validate Issuer matches configured SSO entity ID
+    issuer_match = _re.search(r'<(?:saml2?:)?Issuer[^>]*>([^<]+)</(?:saml2?:)?Issuer>', decoded_xml)
+    if issuer_match and org.sso_entity_id:
+        if issuer_match.group(1) != org.sso_entity_id:
+            raise HTTPException(status_code=400, detail="SAML Issuer mismatch")
+
+    logger.warning("SAML signature verification not implemented — add python3-saml for production use")
 
     # Extract from SAML assertion (simplified -- production uses python3-saml)
     # These would come from the validated assertion's NameID and Attributes
@@ -843,6 +866,29 @@ async def oidc_init(
     return {"redirect_url": auth_url, "state": state}
 
 
+_jwks_cache: dict[str, tuple[dict, float]] = {}
+
+
+async def _fetch_jwks(issuer_url: str) -> dict:
+    """Fetch and cache OIDC provider's JWKS for token verification."""
+    import httpx
+
+    cache_ttl = 3600
+    if issuer_url in _jwks_cache:
+        jwks, cached_at = _jwks_cache[issuer_url]
+        if _time.time() - cached_at < cache_ttl:
+            return jwks
+    async with httpx.AsyncClient(timeout=10) as client:
+        disco_resp = await client.get(f"{issuer_url}/.well-known/openid-configuration")
+        disco_resp.raise_for_status()
+        jwks_uri = disco_resp.json()["jwks_uri"]
+        jwks_resp = await client.get(jwks_uri)
+        jwks_resp.raise_for_status()
+        jwks = jwks_resp.json()
+    _jwks_cache[issuer_url] = (jwks, _time.time())
+    return jwks
+
+
 @app.get(
     "/api/v1/sso/oidc/callback",
     response_model=TokenResponse,
@@ -911,18 +957,23 @@ async def oidc_callback(
     sso_subject = ""
 
     if id_token:
-        # Decode without verification (signature was verified by the IdP; in production
-        # we'd verify using the IdP's JWKS)
         try:
-            claims = jwt.get_unverified_claims(id_token)
+            jwks = await _fetch_jwks(base_url)
+            claims = jwt.decode(
+                id_token, jwks, algorithms=["RS256", "RS384", "ES256"],
+                audience=client_id, issuer=base_url,
+            )
             email = claims.get("email", "")
             full_name = claims.get("name", "")
             sso_subject = claims.get("sub", "")
             token_nonce = claims.get("nonce", "")
             if token_nonce and token_nonce != nonce:
                 raise HTTPException(status_code=400, detail="Nonce mismatch")
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.warning(f"Failed to decode id_token: {e}")
+            logger.error(f"OIDC token verification failed: {e}")
+            raise HTTPException(status_code=401, detail=f"Invalid id_token: {e}")
 
     # Fallback: userinfo endpoint
     if not email:

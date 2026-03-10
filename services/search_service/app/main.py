@@ -22,7 +22,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from opensearchpy import AsyncOpenSearch
 from opensearchpy import NotFoundError as ESNotFoundError
 from pydantic import BaseModel, Field
@@ -50,6 +52,25 @@ DATABASE_URL = os.getenv(
 )
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://opensearch:9200")
 ES_INDEX = "khushfus-mentions"
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 # ---------------------------------------------------------------------------
 # Pydantic request / response schemas
@@ -284,7 +305,7 @@ async def health():
     summary="Full-text search",
     description="Search mentions with full-text queries and filters for platform, sentiment, and more.",
 )
-async def search(req: SearchRequest):
+async def search(req: SearchRequest, user: dict = Depends(require_auth)):
     """Full-text search with filters across mentions."""
     es: AsyncOpenSearch = app.state.es
     body = _build_es_query(req)
@@ -318,14 +339,16 @@ async def search(req: SearchRequest):
     summary="Advanced DSL search",
     description="Execute a raw OpenSearch DSL query for maximum flexibility.",
 )
-async def search_advanced(req: AdvancedSearchRequest):
+async def search_advanced(req: AdvancedSearchRequest, user: dict = Depends(require_auth)):
     """Execute a raw OpenSearch DSL query."""
+    # Hardcode index to prevent OpenSearch DSL injection
+    index = "khushfus-mentions"
     es: AsyncOpenSearch = app.state.es
     try:
-        resp = await es.search(index=req.index, body=req.body)
+        resp = await es.search(index=index, body=req.body)
         return resp.body
     except ESNotFoundError:
-        raise HTTPException(status_code=503, detail=f"Index '{req.index}' not found")
+        raise HTTPException(status_code=503, detail=f"Index '{index}' not found")
     except Exception as exc:
         logger.error("ES advanced search error: %s", exc)
         raise HTTPException(status_code=502, detail=f"OpenSearch query failed: {exc}")
@@ -346,6 +369,7 @@ async def suggest(
     field: str = Query("text", description="Field to suggest from: text, author_name, author_handle, topics"),
     project_id: int | None = Query(None),
     size: int = Query(10, ge=1, le=50),
+    user: dict = Depends(require_auth),
 ):
     """Autocomplete suggestions for keywords or authors."""
     es: AsyncOpenSearch = app.state.es
@@ -399,6 +423,7 @@ async def trending(
     project_id: int | None = Query(None),
     hours: int = Query(24, ge=1, le=720, description="Look-back window in hours"),
     size: int = Query(20, ge=1, le=100),
+    user: dict = Depends(require_auth),
 ):
     """Trending topics/keywords in a given time window using ES significant_terms aggregation."""
     es: AsyncOpenSearch = app.state.es
@@ -469,6 +494,7 @@ async def facets(
     project_id: int | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
+    user: dict = Depends(require_auth),
 ):
     """Faceted counts by platform, sentiment, and language for a query."""
     es: AsyncOpenSearch = app.state.es
@@ -537,7 +563,7 @@ async def facets(
     summary="Create a saved search",
     description="Save a search configuration with filters for quick re-use later.",
 )
-async def create_saved_search(req: SavedSearchCreate):
+async def create_saved_search(req: SavedSearchCreate, user: dict = Depends(require_auth)):
     """Create a saved search."""
     session_factory = app.state.db_session
     async with session_factory() as db:
@@ -562,6 +588,7 @@ async def create_saved_search(req: SavedSearchCreate):
 )
 async def list_saved_searches(
     project_id: int = Query(..., description="Project to list saved searches for"),
+    user: dict = Depends(require_auth),
 ):
     """List saved searches for a project."""
     session_factory = app.state.db_session
@@ -579,7 +606,7 @@ async def list_saved_searches(
     summary="Delete a saved search",
     description="Remove a saved search by its ID.",
 )
-async def delete_saved_search(search_id: int):
+async def delete_saved_search(search_id: int, user: dict = Depends(require_auth)):
     """Delete a saved search by ID."""
     session_factory = app.state.db_session
     async with session_factory() as db:

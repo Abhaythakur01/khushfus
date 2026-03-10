@@ -22,7 +22,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 
@@ -63,6 +65,25 @@ LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_AUTHOR_URN = os.getenv("LINKEDIN_AUTHOR_URN", "")  # urn:li:person:xxx or urn:li:organization:xxx
 INSTAGRAM_USER_ID = os.getenv("INSTAGRAM_USER_ID", "")
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 GROUP_NAME = "publishing-service"
 CONSUMER_NAME = f"publisher-{os.getpid()}"
@@ -513,7 +534,7 @@ async def health():
     summary="Create a scheduled post",
     description="Create a new post in DRAFT status, scheduled for future publishing to a social platform.",
 )
-async def create_post(body: PostCreate):
+async def create_post(body: PostCreate, user: dict = Depends(require_auth)):
     """Create a new scheduled post (defaults to DRAFT status)."""
     session_factory = app.state.db_session
 
@@ -567,6 +588,7 @@ async def list_posts(
     project_id: int = Query(..., description="Filter by project ID"),
     status: Optional[str] = Query(None, description="Filter by status: draft, scheduled, published, failed"),
     platform: Optional[str] = Query(None, description="Filter by platform"),
+    user: dict = Depends(require_auth),
 ):
     """List scheduled posts for a project, with optional status/platform filters."""
     session_factory = app.state.db_session
@@ -592,7 +614,7 @@ async def list_posts(
     summary="Approve a draft post",
     description="Approve a draft post and move it to SCHEDULED status for background publishing.",
 )
-async def approve_post(post_id: int, body: ApproveRequest):
+async def approve_post(post_id: int, body: ApproveRequest, user: dict = Depends(require_auth)):
     """Approve a draft post and move it to SCHEDULED status."""
     session_factory = app.state.db_session
 
@@ -638,7 +660,7 @@ async def approve_post(post_id: int, body: ApproveRequest):
     summary="Delete a scheduled post",
     description="Cancel and delete a scheduled post. Already-published posts cannot be deleted.",
 )
-async def delete_post(post_id: int):
+async def delete_post(post_id: int, user: dict = Depends(require_auth)):
     """Cancel and delete a scheduled post. Cannot delete already-published posts."""
     session_factory = app.state.db_session
 
@@ -682,7 +704,7 @@ async def delete_post(post_id: int):
     summary="Publish immediately",
     description="Immediately publish a post to the target platform, bypassing the scheduled time.",
 )
-async def publish_now(post_id: int):
+async def publish_now(post_id: int, user: dict = Depends(require_auth)):
     """Immediately publish a post, bypassing the schedule."""
     session_factory = app.state.db_session
     bus = app.state.event_bus
@@ -720,7 +742,7 @@ async def publish_now(post_id: int):
     summary="Create a reply",
     description="Create a reply to a specific social mention. Can be scheduled or drafted for later publishing.",
 )
-async def create_reply(body: ReplyCreate):
+async def create_reply(body: ReplyCreate, user: dict = Depends(require_auth)):
     """Create a reply to a specific mention. Optionally schedule it or draft it."""
     session_factory = app.state.db_session
 
@@ -740,7 +762,7 @@ async def create_reply(body: ReplyCreate):
         scheduled_at=scheduled_at,
         reply_to_mention_id=body.mention_id,
     )
-    return await create_post(create_body)
+    return await create_post(create_body, user)
 
 
 app.include_router(v1_router)

@@ -4,6 +4,7 @@ from datetime import datetime
 
 import httpx
 
+from shared.url_validator import validate_url
 from src.collectors.base import BaseCollector, CollectedMention
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,13 @@ class MastodonCollector(BaseCollector):
     def __init__(self):
         self.instance_url = os.getenv("MASTODON_INSTANCE_URL", "https://mastodon.social").rstrip("/")
         self.access_token = os.getenv("MASTODON_ACCESS_TOKEN", "")
+
+        # Validate instance URL on startup to prevent SSRF
+        try:
+            validate_url(self.instance_url)
+        except ValueError as e:
+            logger.error(f"MASTODON_INSTANCE_URL failed SSRF validation: {self.instance_url} — {e}")
+            raise
 
     async def validate_credentials(self) -> bool:
         # Public search works without auth; auth is optional

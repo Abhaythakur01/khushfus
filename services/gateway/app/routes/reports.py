@@ -8,7 +8,7 @@ from shared.events import STREAM_REPORT_REQUESTS, EventBus, ReportRequestEvent
 from shared.models import Report
 from shared.schemas import ReportOut
 
-from ..deps import get_db, get_event_bus
+from ..deps import get_db, get_event_bus, require_auth
 
 router = APIRouter()
 
@@ -22,6 +22,7 @@ router = APIRouter()
 async def list_reports(
     project_id: int,
     report_type: str | None = None,
+    user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all reports for a project, newest first."""
@@ -41,6 +42,7 @@ async def list_reports(
 async def trigger_report(
     project_id: int,
     report_type: str = Query(default="daily"),
+    user=Depends(require_auth),
     bus: EventBus = Depends(get_event_bus),
 ):
     """Publish a report generation request to the Report Service."""
@@ -54,7 +56,7 @@ async def trigger_report(
     summary="Get report by ID",
     description="Retrieve a single report with its full data payload.",
 )
-async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
+async def get_report(report_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     """Fetch a report by ID and return its metadata and parsed data."""
     report = await db.get(Report, report_id)
     if not report:

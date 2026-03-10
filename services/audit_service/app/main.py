@@ -22,6 +22,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import (
     DateTime,
@@ -35,6 +37,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import STREAM_AUDIT, EventBus
 from shared.models import (
@@ -52,6 +55,32 @@ setup_tracing("audit")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+async def require_admin(user: dict = Depends(require_auth)) -> dict:
+    role = user.get("role", "")
+    if role not in ("admin", "superadmin") and not user.get("is_superadmin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -377,7 +406,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -443,6 +472,7 @@ async def list_audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """List audit logs for an organization with optional filters and pagination."""
     conditions = [AuditLog.organization_id == org_id]
@@ -486,6 +516,7 @@ async def audit_summary(
     org_id: int = Query(..., description="Organization ID"),
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Summary statistics: actions per user, per type, and activity timeline."""
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -548,6 +579,7 @@ async def audit_summary(
 async def get_audit_log(
     log_id: int,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Retrieve a single audit log entry by ID."""
     log = await db.get(AuditLog, log_id)
@@ -571,6 +603,7 @@ async def get_audit_log(
 async def configure_retention(
     payload: RetentionPolicyCreate,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
 ):
     """Create or update a data retention policy for an organization."""
     result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == payload.organization_id))
@@ -606,6 +639,7 @@ async def configure_retention(
 async def get_retention(
     org_id: int = Query(..., description="Organization ID"),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Get the current data retention policy for an organization."""
     result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id))
@@ -628,6 +662,7 @@ async def get_retention(
 async def execute_retention(
     org_id: int = Query(..., description="Organization ID"),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
 ):
     """Execute data retention cleanup: delete old data according to the org's policy."""
     result = await db.execute(select(RetentionPolicy).where(RetentionPolicy.organization_id == org_id))
@@ -711,6 +746,7 @@ async def gdpr_export(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """GDPR data export: returns all data associated with a user within an organization."""
     # Find the user
@@ -799,6 +835,7 @@ async def gdpr_purge(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
 ):
     """GDPR right to be forgotten: anonymize/delete all user data within the org."""
     # Find the user
@@ -878,7 +915,7 @@ async def gdpr_purge(
     "Deletes audit logs, mentions, and reports older than each org's configured retention policy. "
     "Organizations without an explicit policy use the default retention period.",
 )
-async def admin_enforce_retention():
+async def admin_enforce_retention(user: dict = Depends(require_admin)):
     """Manually trigger retention enforcement across all organizations."""
     result = await enforce_retention_cleanup(app.state.db_session)
     return RetentionEnforcementOut(**result)

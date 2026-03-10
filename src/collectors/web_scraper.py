@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from shared.url_validator import validate_url
 from src.collectors.base import BaseCollector, CollectedMention
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,11 @@ class WebScraperCollector(BaseCollector):
         # Scrape configured target URLs
         for url in self.target_urls:
             try:
+                validate_url(url)
+            except ValueError as e:
+                logger.warning(f"Skipping target URL due to SSRF validation failure: {url} — {e}")
+                continue
+            try:
                 page_mentions = await self._scrape_url(url, keywords)
                 mentions.extend(page_mentions)
             except Exception as e:
@@ -64,6 +70,11 @@ class WebScraperCollector(BaseCollector):
     async def _scrape_url(self, url: str, keywords: list[str]) -> list[CollectedMention]:
         """Scrape a single URL and extract mentions matching keywords."""
         mentions = []
+        try:
+            validate_url(url)
+        except ValueError as e:
+            logger.warning(f"Skipping URL due to SSRF validation failure: {url} — {e}")
+            return []
         try:
             async with httpx.AsyncClient(follow_redirects=True) as client:
                 resp = await client.get(
@@ -162,7 +173,11 @@ class WebScraperCollector(BaseCollector):
                 if href.startswith("/url?q="):
                     actual_url = href.split("/url?q=")[1].split("&")[0]
                     if self._is_valid_content_url(actual_url):
-                        urls.append(actual_url)
+                        try:
+                            validate_url(actual_url)
+                            urls.append(actual_url)
+                        except ValueError as e:
+                            logger.warning(f"Skipping search result URL due to SSRF validation failure: {actual_url} — {e}")
 
             # Scrape top results
             for url in urls[:5]:

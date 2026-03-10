@@ -18,11 +18,12 @@ import time
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 
 from shared.database import create_db, init_tables
+from shared.internal_auth import verify_internal_token
 from shared.models import Platform, PlatformQuota
 from shared.tracing import setup_tracing
 
@@ -374,6 +375,7 @@ async def health():
     tags=["Rate Limiting"],
     summary="Acquire a rate limit slot",
     description="Request permission to call a platform endpoint. Returns allow/deny with wait time.",
+    dependencies=[Depends(verify_internal_token)],
 )
 async def acquire(body: AcquireRequest):
     """
@@ -406,6 +408,7 @@ async def acquire(body: AcquireRequest):
     tags=["Quotas"],
     summary="List quota configurations",
     description="List all configured platform quota definitions sorted by platform and endpoint.",
+    dependencies=[Depends(verify_internal_token)],
 )
 async def list_quotas():
     """List all configured platform quota definitions."""
@@ -424,6 +427,7 @@ async def list_quotas():
     tags=["Quotas"],
     summary="Create or update a quota",
     description="Create or update a platform quota configuration with custom max_requests and window_seconds.",
+    dependencies=[Depends(verify_internal_token)],
 )
 async def configure_quota(body: QuotaConfigRequest):
     """Create or update a platform quota configuration."""
@@ -475,6 +479,7 @@ async def configure_quota(body: QuotaConfigRequest):
     tags=["Rate Limiting"],
     summary="Get platform quota status",
     description="Real-time usage status for all endpoints of a platform with utilization and backoff.",
+    dependencies=[Depends(verify_internal_token)],
 )
 async def platform_status(platform: str):
     """Get current usage status for all endpoints of a platform."""

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models import AlertLog, AlertRule, Project
 from shared.schemas import AlertLogOut, AlertRuleCreate, AlertRuleOut
 
-from ..deps import get_db
+from ..deps import get_db, require_auth
 
 router = APIRouter()
 
@@ -16,7 +16,7 @@ router = APIRouter()
     summary="List alert rules",
     description="List all alert rules configured for a project.",
 )
-async def list_alert_rules(project_id: int, db: AsyncSession = Depends(get_db)):
+async def list_alert_rules(project_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     """Return all alert rules for the given project."""
     result = await db.execute(select(AlertRule).where(AlertRule.project_id == project_id))
     return result.scalars().all()
@@ -29,7 +29,7 @@ async def list_alert_rules(project_id: int, db: AsyncSession = Depends(get_db)):
     summary="Create an alert rule",
     description="Create an alert rule with configurable thresholds, time windows, and channels.",
 )
-async def create_alert_rule(project_id: int, data: AlertRuleCreate, db: AsyncSession = Depends(get_db)):
+async def create_alert_rule(project_id: int, data: AlertRuleCreate, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -54,7 +54,7 @@ async def create_alert_rule(project_id: int, data: AlertRuleCreate, db: AsyncSes
     summary="Delete an alert rule",
     description="Remove an alert rule from a project by rule ID.",
 )
-async def delete_alert_rule(project_id: int, rule_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_alert_rule(project_id: int, rule_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     rule = await db.get(AlertRule, rule_id)
     if not rule or rule.project_id != project_id:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -69,7 +69,7 @@ async def delete_alert_rule(project_id: int, rule_id: int, db: AsyncSession = De
     summary="List alert logs",
     description="Retrieve the most recent alert log entries for a project.",
 )
-async def list_alert_logs(project_id: int, limit: int = 50, db: AsyncSession = Depends(get_db)):
+async def list_alert_logs(project_id: int, limit: int = 50, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(AlertLog).where(AlertLog.project_id == project_id).order_by(AlertLog.created_at.desc()).limit(limit)
     )
@@ -81,7 +81,7 @@ async def list_alert_logs(project_id: int, limit: int = 50, db: AsyncSession = D
     summary="Acknowledge an alert",
     description="Mark an alert log entry as acknowledged to indicate it has been reviewed.",
 )
-async def acknowledge_alert(project_id: int, log_id: int, db: AsyncSession = Depends(get_db)):
+async def acknowledge_alert(project_id: int, log_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     log = await db.get(AlertLog, log_id)
     if not log or log.project_id != project_id:
         raise HTTPException(status_code=404, detail="Alert not found")

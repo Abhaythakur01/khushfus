@@ -4,7 +4,13 @@ import json
 import os
 import time
 
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SIGNING_SECRET", "dev-webhook-secret")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SIGNING_SECRET", "")
+if not WEBHOOK_SECRET and os.getenv("TESTING") != "1":
+    import sys
+    print("WARNING: WEBHOOK_SIGNING_SECRET not set, webhook signing disabled", file=sys.stderr)
+    WEBHOOK_SECRET = "unsigned"
+if not WEBHOOK_SECRET:
+    WEBHOOK_SECRET = "test-only-webhook-secret"
 
 
 def sign_payload(payload: dict, secret: str | None = None) -> dict:
@@ -31,7 +37,11 @@ def verify_signature(
     """Verify a webhook signature. Returns True if valid and not expired."""
     secret = secret or WEBHOOK_SECRET
     # Check timestamp freshness
-    if abs(time.time() - int(timestamp)) > max_age:
+    try:
+        ts = int(timestamp)
+    except (ValueError, TypeError):
+        return False
+    if abs(time.time() - ts) > max_age:
         return False
     body = json.dumps(payload, sort_keys=True, default=str)
     expected = hmac.new(

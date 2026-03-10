@@ -12,6 +12,7 @@ Each service uses a consumer group so multiple instances can share the load.
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -226,13 +227,21 @@ class EventBus:
             await self._redis.aclose()
             self._redis = None
 
-    async def publish(self, stream: str, event) -> str:
+    @staticmethod
+    def _serialize_value(v):
+        """Serialize a value for Redis streams, handling bools correctly."""
+        if isinstance(v, bool):
+            return "1" if v else "0"
+        if isinstance(v, (dict, list)):
+            return json.dumps(v)
+        return str(v)
+
+    async def publish(self, stream: str, event, maxlen: int = 100_000) -> str:
         """Publish an event to a stream. Returns the message ID."""
         r = await self.connect()
-        data = asdict(event) if hasattr(event, "__dataclass_fields__") else event
-        # Redis streams need flat string values
-        flat = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in data.items()}
-        msg_id = await r.xadd(stream, flat)
+        data = asdict(event) if dataclasses.is_dataclass(event) else event
+        flat = {k: self._serialize_value(v) for k, v in data.items()}
+        msg_id = await r.xadd(stream, flat, maxlen=maxlen, approximate=True)
         logger.debug(f"Published to {stream}: {msg_id}")
         return msg_id
 
@@ -267,21 +276,21 @@ class EventBus:
         r = await self.connect()
         await r.xack(stream, group, msg_id)
 
-    async def publish_batch(self, stream: str, events: list) -> list[str]:
+    async def publish_batch(self, stream: str, events: list, maxlen: int = 100_000) -> list[str]:
         """Publish multiple events efficiently using pipeline."""
         r = await self.connect()
         pipe = r.pipeline()
         for event in events:
-            data = asdict(event) if hasattr(event, "__dataclass_fields__") else event
-            flat = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in data.items()}
-            pipe.xadd(stream, flat)
+            data = asdict(event) if dataclasses.is_dataclass(event) else event
+            flat = {k: self._serialize_value(v) for k, v in data.items()}
+            pipe.xadd(stream, flat, maxlen=maxlen, approximate=True)
         return await pipe.execute()
 
-    async def publish_raw(self, stream: str, data: dict) -> str:
+    async def publish_raw(self, stream: str, data: dict, maxlen: int = 100_000) -> str:
         """Publish a flat dict directly to a stream (no dataclass conversion)."""
         r = await self.connect()
-        flat = {k: str(v) for k, v in data.items()}
-        msg_id = await r.xadd(stream, flat)
+        flat = {k: self._serialize_value(v) for k, v in data.items()}
+        msg_id = await r.xadd(stream, flat, maxlen=maxlen, approximate=True)
         logger.debug(f"Published raw to {stream}: {msg_id}")
         return msg_id
 

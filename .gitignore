@@ -38,6 +38,16 @@ exports_output/
 .DS_Store
 Thumbs.db
 
+# Secrets — never commit real credentials
+deploy/k8s/secrets.yaml
+*.pem
+*.key
+.env.*
+!.env.example
+
+# Claude Code
+.claude/
+
 # Testing
 .coverage
 htmlcov/

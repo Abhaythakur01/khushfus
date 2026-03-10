@@ -25,6 +25,7 @@ from PIL import Image
 from sqlalchemy import update
 
 from shared.database import create_db
+from shared.url_validator import validate_url
 from shared.events import (
     STREAM_MEDIA_ANALYSIS,
     STREAM_MEDIA_RESULTS,
@@ -188,6 +189,8 @@ def _get_clip():
 
 async def download_media(url: str, dest_dir: str) -> str:
     """Download a media file from *url* into *dest_dir*. Returns local path."""
+    validate_url(url)
+
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=httpx.Timeout(DOWNLOAD_TIMEOUT, connect=30.0),
@@ -523,7 +526,7 @@ async def analyze_media(media_url: str, media_type: str, tmp_dir: str) -> dict:
         labels = _dedupe_labels(all_labels)
         logos = _dedupe_labels(all_logos)
 
-        # Audio track → speech-to-text
+        # Audio track -> speech-to-text
         audio_path = await loop.run_in_executor(None, extract_audio, local_path)
         if audio_path:
             transcript = await loop.run_in_executor(None, transcribe_audio, audio_path)
@@ -601,6 +604,13 @@ async def process_message(
 
     if not media_url:
         logger.warning("No media_url in message %s — skipping", msg_id)
+        return
+
+    # Validate media URL against SSRF before processing
+    try:
+        validate_url(media_url)
+    except ValueError as e:
+        logger.warning("Skipping media item due to SSRF validation failure: %s — %s", media_url[:120], e)
         return
 
     logger.info(

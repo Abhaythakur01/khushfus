@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models import Mention, Platform, Sentiment
 
-from ..deps import get_db
+from ..deps import get_db, require_auth
 
 router = APIRouter()
 
@@ -19,9 +19,10 @@ router = APIRouter()
 async def get_dashboard(
     project_id: int,
     days: int = Query(7, ge=1, le=90),
+    user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
     base = [Mention.project_id == project_id, Mention.collected_at >= start, Mention.collected_at <= now]
 

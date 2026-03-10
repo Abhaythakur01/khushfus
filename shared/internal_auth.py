@@ -27,14 +27,24 @@ When making outbound requests to another service, include the header::
         )
 """
 
+import hmac
 import os
+import sys
 
 from fastapi import Header, HTTPException
 
-INTERNAL_TOKEN: str = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
+INTERNAL_TOKEN: str = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+if not INTERNAL_TOKEN:
+    INTERNAL_TOKEN = "dev-internal-token-change-in-production"
+    if os.getenv("TESTING") != "1":
+        print(
+            "WARNING: INTERNAL_SERVICE_TOKEN not set, using insecure default. "
+            "Set INTERNAL_SERVICE_TOKEN in production.",
+            file=sys.stderr,
+        )
 
 
 async def verify_internal_token(x_internal_token: str = Header(...)) -> None:
     """Validate that the caller supplied the correct internal service token."""
-    if x_internal_token != INTERNAL_TOKEN:
+    if not hmac.compare_digest(x_internal_token, INTERNAL_TOKEN):
         raise HTTPException(status_code=403, detail="Invalid internal token")

@@ -27,11 +27,14 @@ from datetime import datetime
 from enum import Enum
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 
+from shared.cors import get_cors_origins
 from shared.tracing import setup_tracing
 
 setup_tracing("realtime")
@@ -40,6 +43,36 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+async def verify_ws_token(token: str | None) -> dict | None:
+    """Verify JWT token passed as query parameter for WebSocket connections."""
+    if not token:
+        return None
+    try:
+        payload = jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        return None
+
 
 HEARTBEAT_INTERVAL = 30  # seconds
 CHANNEL_PREFIX = "realtime"
@@ -405,7 +438,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -454,8 +487,16 @@ async def health():
 
 
 @v1_router.websocket("/ws/mentions/{project_id}")
-async def ws_mentions(websocket: WebSocket, project_id: int):
+async def ws_mentions(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time mention feed. Pushes new mentions as they arrive for the project."""
+    if not token:
+        await websocket.close(code=4001, reason="Token required")
+        return
+    try:
+        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
     await manager.connect(websocket, project_id, "mentions")
     try:
         while True:
@@ -495,8 +536,16 @@ async def ws_mentions(websocket: WebSocket, project_id: int):
 
 
 @v1_router.websocket("/ws/dashboard/{project_id}")
-async def ws_dashboard(websocket: WebSocket, project_id: int):
+async def ws_dashboard(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time dashboard updates: mention counts, sentiment counters, engagement."""
+    if not token:
+        await websocket.close(code=4001, reason="Token required")
+        return
+    try:
+        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
     await manager.connect(websocket, project_id, "dashboard")
     try:
         while True:
@@ -533,8 +582,16 @@ async def ws_dashboard(websocket: WebSocket, project_id: int):
 
 
 @v1_router.websocket("/ws/alerts/{project_id}")
-async def ws_alerts(websocket: WebSocket, project_id: int):
+async def ws_alerts(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time alert notifications for a project."""
+    if not token:
+        await websocket.close(code=4001, reason="Token required")
+        return
+    try:
+        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
     await manager.connect(websocket, project_id, "alerts")
     try:
         while True:
@@ -588,7 +645,7 @@ async def ws_alerts(websocket: WebSocket, project_id: int):
     summary="SSE mention stream",
     description="SSE stream of new mentions for a project. Fallback for non-WebSocket clients.",
 )
-async def sse_mentions(project_id: int):
+async def sse_mentions(project_id: int, user: dict = Depends(require_auth)):
     """Server-Sent Events stream of new mentions for a project.
 
     Fallback for clients that cannot use WebSocket (e.g., behind certain proxies).
@@ -631,7 +688,7 @@ async def sse_mentions(project_id: int):
     summary="Connection statistics",
     description="Return current WebSocket and SSE connection statistics per project.",
 )
-async def connection_stats():
+async def connection_stats(user: dict = Depends(require_auth)):
     """Return current connection statistics."""
     active = manager.active_projects()
     stats = {}
@@ -658,7 +715,7 @@ async def connection_stats():
     summary="Publish a message",
     description="Directly publish a message to connected WebSocket and SSE clients for testing or internal use.",
 )
-async def publish_message(project_id: int, payload: dict):
+async def publish_message(project_id: int, payload: dict, user: dict = Depends(require_auth)):
     """Directly publish a message to connected clients (for testing/internal use).
 
     In production, messages come through Redis pub/sub from the Query Service.

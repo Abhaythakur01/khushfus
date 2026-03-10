@@ -34,7 +34,7 @@ spec:
             - name: discovery.type
               value: single-node
             - name: DISABLE_SECURITY_PLUGIN
-              value: "true"
+              value: "false"
             - name: OPENSEARCH_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
           resources:

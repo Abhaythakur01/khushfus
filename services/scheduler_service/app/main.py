@@ -21,11 +21,14 @@ from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database import create_db, init_tables
+from shared.url_validator import validate_url
 from shared.events import (
     STREAM_ANALYZED_MENTIONS,
     STREAM_REPORT_REQUESTS,
@@ -47,6 +50,25 @@ setup_tracing("scheduler")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+
+_security = HTTPBearer(auto_error=False)
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_ALGO = "HS256"
+
+
+async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
+    if not cred:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jose_jwt.decode(cred.credentials, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -225,6 +247,7 @@ async def health():
 async def create_workflow(
     payload: WorkflowCreate,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Create a new workflow with trigger conditions and actions."""
     # Validate project exists
@@ -259,6 +282,7 @@ async def list_workflows(
     project_id: int = Query(...),
     status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """List workflows for a project, optionally filtered by status."""
     stmt = select(Workflow).where(Workflow.project_id == project_id)
@@ -282,6 +306,7 @@ async def update_workflow(
     workflow_id: int,
     payload: WorkflowUpdate,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Update a workflow's name, triggers, actions, or status."""
     workflow = await db.get(Workflow, workflow_id)
@@ -313,6 +338,7 @@ async def update_workflow(
 async def delete_workflow(
     workflow_id: int,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Delete a workflow."""
     workflow = await db.get(Workflow, workflow_id)
@@ -334,6 +360,7 @@ async def delete_workflow(
 async def workflow_stats(
     workflow_id: int,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
 ):
     """Get execution count and last trigger time for a workflow."""
     workflow = await db.get(Workflow, workflow_id)
@@ -364,7 +391,7 @@ async def workflow_stats(
     summary="Create a report schedule",
     description="Create a custom report schedule for a project with configurable cron-like timing.",
 )
-async def create_report_schedule(payload: ReportScheduleCreate):
+async def create_report_schedule(payload: ReportScheduleCreate, user: dict = Depends(require_auth)):
     """Create a custom report schedule for a project."""
     entry = payload.model_dump()
     _report_schedules.setdefault(payload.project_id, []).append(entry)
@@ -379,7 +406,7 @@ async def create_report_schedule(payload: ReportScheduleCreate):
     summary="List report schedules",
     description="List all custom report schedules for a project.",
 )
-async def list_report_schedules(project_id: int = Query(...)):
+async def list_report_schedules(project_id: int = Query(...), user: dict = Depends(require_auth)):
     """List custom report schedules for a project."""
     entries = _report_schedules.get(project_id, [])
     return [ReportScheduleOut(**e) for e in entries]
@@ -392,7 +419,7 @@ async def list_report_schedules(project_id: int = Query(...)):
     summary="Delete report schedules",
     description="Delete all custom report schedules for a project.",
 )
-async def delete_report_schedules(project_id: int):
+async def delete_report_schedules(project_id: int, user: dict = Depends(require_auth)):
     """Delete all custom report schedules for a project."""
     _report_schedules.pop(project_id, None)
 
@@ -527,6 +554,11 @@ async def _execute_action(
         webhook_url = action.get("webhook_url", "")
         if webhook_url:
             try:
+                validate_url(webhook_url)
+            except ValueError as e:
+                logger.warning(f"Blocked unsafe webhook URL: {webhook_url} — {e}")
+                return
+            try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.post(
                         webhook_url,
@@ -604,6 +636,11 @@ async def _execute_action(
         escalation_url = action.get("webhook_url", "")
         level = action.get("level", "manager")
         if escalation_url:
+            try:
+                validate_url(escalation_url)
+            except ValueError as e:
+                logger.warning(f"Blocked unsafe webhook URL: {escalation_url} — {e}")
+                return
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.post(

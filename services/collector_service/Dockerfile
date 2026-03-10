@@ -8,10 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/collector_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
 COPY shared/ /app/shared/
 COPY src/collectors/ /app/src/collectors/
 COPY src/config/ /app/src/config/
 COPY src/__init__.py /app/src/__init__.py
 COPY services/collector_service/app/ /app/services/collector_service/app/
+
+USER appuser
 
 CMD ["python", "-m", "services.collector_service.app.main"]

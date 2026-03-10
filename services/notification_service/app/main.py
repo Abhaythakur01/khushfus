@@ -29,6 +29,7 @@ from sqlalchemy import func, select
 from shared.database import create_db
 from shared.events import STREAM_ANALYZED_MENTIONS, EventBus
 from shared.models import AlertLog, AlertRule, AlertSeverity, Mention
+from shared.url_validator import validate_url
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -156,6 +157,11 @@ async def send_notifications(rule: AlertRule, title: str, description: str):
     for channel in channels:
         if channel == "webhook" and rule.webhook_url:
             try:
+                validate_url(rule.webhook_url)
+            except ValueError as e:
+                logger.warning(f"Blocked unsafe webhook URL: {rule.webhook_url} — {e}")
+                continue
+            try:
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         rule.webhook_url,
@@ -172,6 +178,11 @@ async def send_notifications(rule: AlertRule, title: str, description: str):
                 logger.error(f"Webhook notification failed: {e}")
 
         elif channel == "slack" and rule.webhook_url:
+            try:
+                validate_url(rule.webhook_url)
+            except ValueError as e:
+                logger.warning(f"Blocked unsafe webhook URL: {rule.webhook_url} — {e}")
+                continue
             try:
                 async with httpx.AsyncClient() as client:
                     await client.post(

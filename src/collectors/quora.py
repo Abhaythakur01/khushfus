@@ -4,6 +4,7 @@ from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
 
+from shared.url_validator import validate_url
 from src.collectors.base import BaseCollector, CollectedMention
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,11 @@ class QuoraCollector(BaseCollector):
                     if "/url?q=" in href:
                         actual = href.split("/url?q=")[1].split("&")[0]
                         if "quora.com" in actual:
-                            quora_urls.append(actual)
+                            try:
+                                validate_url(actual)
+                                quora_urls.append(actual)
+                            except ValueError as e:
+                                logger.warning(f"Skipping Quora URL due to SSRF validation failure: {actual} — {e}")
 
             # Scrape each Quora page
             for url in quora_urls[:8]:
@@ -87,6 +92,12 @@ class QuoraCollector(BaseCollector):
 
     async def _scrape_quora_page(self, url: str, keyword: str) -> list[CollectedMention]:
         mentions = []
+
+        try:
+            validate_url(url)
+        except ValueError as e:
+            logger.warning(f"Skipping Quora page due to SSRF validation failure: {url} — {e}")
+            return []
 
         try:
             async with httpx.AsyncClient(follow_redirects=True) as client:

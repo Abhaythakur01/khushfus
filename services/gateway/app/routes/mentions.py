@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models import Mention, Platform, Sentiment
 from shared.schemas import MentionListOut, MentionOut
 
-from ..deps import get_db
+from ..deps import get_db, require_auth
 
 router = APIRouter()
 
@@ -28,6 +28,7 @@ async def list_mentions(
     flagged_only: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
     """List mentions with optional filters for platform, sentiment, keyword, date range, and flagged status."""
@@ -67,7 +68,7 @@ async def list_mentions(
     summary="Get mention by ID",
     description="Retrieve a single mention by its unique identifier.",
 )
-async def get_mention(mention_id: int, db: AsyncSession = Depends(get_db)):
+async def get_mention(mention_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     """Fetch a single mention by ID."""
     mention = await db.get(Mention, mention_id)
     if not mention:
@@ -80,7 +81,7 @@ async def get_mention(mention_id: int, db: AsyncSession = Depends(get_db)):
     summary="Toggle mention flag",
     description="Toggle the flagged status of a mention for review or follow-up.",
 )
-async def toggle_flag(mention_id: int, db: AsyncSession = Depends(get_db)):
+async def toggle_flag(mention_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     """Toggle the is_flagged boolean on a mention."""
     mention = await db.get(Mention, mention_id)
     if not mention:

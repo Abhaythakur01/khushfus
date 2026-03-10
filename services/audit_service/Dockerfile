@@ -8,9 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/audit_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
 COPY shared/ /app/shared/
 COPY services/audit_service/app/ /app/services/audit_service/app/
 
 EXPOSE 8018
+
+USER appuser
 
 CMD ["uvicorn", "services.audit_service.app.main:app", "--host", "0.0.0.0", "--port", "8018"]

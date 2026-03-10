@@ -8,7 +8,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/query_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
 COPY shared/ /app/shared/
 COPY services/query_service/app/ /app/services/query_service/app/
+
+USER appuser
 
 CMD ["python", "-m", "services.query_service.app.main"]

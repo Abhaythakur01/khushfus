@@ -1,6 +1,8 @@
 """Shared dependencies for gateway routes."""
 
-from datetime import datetime, timedelta
+import os
+import sys
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,9 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.events import EventBus
 from shared.models import User
 
-SECRET_KEY = "change-me-in-production"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+if not SECRET_KEY and os.getenv("TESTING") != "1":
+    print("FATAL: JWT_SECRET_KEY not set", file=sys.stderr)
+    sys.exit(1)
+if not SECRET_KEY:
+    SECRET_KEY = "test-only-not-for-production"
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -29,7 +37,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode["exp"] = expire
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 

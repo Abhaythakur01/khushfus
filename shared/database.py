@@ -27,13 +27,21 @@ async def init_tables(engine):
 
 async def get_db(session_factory: async_sessionmaker) -> AsyncSession:
     async with session_factory() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 async def set_tenant_context(session: AsyncSession, org_id: int):
     """Set the current tenant for RLS policies.
 
-    Uses SET LOCAL so the setting is scoped to the current transaction
-    and automatically reset when the transaction ends.
+    Uses set_config() with parameterized query to prevent SQL injection.
+    The 'true' argument scopes it to the current transaction (like SET LOCAL).
     """
-    await session.execute(text(f"SET LOCAL app.current_org_id = '{org_id}'"))
+    safe_id = int(org_id)  # Raises ValueError/TypeError if not numeric
+    await session.execute(
+        text("SELECT set_config('app.current_org_id', :val, true)"),
+        {"val": str(safe_id)},
+    )

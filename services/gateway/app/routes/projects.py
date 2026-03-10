@@ -7,7 +7,7 @@ from shared.events import EventBus
 from shared.models import Keyword, Project, ProjectStatus
 from shared.schemas import CollectRequest, ProjectCreate, ProjectOut, ProjectUpdate
 
-from ..deps import get_db, get_event_bus
+from ..deps import get_db, get_event_bus, require_auth
 
 router = APIRouter()
 
@@ -18,7 +18,7 @@ router = APIRouter()
     summary="List all projects",
     description="Retrieve all projects with their associated keywords.",
 )
-async def list_projects(db: AsyncSession = Depends(get_db)):
+async def list_projects(user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Project).options(selectinload(Project.keywords)))
     return result.scalars().all()
 
@@ -30,7 +30,7 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
     summary="Create a project",
     description="Create a new social listening project with keywords and target platforms.",
 )
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(data: ProjectCreate, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     project = Project(
         name=data.name,
         description=data.description,
@@ -55,7 +55,7 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
     summary="Get project by ID",
     description="Retrieve a single project and its keywords by project ID.",
 )
-async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_project(project_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Project).where(Project.id == project_id).options(selectinload(Project.keywords)))
     project = result.scalar_one_or_none()
     if not project:
@@ -69,7 +69,7 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
     summary="Update a project",
     description="Partially update project fields such as name, description, status, or platforms.",
 )
-async def update_project(project_id: int, data: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+async def update_project(project_id: int, data: ProjectUpdate, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -92,6 +92,7 @@ async def update_project(project_id: int, data: ProjectUpdate, db: AsyncSession 
 async def trigger_collection(
     project_id: int,
     data: CollectRequest,
+    user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
     bus: EventBus = Depends(get_event_bus),
 ):
@@ -115,7 +116,7 @@ async def trigger_collection(
     summary="Add a keyword",
     description="Add a tracking keyword to a project for social mention collection.",
 )
-async def add_keyword(project_id: int, term: str, keyword_type: str = "brand", db: AsyncSession = Depends(get_db)):
+async def add_keyword(project_id: int, term: str, keyword_type: str = "brand", user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
