@@ -11,6 +11,7 @@ import {
   MessageSquare,
   FolderKanban,
   BarChart3,
+  TrendingUp,
   Search,
   FileText,
   Bell,
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { label: "Mentions", href: "/mentions", icon: <MessageSquare className="h-5 w-5" /> },
   { label: "Projects", href: "/projects", icon: <FolderKanban className="h-5 w-5" /> },
   { label: "Analytics", href: "/analytics", icon: <BarChart3 className="h-5 w-5" /> },
+  { label: "Competitive", href: "/competitive", icon: <TrendingUp className="h-5 w-5" /> },
   { label: "Search", href: "/search", icon: <Search className="h-5 w-5" /> },
   { label: "Reports", href: "/reports", icon: <FileText className="h-5 w-5" /> },
   { label: "Alerts", href: "/alerts", icon: <Bell className="h-5 w-5" /> },
@@ -70,6 +72,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         {/* Desktop collapse */}
         <button
           onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="hidden lg:flex items-center justify-center w-7 h-7 rounded-md text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors"
         >
           <ChevronLeft
@@ -82,6 +85,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         {/* Mobile close */}
         <button
           onClick={onMobileClose}
+          aria-label="Close sidebar"
           className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors"
         >
           <X className="h-4 w-4" />

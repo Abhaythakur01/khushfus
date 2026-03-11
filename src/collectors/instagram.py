@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 
 import httpx
@@ -8,7 +9,9 @@ from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+# 5.15 — Configurable API version via env var
+_IG_API_VERSION = os.environ.get("INSTAGRAM_API_VERSION", "v21.0")
+GRAPH_API_BASE = f"https://graph.facebook.com/{_IG_API_VERSION}"
 
 
 class InstagramCollector(BaseCollector):
@@ -28,6 +31,46 @@ class InstagramCollector(BaseCollector):
 
     def __init__(self):
         self.access_token = settings.instagram_access_token or settings.facebook_page_access_token
+
+    # 5.11 — OAuth token refresh via Facebook Graph API long-lived token exchange
+    # TODO: Implement automatic token refresh when short-lived tokens expire.
+    #   Flow: exchange short-lived token for long-lived token (60-day) via:
+    #     GET /oauth/access_token?grant_type=fb_exchange_token
+    #       &client_id={app_id}&client_secret={app_secret}&fb_exchange_token={short_token}
+    #   Then persist the refreshed token.
+    async def _refresh_token(self) -> str | None:
+        """Refresh the Instagram/Facebook access token.
+
+        Exchanges a short-lived token for a long-lived token (60 days) via the
+        Facebook Graph API.  Returns the new token or None on failure.
+        """
+        app_id = os.environ.get("FACEBOOK_APP_ID")
+        app_secret = os.environ.get("FACEBOOK_APP_SECRET")
+        if not app_id or not app_secret or not self.access_token:
+            return None
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{GRAPH_API_BASE}/oauth/access_token",
+                    params={
+                        "grant_type": "fb_exchange_token",
+                        "client_id": app_id,
+                        "client_secret": app_secret,
+                        "fb_exchange_token": self.access_token,
+                    },
+                    timeout=15.0,
+                )
+                if resp.status_code == 200:
+                    new_token = resp.json().get("access_token")
+                    if new_token:
+                        self.access_token = new_token
+                        logger.info("Instagram token refreshed successfully")
+                        return new_token
+                logger.warning(f"Instagram token refresh failed: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.error(f"Instagram token refresh error: {e}")
+        return None
 
     async def validate_credentials(self) -> bool:
         if not self.access_token:

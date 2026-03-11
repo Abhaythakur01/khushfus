@@ -40,7 +40,14 @@ def setup_tracing(service_name: str) -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
     except ImportError:
-        logger.debug("OpenTelemetry SDK not installed — tracing disabled for %s", service_name)
+        if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+            logger.warning(
+                "OTEL_EXPORTER_OTLP_ENDPOINT is set but OpenTelemetry SDK is not installed — "
+                "install opentelemetry-sdk to enable tracing for %s",
+                service_name,
+            )
+        else:
+            logger.debug("OpenTelemetry SDK not installed — tracing disabled for %s", service_name)
         return
 
     # Build resource with service name
@@ -56,6 +63,20 @@ def setup_tracing(service_name: str) -> None:
 
     # Set as the global tracer provider
     trace.set_tracer_provider(provider)
+
+    # --- W3C TraceContext propagation ---
+    try:
+        from opentelemetry.propagate import set_global_textmap
+        from opentelemetry.propagators.composite import CompositePropagator
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        propagator = CompositePropagator([TraceContextTextMapPropagator()])
+        set_global_textmap(propagator)
+        logger.debug("W3C TraceContext propagation configured")
+    except ImportError:
+        logger.debug("opentelemetry propagators not available — skipping W3C TraceContext setup")
+    except Exception as exc:
+        logger.warning("Failed to configure W3C TraceContext propagation: %s", exc)
 
     # --- Auto-instrumentation ---
 
@@ -99,4 +120,39 @@ def setup_tracing(service_name: str) -> None:
     except Exception as exc:
         logger.warning("Failed to instrument Redis: %s", exc)
 
-    logger.info("OpenTelemetry tracing initialized for service '%s' → %s", service_name, otlp_endpoint)
+    logger.info("OpenTelemetry tracing initialized for service '%s' -> %s", service_name, otlp_endpoint)
+
+
+def extract_trace_context(headers: dict[str, str]) -> object | None:
+    """Extract W3C TraceContext from incoming request headers.
+
+    Returns an OpenTelemetry context object, or ``None`` when OTel is not
+    installed.  The returned context can be passed to
+    ``opentelemetry.context.attach()`` to propagate the trace.
+    """
+    try:
+        from opentelemetry.propagate import extract
+
+        return extract(carrier=headers)
+    except ImportError:
+        return None
+    except Exception:
+        logger.debug("Failed to extract trace context", exc_info=True)
+        return None
+
+
+def inject_trace_context(headers: dict[str, str]) -> dict[str, str]:
+    """Inject the current span's ``traceparent`` header into *headers*.
+
+    Modifies *headers* in-place and also returns it for convenience.
+    When OTel is not installed the dict is returned unchanged.
+    """
+    try:
+        from opentelemetry.propagate import inject
+
+        inject(carrier=headers)
+    except ImportError:
+        pass
+    except Exception:
+        logger.debug("Failed to inject trace context", exc_info=True)
+    return headers

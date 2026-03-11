@@ -28,10 +28,15 @@ from shared.events import (
     EnrichmentResultEvent,
     EventBus,
 )
+from shared.logging_config import setup_logging
 from shared.models import Mention
+from shared.service_utils import ConsumerMetrics, start_liveness_server
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("enrichment-service")
 logger = logging.getLogger(__name__)
+
+metrics = ConsumerMetrics("enrichment-service")
+ENRICHMENT_TIMEOUT = int(os.getenv("ENRICHMENT_TIMEOUT_SECONDS", "30"))
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -428,6 +433,8 @@ async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.E
                 block_ms=3000,
             )
 
+            r = bus._redis  # access underlying redis for dedup checks
+
             for msg_id, data in messages:
                 try:
                     mention_id = int(data.get("mention_id", 0))
@@ -435,12 +442,29 @@ async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.E
                         logger.warning(f"Invalid mention_id in enrichment request: {data}")
                         continue
 
-                    result = await enrich_mention(session_factory, mention_id, data)
+                    # Idempotency: skip already-enriched mentions
+                    dedup_key = f"enrichment:done:{mention_id}"
+                    if r and await r.exists(dedup_key):
+                        logger.debug("Skipping already-enriched mention %d", mention_id)
+                        await bus.ack(STREAM_ENRICHMENT, GROUP_NAME, msg_id)
+                        continue
+
+                    result = await asyncio.wait_for(
+                        enrich_mention(session_factory, mention_id, data),
+                        timeout=ENRICHMENT_TIMEOUT,
+                    )
 
                     if result:
                         await bus.publish(STREAM_ENRICHMENT_RESULTS, result)
+                        if r:
+                            await r.setex(dedup_key, 86400, "1")
+                        metrics.record_processed()
 
+                except asyncio.TimeoutError:
+                    metrics.record_failed()
+                    logger.error(f"Enrichment timed out for mention in message {msg_id} after {ENRICHMENT_TIMEOUT}s")
                 except Exception as e:
+                    metrics.record_failed()
                     logger.error(f"Enrichment failed for message {msg_id}: {e}", exc_info=True)
                 finally:
                     await bus.ack(STREAM_ENRICHMENT, GROUP_NAME, msg_id)
@@ -466,10 +490,14 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9095"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Data Enrichment Service started")
     try:
         await process_loop(bus, session_factory, shutdown_event)
     finally:
+        liveness.close()
         logger.info("Data Enrichment Service shutting down gracefully")
         await bus.close()
         await engine.dispose()

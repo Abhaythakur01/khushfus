@@ -1,11 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 interface TabsContextValue {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  registerTab: (value: string) => void;
+  tabValues: React.MutableRefObject<string[]>;
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null);
@@ -28,15 +30,22 @@ interface TabsProps {
 function Tabs({ defaultValue, value, children, className, onChange, onValueChange }: TabsProps) {
   const [internalTab, setInternalTab] = useState(defaultValue ?? value ?? "");
   const activeTab = value ?? internalTab;
+  const tabValues = useRef<string[]>([]);
 
-  const setActiveTab = (tab: string) => {
+  const setActiveTab = useCallback((tab: string) => {
     if (value === undefined) setInternalTab(tab);
     onChange?.(tab);
     onValueChange?.(tab);
-  };
+  }, [value, onChange, onValueChange]);
+
+  const registerTab = useCallback((val: string) => {
+    if (!tabValues.current.includes(val)) {
+      tabValues.current = [...tabValues.current, val];
+    }
+  }, []);
 
   return (
-    <TabsContext.Provider value={{ activeTab, setActiveTab }}>
+    <TabsContext.Provider value={{ activeTab, setActiveTab, registerTab, tabValues }}>
       <div className={className}>{children}</div>
     </TabsContext.Provider>
   );
@@ -48,13 +57,61 @@ interface TabListProps {
 }
 
 function TabList({ children, className }: TabListProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const { tabValues, setActiveTab } = useTabsContext();
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const tabs = tabValues.current;
+      if (tabs.length === 0) return;
+
+      const focusable = listRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
+      if (!focusable) return;
+
+      const currentIndex = Array.from(focusable).findIndex(
+        (el) => el === document.activeElement,
+      );
+      if (currentIndex === -1) return;
+
+      let nextIndex = currentIndex;
+
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        nextIndex = (currentIndex + 1) % focusable.length;
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        nextIndex = (currentIndex - 1 + focusable.length) % focusable.length;
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        nextIndex = 0;
+      } else if (e.key === "End") {
+        e.preventDefault();
+        nextIndex = focusable.length - 1;
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const val = focusable[currentIndex]?.getAttribute("data-tab-value");
+        if (val) setActiveTab(val);
+        return;
+      } else {
+        return;
+      }
+
+      focusable[nextIndex]?.focus();
+      const val = focusable[nextIndex]?.getAttribute("data-tab-value");
+      if (val) setActiveTab(val);
+    },
+    [tabValues, setActiveTab],
+  );
+
   return (
     <div
+      ref={listRef}
       className={cn(
         "flex items-center gap-1 border-b border-slate-200 pb-px",
         className,
       )}
       role="tablist"
+      onKeyDown={handleKeyDown}
     >
       {children}
     </div>
@@ -68,13 +125,18 @@ interface TabTriggerProps {
 }
 
 function TabTrigger({ value, children, className }: TabTriggerProps) {
-  const { activeTab, setActiveTab } = useTabsContext();
+  const { activeTab, setActiveTab, registerTab } = useTabsContext();
   const isActive = activeTab === value;
+
+  // Register this tab value with the context
+  registerTab(value);
 
   return (
     <button
       role="tab"
       aria-selected={isActive}
+      tabIndex={isActive ? 0 : -1}
+      data-tab-value={value}
       onClick={() => setActiveTab(value)}
       className={cn(
         "px-4 py-2.5 text-sm font-medium transition-colors duration-150 border-b-2 -mb-px",
@@ -100,7 +162,7 @@ function TabPanel({ value, children, className }: TabPanelProps) {
   if (activeTab !== value) return null;
 
   return (
-    <div role="tabpanel" className={cn("animate-fade-in pt-4", className)}>
+    <div role="tabpanel" tabIndex={0} className={cn("animate-fade-in pt-4", className)}>
       {children}
     </div>
   );

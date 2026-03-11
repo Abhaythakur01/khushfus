@@ -1,3 +1,17 @@
+# =============================================================================
+# PostgreSQL — Single-node for dev/staging
+# =============================================================================
+# PRODUCTION HA OPTIONS (choose one):
+#   1. CloudNativePG Operator (recommended):
+#      - kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.22.yaml
+#      - Replace this StatefulSet with a CloudNativePG Cluster resource
+#      - Provides automated failover, backups to S3, rolling updates
+#   2. Patroni + Spilo:
+#      - Use Zalando postgres-operator for automated HA with Patroni
+#   3. Managed service:
+#      - AWS RDS Multi-AZ / GCP Cloud SQL HA / Azure Database for PostgreSQL
+#      - Remove this StatefulSet entirely; update DATABASE_URL in secrets
+# =============================================================================
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

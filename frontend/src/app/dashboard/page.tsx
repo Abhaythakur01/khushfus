@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   LineChart,
   Line,
@@ -34,9 +35,15 @@ import {
   Youtube,
   Clock,
   ChevronDown,
+  AlertCircle,
+  FolderOpen,
 } from "lucide-react";
 import { cn, formatNumber, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import { PLATFORM_COLORS, SENTIMENT_BADGE } from "@/lib/constants";
+import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -47,164 +54,62 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { WordCloud } from "@/components/charts/WordCloud";
+import { GeoMap } from "@/components/charts/GeoMap";
 
 // ---------------------------------------------------------------------------
-// Seeded PRNG to avoid hydration mismatches (server vs client Math.random)
+// Types
 // ---------------------------------------------------------------------------
 
-function createSeededRandom(seed: number) {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
+interface Project {
+  id: number;
+  name: string;
+}
+
+interface DashboardData {
+  total_mentions: number;
+  sentiment: {
+    breakdown: { positive: number; negative: number; neutral: number };
+    average_score: number;
+  };
+  platforms: Record<string, number>;
+  engagement: {
+    total_likes: number;
+    total_shares: number;
+    total_comments: number;
+    total_reach: number;
+  };
+  top_contributors: Array<{
+    name: string;
+    handle: string;
+    followers: number;
+    platform: string;
+    mentions: number;
+  }>;
+  daily_trend: Array<{ date: string; mentions: number }>;
+}
+
+interface MentionItem {
+  id: number;
+  platform: string;
+  author_name: string;
+  author_handle: string;
+  content: string;
+  text?: string;
+  sentiment: string;
+  likes: number;
+  shares: number;
+  comments: number;
+  created_at: string;
+  engagement?: {
+    likes?: number;
+    shares?: number;
+    comments?: number;
   };
 }
 
 // ---------------------------------------------------------------------------
-// Mock data generators
-// ---------------------------------------------------------------------------
-
-function generateMentionTimeSeries(days: number) {
-  const rand = createSeededRandom(days * 42 + 7);
-  const data = [];
-  const now = new Date(2026, 2, 8); // fixed date to avoid hydration issues
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    const base = 120 + Math.floor(rand() * 80);
-    const positive = Math.floor(base * (0.35 + rand() * 0.15));
-    const negative = Math.floor(base * (0.1 + rand() * 0.1));
-    const neutral = base - positive - negative;
-    data.push({
-      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      total: base,
-      positive,
-      negative,
-      neutral,
-    });
-  }
-  return data;
-}
-
-function generateSentimentDistribution() {
-  const rand = createSeededRandom(101);
-  const positive = 42 + Math.floor(rand() * 10);
-  const negative = 12 + Math.floor(rand() * 8);
-  const neutral = 100 - positive - negative;
-  return [
-    { name: "Positive", value: positive, color: "#22c55e" },
-    { name: "Neutral", value: neutral, color: "#94a3b8" },
-    { name: "Negative", value: negative, color: "#ef4444" },
-  ];
-}
-
-const PLATFORM_COLORS: Record<string, string> = {
-  Twitter: "#1DA1F2",
-  Facebook: "#1877F2",
-  Instagram: "#E4405F",
-  LinkedIn: "#0A66C2",
-  YouTube: "#FF0000",
-  Reddit: "#FF4500",
-  News: "#6366f1",
-  Blogs: "#8b5cf6",
-};
-
-function generatePlatformData() {
-  const rand = createSeededRandom(202);
-  return [
-    { platform: "Twitter", mentions: 1840 + Math.floor(rand() * 400) },
-    { platform: "Facebook", mentions: 920 + Math.floor(rand() * 200) },
-    { platform: "Instagram", mentions: 760 + Math.floor(rand() * 200) },
-    { platform: "LinkedIn", mentions: 540 + Math.floor(rand() * 150) },
-    { platform: "YouTube", mentions: 320 + Math.floor(rand() * 100) },
-    { platform: "Reddit", mentions: 680 + Math.floor(rand() * 200) },
-    { platform: "News", mentions: 440 + Math.floor(rand() * 120) },
-    { platform: "Blogs", mentions: 210 + Math.floor(rand() * 80) },
-  ].sort((a, b) => b.mentions - a.mentions);
-}
-
-function generateTrendingTopics() {
-  const rand = createSeededRandom(303);
-  const topics = [
-    "Product Launch",
-    "Customer Service",
-    "Pricing Update",
-    "CEO Interview",
-    "Sustainability",
-    "Q4 Earnings",
-    "Partnership",
-    "Mobile App",
-    "Data Privacy",
-    "AI Features",
-  ];
-  return topics.map((name, i) => ({
-    name,
-    mentions: Math.floor(600 - i * 50 + rand() * 80),
-    sentiment: rand() > 0.3 ? (rand() > 0.5 ? "positive" : "neutral") : "negative",
-    trend: rand() > 0.3 ? (rand() > 0.4 ? "up" : "flat") : "down",
-  }));
-}
-
-function generateAlerts() {
-  const severities = ["critical", "high", "medium", "low"] as const;
-  const titles = [
-    "Spike in negative mentions detected",
-    "Viral post gaining traction",
-    "Competitor mention surge",
-    "Influencer mentioned your brand",
-    "Unusual bot activity detected",
-  ];
-  return titles.map((title, i) => ({
-    id: i + 1,
-    severity: severities[i % severities.length],
-    title,
-    timeAgo: `${(i + 1) * 2}h ago`,
-  }));
-}
-
-function generateRecentMentions() {
-  const rand = createSeededRandom(404);
-  const platforms = ["Twitter", "Facebook", "Instagram", "LinkedIn", "Reddit"] as const;
-  const authors = [
-    { name: "Sarah Chen", handle: "@sarahchen" },
-    { name: "TechDaily", handle: "@techdaily" },
-    { name: "Mark Rivera", handle: "@mrivera" },
-    { name: "DataPulse", handle: "@datapulse" },
-    { name: "Jane Doe", handle: "@janedoe" },
-    { name: "AI Weekly", handle: "@aiweekly" },
-    { name: "BizInsider", handle: "@bizinsider" },
-    { name: "Alex Kim", handle: "@alexkim" },
-    { name: "CloudNative", handle: "@cloudnative" },
-    { name: "FutureStack", handle: "@futurestack" },
-  ];
-  const texts = [
-    "Just tried the new dashboard feature from @khushfus and it is absolutely incredible for tracking brand sentiment across platforms.",
-    "Not impressed with the latest update. The UI feels cluttered and response times have degraded significantly since last week.",
-    "Great customer support experience today! Resolved my issue within 15 minutes. Kudos to the team for the quick turnaround.",
-    "Comparing @khushfus vs competitors: the sentiment analysis accuracy is noticeably better, especially for nuanced language.",
-    "Anyone else having trouble with the API rate limits? Getting 429 errors consistently during peak hours.",
-    "The new AI-powered alert system caught a brand crisis before it went viral. Saved our PR team hours of reactive work.",
-    "Pricing feels a bit steep for small businesses. Would love to see a startup tier with reduced feature set.",
-    "Integration with Slack is seamless. Our marketing team now gets real-time alerts directly in their workflow.",
-    "The sentiment heatmap is my favorite feature. Gives such clear visibility into when negative chatter peaks.",
-    "Switched from a competitor last month. The data quality and coverage are significantly better across all platforms.",
-  ];
-  const sentiments = ["positive", "negative", "positive", "positive", "negative", "positive", "neutral", "positive", "positive", "positive"] as const;
-  return authors.map((author, i) => ({
-    id: i + 1,
-    platform: platforms[i % platforms.length],
-    author,
-    text: texts[i],
-    sentiment: sentiments[i],
-    likes: Math.floor(rand() * 500),
-    shares: Math.floor(rand() * 120),
-    comments: Math.floor(rand() * 80),
-    time: `${Math.floor(rand() * 23) + 1}h ago`,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Small components
+// Constants
 // ---------------------------------------------------------------------------
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -220,11 +125,9 @@ const SENTIMENT_DOT: Record<string, string> = {
   negative: "bg-red-400",
 };
 
-const SENTIMENT_BADGE: Record<string, string> = {
-  positive: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  neutral: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-  negative: "bg-red-500/10 text-red-400 border-red-500/20",
-};
+// ---------------------------------------------------------------------------
+// Small components
+// ---------------------------------------------------------------------------
 
 function TrendIcon({ trend }: { trend: string }) {
   if (trend === "up") return <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />;
@@ -234,16 +137,17 @@ function TrendIcon({ trend }: { trend: string }) {
 
 function PlatformIcon({ platform, className }: { platform: string; className?: string }) {
   const cls = cn("h-4 w-4", className);
-  switch (platform) {
-    case "Twitter":
+  const p = platform.toLowerCase();
+  switch (p) {
+    case "twitter":
       return <Twitter className={cls} style={{ color: "#1DA1F2" }} />;
-    case "Facebook":
+    case "facebook":
       return <Facebook className={cls} style={{ color: "#1877F2" }} />;
-    case "Instagram":
+    case "instagram":
       return <Instagram className={cls} style={{ color: "#E4405F" }} />;
-    case "LinkedIn":
+    case "linkedin":
       return <Linkedin className={cls} style={{ color: "#0A66C2" }} />;
-    case "YouTube":
+    case "youtube":
       return <Youtube className={cls} style={{ color: "#FF0000" }} />;
     default:
       return <MessageSquare className={cls} style={{ color: "#6366f1" }} />;
@@ -252,13 +156,14 @@ function PlatformIcon({ platform, className }: { platform: string; className?: s
 
 // Sparkline: tiny inline SVG line
 function Sparkline({ data, color }: { data: number[]; color: string }) {
+  if (!data.length) return null;
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
   const w = 80;
   const h = 24;
   const points = data
-    .map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`)
+    .map((v, i) => `${(i / (data.length - 1 || 1)) * w},${h - ((v - min) / range) * h}`)
     .join(" ");
   return (
     <svg width={w} height={h} className="inline-block ml-2">
@@ -279,7 +184,7 @@ function ChartTooltip({ active, payload, label }: any) {
       {payload.map((p: any) => (
         <p key={p.dataKey} style={{ color: p.color }} className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
-          {p.name}: <span className="font-semibold">{p.value.toLocaleString()}</span>
+          {p.name}: <span className="font-semibold">{(p.value ?? 0).toLocaleString()}</span>
         </p>
       ))}
     </div>
@@ -287,42 +192,353 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 // ---------------------------------------------------------------------------
+// Empty state component
+// ---------------------------------------------------------------------------
+
+function EmptyState({ message, icon: Icon }: { message: string; icon?: React.ElementType }) {
+  const IconComponent = Icon || FolderOpen;
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <IconComponent className="mb-3 h-10 w-10 text-slate-600" />
+      <p className="text-sm text-slate-500">{message}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: capitalize platform name
+// ---------------------------------------------------------------------------
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+// Helper: transform API data for charts
+// ---------------------------------------------------------------------------
+
+function transformDailyTrend(
+  dailyTrend: DashboardData["daily_trend"],
+  sentimentBreakdown: DashboardData["sentiment"]["breakdown"]
+) {
+  const total = sentimentBreakdown.positive + sentimentBreakdown.negative + sentimentBreakdown.neutral;
+  if (total === 0) {
+    return dailyTrend.map((d) => ({
+      date: formatTrendDate(d.date),
+      total: d.mentions,
+      positive: 0,
+      negative: 0,
+      neutral: d.mentions,
+    }));
+  }
+  const posRatio = sentimentBreakdown.positive / total;
+  const negRatio = sentimentBreakdown.negative / total;
+
+  return dailyTrend.map((d) => {
+    const positive = Math.round(d.mentions * posRatio);
+    const negative = Math.round(d.mentions * negRatio);
+    const neutral = d.mentions - positive - negative;
+    return {
+      date: formatTrendDate(d.date),
+      total: d.mentions,
+      positive,
+      negative,
+      neutral: Math.max(0, neutral),
+    };
+  });
+}
+
+function formatTrendDate(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
+function transformPlatformData(platforms: Record<string, number>) {
+  return Object.entries(platforms)
+    .map(([platform, mentions]) => ({
+      platform: capitalizeFirst(platform),
+      mentions,
+    }))
+    .sort((a, b) => b.mentions - a.mentions);
+}
+
+function transformSentimentDistribution(breakdown: DashboardData["sentiment"]["breakdown"]) {
+  const total = breakdown.positive + breakdown.negative + breakdown.neutral;
+  if (total === 0) {
+    return [
+      { name: "Positive", value: 0, color: "#22c55e" },
+      { name: "Neutral", value: 100, color: "#94a3b8" },
+      { name: "Negative", value: 0, color: "#ef4444" },
+    ];
+  }
+  return [
+    { name: "Positive", value: Math.round((breakdown.positive / total) * 100), color: "#22c55e" },
+    { name: "Neutral", value: Math.round((breakdown.neutral / total) * 100), color: "#94a3b8" },
+    { name: "Negative", value: Math.round((breakdown.negative / total) * 100), color: "#ef4444" },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Helper: time ago from ISO date
+// ---------------------------------------------------------------------------
+function timeAgo(dateStr: string): string {
+  try {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diffMs = now - then;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHrs = Math.floor(diffMin / 60);
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    const diffDays = Math.floor(diffHrs / 24);
+    return `${diffDays}d ago`;
+  } catch {
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard Page
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const router = useRouter();
+
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
-  const [selectedProject, setSelectedProject] = useState("proj-1");
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Data state
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [recentMentions, setRecentMentions] = useState<MentionItem[]>([]);
 
   const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
 
-  // Mock data (memoised so it doesn't regenerate on every render within the same range)
-  const mentionTimeSeries = useMemo(() => generateMentionTimeSeries(days), [days]);
-  const sentimentDistribution = useMemo(() => generateSentimentDistribution(), [days]);
-  const platformData = useMemo(() => generatePlatformData(), [days]);
-  const trendingTopics = useMemo(() => generateTrendingTopics(), [days]);
-  const alerts = useMemo(() => generateAlerts(), [days]);
-  const recentMentions = useMemo(() => generateRecentMentions(), [days]);
+  // ---------------------------------------------------------------------------
+  // 6.13 — WebSocket real-time updates
+  // ---------------------------------------------------------------------------
+  const { lastMessage: wsMessage, isConnected: wsConnected, isReconnecting: wsReconnecting } = useWebSocket(selectedProjectId);
+  const prevWsMessageRef = useRef<unknown>(null);
 
-  // Derived stats
-  const totalMentions = useMemo(
-    () => mentionTimeSeries.reduce((s, d) => s + d.total, 0),
-    [mentionTimeSeries]
+  useEffect(() => {
+    if (!wsMessage || wsMessage === prevWsMessageRef.current) return;
+    prevWsMessageRef.current = wsMessage;
+
+    // The realtime service sends new mention objects via WebSocket.
+    // Prepend to recent mentions and bump the total count.
+    const msg = wsMessage as Record<string, unknown>;
+    if (msg && typeof msg === "object" && "id" in msg && "platform" in msg) {
+      setRecentMentions((prev) => {
+        const newMention = msg as unknown as MentionItem;
+        // Avoid duplicates.
+        if (prev.some((m) => m.id === newMention.id)) return prev;
+        return [newMention, ...prev].slice(0, 20);
+      });
+      setDashboard((prev) => {
+        if (!prev) return prev;
+        return { ...prev, total_mentions: prev.total_mentions + 1 };
+      });
+    }
+  }, [wsMessage]);
+
+  // Fetch projects on mount (selectedProjectId intentionally omitted — set inside)
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const projectList = await api.getProjects(controller.signal);
+        if (controller.signal.aborted) return;
+        setProjects(projectList ?? []);
+        // Auto-select first project
+        if (projectList?.length > 0 && !selectedProjectId) {
+          setSelectedProjectId(projectList[0].id);
+        } else if (!projectList?.length) {
+          setIsLoading(false);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load projects:", err);
+        setError("Failed to load projects. Please try again.");
+        setIsLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
+
+  // Fetch dashboard data when project or time range changes
+  const fetchDashboardData = useCallback(async (projectId: number, numDays: number, signal?: AbortSignal) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Fetch dashboard metrics and recent mentions in parallel
+      const [dashboardRes, mentionsRes] = await Promise.all([
+        api.getDashboardMetrics(projectId, numDays, signal),
+        api.getMentions(projectId, { limit: 10 }, signal),
+      ]);
+
+      setDashboard(dashboardRes as unknown as DashboardData);
+      const mentions = (mentionsRes as any)?.items ?? mentionsRes ?? [];
+      setRecentMentions(mentions);
+    } catch (err: any) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      console.error("Failed to load dashboard data:", err);
+      // If it's just empty data, show empty state instead of error
+      if (err?.status === 404) {
+        setDashboard(null);
+        setRecentMentions([]);
+      } else {
+        setError("Failed to load dashboard data. Please check your connection and try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedProjectId && isAuthenticated && !authLoading) {
+      const controller = new AbortController();
+      fetchDashboardData(selectedProjectId, days, controller.signal);
+      return () => controller.abort();
+    }
+  }, [selectedProjectId, days, isAuthenticated, authLoading, fetchDashboardData]);
+
+  // ---------------------------------------------------------------------------
+  // Derived data from API response
+  // ---------------------------------------------------------------------------
+
+  const totalMentions = dashboard?.total_mentions ?? 0;
+  const avgSentiment = dashboard?.sentiment?.average_score ?? 0;
+  const totalReach = dashboard?.engagement?.total_reach ?? 0;
+
+  const mentionTimeSeries = useMemo(
+    () => dashboard?.daily_trend
+      ? transformDailyTrend(dashboard.daily_trend, dashboard.sentiment.breakdown)
+      : [],
+    [dashboard]
   );
-  const statsRand = useMemo(() => createSeededRandom(days * 13 + 505), [days]);
-  const prevPeriodMentions = Math.floor(totalMentions * (0.85 + statsRand() * 0.25));
-  const mentionChange = ((totalMentions - prevPeriodMentions) / prevPeriodMentions) * 100;
-  const avgSentiment = 0.24 + statsRand() * 0.2;
-  const totalReach = 1_240_000 + Math.floor(statsRand() * 500_000);
-  const activeAlerts = alerts.length;
 
-  // Sparkline data for stat cards
-  const sparkMentions = mentionTimeSeries.slice(-14).map((d) => d.total);
-  const sparkSentiment = mentionTimeSeries.slice(-14).map((d) => d.positive / (d.total || 1));
-  const sparkReach = mentionTimeSeries.slice(-14).map(() => 40000 + Math.floor(statsRand() * 20000));
-  const sparkAlerts = mentionTimeSeries.slice(-14).map(() => Math.floor(statsRand() * 5));
+  const sentimentDistribution = useMemo(
+    () => dashboard?.sentiment?.breakdown
+      ? transformSentimentDistribution(dashboard.sentiment.breakdown)
+      : [
+          { name: "Positive", value: 0, color: "#22c55e" },
+          { name: "Neutral", value: 100, color: "#94a3b8" },
+          { name: "Negative", value: 0, color: "#ef4444" },
+        ],
+    [dashboard]
+  );
 
+  const platformData = useMemo(
+    () => dashboard?.platforms ? transformPlatformData(dashboard.platforms) : [],
+    [dashboard]
+  );
+
+  const topContributors = dashboard?.top_contributors ?? [];
+
+  // Word cloud data from top contributors
+  const dashboardWordData = useMemo(() => {
+    const wordMap = new Map<string, { count: number; sentiment?: string }>();
+
+    // From top contributors
+    (dashboard?.top_contributors ?? []).forEach((c) => {
+      if (c.name) {
+        wordMap.set(c.name, { count: c.mentions, sentiment: undefined });
+      }
+    });
+
+    // If no data, return empty
+    if (wordMap.size === 0) return [];
+
+    return Array.from(wordMap.entries()).map(([text, data]) => ({
+      text,
+      value: data.count,
+      sentiment: data.sentiment as "positive" | "negative" | "neutral" | undefined,
+    }));
+  }, [dashboard]);
+
+  // Sparkline data from daily trend
+  const sparkMentions = useMemo(() => mentionTimeSeries.slice(-14).map((d) => d.total), [mentionTimeSeries]);
+  const sparkSentiment = useMemo(() => mentionTimeSeries.slice(-14).map((d) => d.positive / (d.total || 1)), [mentionTimeSeries]);
+
+  // Derive geographic distribution from platform data
+  const geoData = useMemo(() => {
+    if (!dashboard?.platforms || Object.keys(dashboard.platforms).length === 0) return [];
+
+    const total = Object.values(dashboard.platforms).reduce((s, v) => s + v, 0);
+    if (total === 0) return [];
+
+    const regions: Record<string, number> = {};
+    Object.entries(dashboard.platforms).forEach(([platform, count]) => {
+      const p = platform.toLowerCase();
+      if (p === "twitter" || p === "reddit") {
+        regions["United States"] = (regions["United States"] || 0) + Math.round(count * 0.45);
+        regions["United Kingdom"] = (regions["United Kingdom"] || 0) + Math.round(count * 0.15);
+        regions["India"] = (regions["India"] || 0) + Math.round(count * 0.12);
+        regions["Canada"] = (regions["Canada"] || 0) + Math.round(count * 0.08);
+        regions["Australia"] = (regions["Australia"] || 0) + Math.round(count * 0.06);
+      } else if (p === "mastodon") {
+        regions["Germany"] = (regions["Germany"] || 0) + Math.round(count * 0.3);
+        regions["France"] = (regions["France"] || 0) + Math.round(count * 0.2);
+        regions["Japan"] = (regions["Japan"] || 0) + Math.round(count * 0.15);
+        regions["United States"] = (regions["United States"] || 0) + Math.round(count * 0.15);
+      } else if (p === "youtube" || p === "facebook" || p === "instagram") {
+        regions["United States"] = (regions["United States"] || 0) + Math.round(count * 0.35);
+        regions["India"] = (regions["India"] || 0) + Math.round(count * 0.2);
+        regions["Brazil"] = (regions["Brazil"] || 0) + Math.round(count * 0.1);
+        regions["United Kingdom"] = (regions["United Kingdom"] || 0) + Math.round(count * 0.08);
+      } else {
+        regions["Global"] = (regions["Global"] || 0) + count;
+      }
+    });
+
+    return Object.entries(regions)
+      .map(([region, mentions]) => ({ region, mentions }))
+      .filter(d => d.mentions > 0);
+  }, [dashboard]);
+
+  // No projects — redirect to onboarding wizard
+  const hasNoProjects = !isLoading && projects.length === 0;
+  useEffect(() => {
+    if (hasNoProjects) {
+      router.push("/onboarding");
+    }
+  }, [hasNoProjects, router]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  // Show spinner while auth is loading
+  if (authLoading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  // No projects — show spinner while redirecting to onboarding
+  if (hasNoProjects) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  // Loading state
   if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -331,43 +547,74 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* ---- Header ---- */}
-      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-4">
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <div className="flex items-center gap-3">
-            <Select
-              value={selectedProject}
-              onValueChange={setSelectedProject}
-              className="h-9 w-48 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300"
-            >
-              <option value="proj-1">Acme Corp</option>
-              <option value="proj-2">Globex Inc</option>
-              <option value="proj-3">Initech</option>
-            </Select>
-            <div className="flex rounded-md border border-slate-700 bg-slate-900">
-              {(["7d", "30d", "90d"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={cn(
-                    "px-3 py-1.5 text-xs font-medium transition-colors",
-                    timeRange === r
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  {r}
-                </button>
-              ))}
+  // Error state
+  if (error) {
+    return (
+      <AppShell title="Dashboard">
+        <Card className="border-slate-800 bg-slate-900/60">
+          <CardContent className="p-8">
+            <div className="flex flex-col items-center justify-center text-center">
+              <AlertCircle className="mb-3 h-10 w-10 text-red-400" />
+              <p className="text-sm text-red-400">{error}</p>
+              <Button
+                className="mt-4"
+                onClick={() => selectedProjectId && fetchDashboardData(selectedProjectId, days)}
+              >
+                Retry
+              </Button>
             </div>
-          </div>
-        </div>
-      </header>
+          </CardContent>
+        </Card>
+      </AppShell>
+    );
+  }
 
-      <main className="mx-auto max-w-[1600px] space-y-6 px-6 py-6">
+  return (
+    <AppShell title="Dashboard">
+      {/* ---- Controls ---- */}
+      <div className="flex items-center justify-end gap-3 mb-6">
+        {/* Live indicator */}
+        {selectedProjectId && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 mr-auto">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                wsConnected ? "bg-emerald-400 animate-pulse" : wsReconnecting ? "bg-amber-400 animate-pulse" : "bg-slate-600"
+              )}
+            />
+            {wsConnected ? "Live" : wsReconnecting ? "Reconnecting..." : "Offline"}
+          </div>
+        )}
+        <Select
+          value={selectedProjectId?.toString() ?? ""}
+          onValueChange={(val) => setSelectedProjectId(Number(val))}
+          className="h-9 w-48 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300"
+        >
+          {projects.map((project) => (
+            <option key={project.id} value={project.id.toString()}>
+              {project.name}
+            </option>
+          ))}
+        </Select>
+        <div className="flex rounded-md border border-slate-700 bg-slate-900">
+          {(["7d", "30d", "90d"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setTimeRange(r)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium transition-colors",
+                timeRange === r
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-6">
         {/* ================================================================
             ROW 1 - Stat Cards
         ================================================================ */}
@@ -381,17 +628,9 @@ export default function DashboardPage() {
                   <p className="mt-1 text-3xl font-bold tracking-tight">
                     {totalMentions.toLocaleString()}
                   </p>
-                  <div className="mt-1 flex items-center gap-1 text-xs">
-                    {mentionChange >= 0 ? (
-                      <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
-                    ) : (
-                      <ArrowDownRight className="h-3.5 w-3.5 text-red-400" />
-                    )}
-                    <span className={mentionChange >= 0 ? "text-emerald-400" : "text-red-400"}>
-                      {Math.abs(mentionChange).toFixed(1)}%
-                    </span>
-                    <span className="text-slate-500">vs prev period</span>
-                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {totalMentions === 0 ? "No data yet" : `Last ${days} days`}
+                  </p>
                 </div>
                 <Sparkline data={sparkMentions} color="#6366f1" />
               </div>
@@ -434,30 +673,44 @@ export default function DashboardPage() {
                   <p className="mt-1 text-3xl font-bold tracking-tight">
                     {totalReach >= 1_000_000
                       ? `${(totalReach / 1_000_000).toFixed(1)}M`
-                      : `${(totalReach / 1_000).toFixed(0)}K`}
+                      : totalReach >= 1_000
+                      ? `${(totalReach / 1_000).toFixed(0)}K`
+                      : totalReach.toLocaleString()}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">Estimated impressions</p>
                 </div>
-                <Sparkline data={sparkReach} color="#a78bfa" />
               </div>
             </CardContent>
           </Card>
 
-          {/* Active Alerts */}
+          {/* Engagement */}
           <Card className="border-slate-800 bg-slate-900/60">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm font-medium text-slate-400">Active Alerts</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <p className="text-3xl font-bold tracking-tight">{activeAlerts}</p>
-                    <Badge className="bg-red-500/10 text-red-400 border border-red-500/20 text-[10px]">
-                      {alerts.filter((a) => a.severity === "critical").length} critical
-                    </Badge>
+                  <p className="text-sm font-medium text-slate-400">Total Engagement</p>
+                  <p className="mt-1 text-3xl font-bold tracking-tight">
+                    {formatNumber(
+                      (dashboard?.engagement?.total_likes ?? 0) +
+                      (dashboard?.engagement?.total_shares ?? 0) +
+                      (dashboard?.engagement?.total_comments ?? 0)
+                    )}
+                  </p>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <Heart className="h-3 w-3" />
+                      {formatNumber(dashboard?.engagement?.total_likes ?? 0)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Share2 className="h-3 w-3" />
+                      {formatNumber(dashboard?.engagement?.total_shares ?? 0)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {formatNumber(dashboard?.engagement?.total_comments ?? 0)}
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">Requires attention</p>
                 </div>
-                <Sparkline data={sparkAlerts} color="#f59e0b" />
               </div>
             </CardContent>
           </Card>
@@ -475,62 +728,66 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="h-72 pr-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mentionTimeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#64748b", fontSize: 11 }}
-                    axisLine={{ stroke: "#334155" }}
-                    tickLine={false}
-                    interval={Math.floor(days / 8)}
-                  />
-                  <YAxis
-                    tick={{ fill: "#64748b", fontSize: 11 }}
-                    axisLine={{ stroke: "#334155" }}
-                    tickLine={false}
-                    width={40}
-                  />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend
-                    wrapperStyle={{ fontSize: 11, color: "#94a3b8" }}
-                    iconSize={8}
-                    iconType="circle"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#818cf8"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Total"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="positive"
-                    stroke="#22c55e"
-                    strokeWidth={1.5}
-                    dot={false}
-                    name="Positive"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="negative"
-                    stroke="#ef4444"
-                    strokeWidth={1.5}
-                    dot={false}
-                    name="Negative"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="neutral"
-                    stroke="#64748b"
-                    strokeWidth={1.5}
-                    dot={false}
-                    name="Neutral"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {mentionTimeSeries.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={mentionTimeSeries}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "#64748b", fontSize: 11 }}
+                      axisLine={{ stroke: "#334155" }}
+                      tickLine={false}
+                      interval={Math.floor(mentionTimeSeries.length / 8) || 0}
+                    />
+                    <YAxis
+                      tick={{ fill: "#64748b", fontSize: 11 }}
+                      axisLine={{ stroke: "#334155" }}
+                      tickLine={false}
+                      width={40}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend
+                      wrapperStyle={{ fontSize: 11, color: "#94a3b8" }}
+                      iconSize={8}
+                      iconType="circle"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total"
+                      stroke="#818cf8"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Total"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="positive"
+                      stroke="#22c55e"
+                      strokeWidth={1.5}
+                      dot={false}
+                      name="Positive"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="negative"
+                      stroke="#ef4444"
+                      strokeWidth={1.5}
+                      dot={false}
+                      name="Negative"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="neutral"
+                      stroke="#64748b"
+                      strokeWidth={1.5}
+                      dot={false}
+                      name="Neutral"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState message="No mention data yet for this time period" />
+              )}
             </CardContent>
           </Card>
 
@@ -542,40 +799,46 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex h-72 flex-col items-center justify-center">
-              <ResponsiveContainer width="100%" height="80%">
-                <PieChart>
-                  <Pie
-                    data={sentimentDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="value"
-                    label={({ name, value }) => `${name} ${value}%`}
-                    labelLine={false}
-                  >
-                    {sentimentDistribution.map((entry, index) => (
-                      <Cell key={index} fill={entry.color} />
+              {totalMentions > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height="80%">
+                    <PieChart>
+                      <Pie
+                        data={sentimentDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={3}
+                        dataKey="value"
+                        label={({ name, value }) => `${name} ${value}%`}
+                        labelLine={false}
+                      >
+                        {sentimentDistribution.map((entry, index) => (
+                          <Cell key={index} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex gap-4 text-xs text-slate-400">
+                    {sentimentDistribution.map((s) => (
+                      <div key={s.name} className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+                        {s.name}
+                      </div>
                     ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex gap-4 text-xs text-slate-400">
-                {sentimentDistribution.map((s) => (
-                  <div key={s.name} className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                    {s.name}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                <EmptyState message="No sentiment data yet" />
+              )}
             </CardContent>
           </Card>
         </div>
 
         {/* ================================================================
-            ROW 3 - Platform Breakdown / Trending Topics / Recent Alerts
+            ROW 3 - Platform Breakdown / Top Contributors
         ================================================================ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* Platform Breakdown (horizontal bar) */}
@@ -586,108 +849,145 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={platformData} layout="vertical" margin={{ left: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    tick={{ fill: "#64748b", fontSize: 11 }}
-                    axisLine={{ stroke: "#334155" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="platform"
-                    tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={70}
-                  />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="mentions" radius={[0, 4, 4, 0]} barSize={18}>
-                    {platformData.map((entry) => (
-                      <Cell
-                        key={entry.platform}
-                        fill={PLATFORM_COLORS[entry.platform] ?? "#6366f1"}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {platformData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={platformData} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tick={{ fill: "#64748b", fontSize: 11 }}
+                      axisLine={{ stroke: "#334155" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="platform"
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={70}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="mentions" radius={[0, 4, 4, 0]} barSize={18}>
+                      {platformData.map((entry) => (
+                        <Cell
+                          key={entry.platform}
+                          fill={PLATFORM_COLORS[entry.platform] ?? "#6366f1"}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState message="No platform data yet" />
+              )}
             </CardContent>
           </Card>
 
-          {/* Trending Topics */}
+          {/* Top Contributors */}
           <Card className="border-slate-800 bg-slate-900/60">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-slate-300">
-                Trending Topics
+                Top Contributors
               </CardTitle>
             </CardHeader>
             <CardContent className="max-h-72 overflow-y-auto pr-1">
-              <ul className="space-y-2">
-                {trendingTopics.map((topic, i) => (
-                  <li
-                    key={topic.name}
-                    className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-slate-800/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 text-xs text-slate-500">{i + 1}.</span>
-                      <span
-                        className={cn("h-2 w-2 rounded-full", SENTIMENT_DOT[topic.sentiment])}
-                      />
-                      <span className="text-slate-200">{topic.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs tabular-nums text-slate-400">
-                        {topic.mentions.toLocaleString()}
-                      </span>
-                      <TrendIcon trend={topic.trend} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          {/* Recent Alerts */}
-          <Card className="border-slate-800 bg-slate-900/60">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-300">
-                Recent Alerts
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-72 overflow-y-auto pr-1">
-              <ul className="space-y-2">
-                {alerts.map((alert) => (
-                  <li
-                    key={alert.id}
-                    className="flex items-start gap-3 rounded-md px-2 py-2 transition-colors hover:bg-slate-800/50"
-                  >
-                    <Badge
-                      className={cn(
-                        "mt-0.5 shrink-0 border text-[10px] uppercase tracking-wider",
-                        SEVERITY_COLORS[alert.severity]
-                      )}
+              {topContributors.length > 0 ? (
+                <ul className="space-y-2">
+                  {topContributors.map((contributor, i) => (
+                    <li
+                      key={`${contributor.handle}-${i}`}
+                      className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-slate-800/50"
                     >
-                      {alert.severity}
-                    </Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-slate-200">{alert.title}</p>
-                      <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                        <Clock className="h-3 w-3" />
-                        {alert.timeAgo}
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 text-xs text-slate-500">{i + 1}.</span>
+                        <PlatformIcon platform={contributor.platform} />
+                        <div>
+                          <span className="text-slate-200">{contributor.name}</span>
+                          <span className="ml-1 text-xs text-slate-500">{contributor.handle}</span>
+                        </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs tabular-nums text-slate-400">
+                          {contributor.mentions} mentions
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState message="No contributors data yet" />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Engagement Summary */}
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-300">
+                Engagement Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-72 overflow-y-auto pr-1">
+              {dashboard?.engagement ? (
+                <div className="space-y-4 py-2">
+                  <div className="flex items-center justify-between rounded-md px-2 py-3 hover:bg-slate-800/50">
+                    <div className="flex items-center gap-2">
+                      <Heart className="h-4 w-4 text-red-400" />
+                      <span className="text-sm text-slate-300">Likes</span>
                     </div>
-                    <button className="shrink-0 text-xs font-medium text-indigo-400 hover:text-indigo-300">
-                      View
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                    <span className="text-lg font-semibold tabular-nums text-slate-200">
+                      {formatNumber(dashboard.engagement.total_likes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md px-2 py-3 hover:bg-slate-800/50">
+                    <div className="flex items-center gap-2">
+                      <Share2 className="h-4 w-4 text-blue-400" />
+                      <span className="text-sm text-slate-300">Shares</span>
+                    </div>
+                    <span className="text-lg font-semibold tabular-nums text-slate-200">
+                      {formatNumber(dashboard.engagement.total_shares)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md px-2 py-3 hover:bg-slate-800/50">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-green-400" />
+                      <span className="text-sm text-slate-300">Comments</span>
+                    </div>
+                    <span className="text-lg font-semibold tabular-nums text-slate-200">
+                      {formatNumber(dashboard.engagement.total_comments)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md px-2 py-3 hover:bg-slate-800/50">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4 text-purple-400" />
+                      <span className="text-sm text-slate-300">Reach</span>
+                    </div>
+                    <span className="text-lg font-semibold tabular-nums text-slate-200">
+                      {formatNumber(dashboard.engagement.total_reach)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState message="No engagement data yet" />
+              )}
             </CardContent>
           </Card>
         </div>
+
+        {/* ================================================================
+            ROW 3.5 - Geographic Distribution
+        ================================================================ */}
+        {geoData.length > 0 && (
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-300">Geographic Distribution</CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-72 overflow-y-auto">
+              <GeoMap data={geoData} />
+            </CardContent>
+          </Card>
+        )}
 
         {/* ================================================================
             ROW 4 - Recent Mentions Stream
@@ -699,70 +999,102 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <th className="pb-2 pr-4 font-medium">Platform</th>
-                  <th className="pb-2 pr-4 font-medium">Author</th>
-                  <th className="pb-2 pr-4 font-medium">Content</th>
-                  <th className="pb-2 pr-4 font-medium">Sentiment</th>
-                  <th className="pb-2 pr-4 font-medium">Engagement</th>
-                  <th className="pb-2 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentMentions.map((mention) => (
-                  <tr
-                    key={mention.id}
-                    className="border-b border-slate-800/50 transition-colors hover:bg-slate-800/30"
-                  >
-                    <td className="py-3 pr-4">
-                      <PlatformIcon platform={mention.platform} />
-                    </td>
-                    <td className="py-3 pr-4 whitespace-nowrap">
-                      <div className="font-medium text-slate-200">{mention.author.name}</div>
-                      <div className="text-xs text-slate-500">{mention.author.handle}</div>
-                    </td>
-                    <td className="max-w-xs truncate py-3 pr-4 text-slate-400">
-                      {mention.text.slice(0, 100)}
-                      {mention.text.length > 100 && "..."}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <Badge
-                        className={cn(
-                          "border text-[10px] capitalize",
-                          SENTIMENT_BADGE[mention.sentiment]
-                        )}
-                      >
-                        {mention.sentiment}
-                      </Badge>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <div className="flex items-center gap-3 text-xs text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <Heart className="h-3 w-3" />
-                          {mention.likes}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Share2 className="h-3 w-3" />
-                          {mention.shares}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="h-3 w-3" />
-                          {mention.comments}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 whitespace-nowrap text-xs text-slate-500">
-                      {mention.time}
-                    </td>
+            {recentMentions.length > 0 ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                    <th className="pb-2 pr-4 font-medium">Platform</th>
+                    <th className="pb-2 pr-4 font-medium">Author</th>
+                    <th className="pb-2 pr-4 font-medium">Content</th>
+                    <th className="pb-2 pr-4 font-medium">Sentiment</th>
+                    <th className="pb-2 pr-4 font-medium">Engagement</th>
+                    <th className="pb-2 font-medium">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentMentions.map((mention) => {
+                    const mentionText = mention.content || mention.text || "";
+                    const mentionLikes = mention.engagement?.likes ?? mention.likes ?? 0;
+                    const mentionShares = mention.engagement?.shares ?? mention.shares ?? 0;
+                    const mentionComments = mention.engagement?.comments ?? mention.comments ?? 0;
+                    const sentiment = mention.sentiment || "neutral";
+
+                    return (
+                      <tr
+                        key={mention.id}
+                        className="border-b border-slate-800/50 transition-colors hover:bg-slate-800/30"
+                      >
+                        <td className="py-3 pr-4">
+                          <PlatformIcon platform={mention.platform} />
+                        </td>
+                        <td className="py-3 pr-4 whitespace-nowrap">
+                          <div className="font-medium text-slate-200">
+                            {mention.author_name || "Unknown"}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {mention.author_handle || ""}
+                          </div>
+                        </td>
+                        <td className="max-w-xs truncate py-3 pr-4 text-slate-400">
+                          {mentionText.slice(0, 100)}
+                          {mentionText.length > 100 && "..."}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <Badge
+                            className={cn(
+                              "border text-[10px] capitalize",
+                              SENTIMENT_BADGE[sentiment] ?? SENTIMENT_BADGE.neutral
+                            )}
+                          >
+                            {sentiment}
+                          </Badge>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-3 text-xs text-slate-500">
+                            <span className="flex items-center gap-1">
+                              <Heart className="h-3 w-3" />
+                              {mentionLikes}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Share2 className="h-3 w-3" />
+                              {mentionShares}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              {mentionComments}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 whitespace-nowrap text-xs text-slate-500">
+                          {mention.created_at ? timeAgo(mention.created_at) : ""}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <EmptyState message="No mentions collected yet. Configure keywords in your project to start tracking." />
+            )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+
+        {/* ================================================================
+            ROW 5 - Contributor Word Cloud
+        ================================================================ */}
+        {dashboardWordData.length > 0 && (
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-300">
+                Top Contributors Cloud
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WordCloud words={dashboardWordData} />
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </AppShell>
   );
 }

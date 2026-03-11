@@ -272,7 +272,10 @@ class TestAuthFlow:
             },
         )
         assert register_resp.status_code == 201
-        user_data = register_resp.json()
+        resp_data = register_resp.json()
+        assert "access_token" in resp_data
+        assert resp_data["token_type"] == "bearer"
+        user_data = resp_data["user"]
         assert user_data["email"] == "newuser@example.com"
         assert user_data["full_name"] == "New User"
         assert "id" in user_data
@@ -289,7 +292,7 @@ class TestAuthFlow:
         assert len(token_data["access_token"]) > 10
 
     async def test_register_duplicate_email(self, client):
-        """Test that registering the same email twice returns 400."""
+        """Test that registering the same email twice returns 409."""
         payload = {
             "email": "dupe@example.com",
             "password": "P@ssw0rd!",
@@ -299,7 +302,7 @@ class TestAuthFlow:
         assert first.status_code == 201
 
         second = await client.post("/api/v1/auth/register", json=payload)
-        assert second.status_code == 400
+        assert second.status_code == 409
         assert "already registered" in second.json()["detail"].lower()
 
     async def test_login_invalid_credentials(self, client):
@@ -343,10 +346,11 @@ class TestAuthFlow:
 
 @pytest.mark.integration
 class TestProjectsCRUD:
-    async def test_create_project(self, client, seeded_org):
+    async def test_create_project(self, client, auth_headers, seeded_org):
         """Test creating a new project via POST /api/v1/projects."""
         resp = await client.post(
             "/api/v1/projects",
+            headers=auth_headers,
             json={
                 "name": "My New Project",
                 "client_name": "Acme Corp",
@@ -369,11 +373,12 @@ class TestProjectsCRUD:
         assert "acme" in kw_terms
         assert "competitor-x" in kw_terms
 
-    async def test_list_projects(self, client, seeded_org):
+    async def test_list_projects(self, client, auth_headers, seeded_org):
         """Test listing projects returns all created projects."""
         for name in ["Project Alpha", "Project Beta"]:
             await client.post(
                 "/api/v1/projects",
+                headers=auth_headers,
                 json={
                     "name": name,
                     "client_name": "Client",
@@ -382,7 +387,7 @@ class TestProjectsCRUD:
                 },
             )
 
-        resp = await client.get("/api/v1/projects")
+        resp = await client.get("/api/v1/projects", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
@@ -391,23 +396,24 @@ class TestProjectsCRUD:
         assert "Project Alpha" in names
         assert "Project Beta" in names
 
-    async def test_get_project_by_id(self, client, seeded_project):
+    async def test_get_project_by_id(self, client, auth_headers, seeded_project):
         """Test retrieving a single project by its ID."""
-        resp = await client.get(f"/api/v1/projects/{seeded_project}")
+        resp = await client.get(f"/api/v1/projects/{seeded_project}", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Integration Project"
         assert data["id"] == seeded_project
 
-    async def test_get_project_not_found(self, client):
+    async def test_get_project_not_found(self, client, auth_headers):
         """Test fetching a non-existent project returns 404."""
-        resp = await client.get("/api/v1/projects/99999")
+        resp = await client.get("/api/v1/projects/99999", headers=auth_headers)
         assert resp.status_code == 404
 
-    async def test_update_project(self, client, seeded_project):
+    async def test_update_project(self, client, auth_headers, seeded_project):
         """Test updating a project via PATCH."""
         patch_resp = await client.patch(
             f"/api/v1/projects/{seeded_project}",
+            headers=auth_headers,
             json={"name": "Updated Name", "description": "Now with a description"},
         )
         assert patch_resp.status_code == 200
@@ -415,38 +421,41 @@ class TestProjectsCRUD:
         assert data["name"] == "Updated Name"
         assert data["description"] == "Now with a description"
 
-    async def test_update_project_status(self, client, seeded_project):
+    async def test_update_project_status(self, client, auth_headers, seeded_project):
         """Test updating a project's status to paused."""
         patch_resp = await client.patch(
             f"/api/v1/projects/{seeded_project}",
+            headers=auth_headers,
             json={"status": "paused"},
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["status"] == "paused"
 
-    async def test_delete_project(self, client, seeded_project):
+    async def test_delete_project(self, client, auth_headers, seeded_project):
         """Test archiving a project (setting status to 'archived')."""
         patch_resp = await client.patch(
             f"/api/v1/projects/{seeded_project}",
+            headers=auth_headers,
             json={"status": "archived"},
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["status"] == "archived"
 
         # Confirm it persists on re-fetch
-        get_resp = await client.get(f"/api/v1/projects/{seeded_project}")
+        get_resp = await client.get(f"/api/v1/projects/{seeded_project}", headers=auth_headers)
         assert get_resp.json()["status"] == "archived"
 
 
 @pytest.mark.integration
 class TestMentionsAPI:
-    async def test_list_mentions_with_filters(self, client, seeded_mentions):
+    async def test_list_mentions_with_filters(self, client, auth_headers, seeded_mentions):
         """Test fetching mentions with platform filter."""
         project_id = seeded_mentions
 
         # Fetch all mentions for the project
         resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id},
         )
         assert resp.status_code == 200
@@ -458,6 +467,7 @@ class TestMentionsAPI:
         # Filter by platform=twitter (indices 0, 3, 6, 9, 12 = 5 mentions)
         resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "platform": "twitter"},
         )
         assert resp.status_code == 200
@@ -466,12 +476,13 @@ class TestMentionsAPI:
         for item in data["items"]:
             assert item["platform"] == "twitter"
 
-    async def test_list_mentions_sentiment_filter(self, client, seeded_mentions):
+    async def test_list_mentions_sentiment_filter(self, client, auth_headers, seeded_mentions):
         """Test fetching mentions filtered by sentiment."""
         project_id = seeded_mentions
 
         resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "sentiment": "positive"},
         )
         assert resp.status_code == 200
@@ -480,13 +491,14 @@ class TestMentionsAPI:
         for item in data["items"]:
             assert item["sentiment"] == "positive"
 
-    async def test_mention_pagination(self, client, seeded_mentions):
+    async def test_mention_pagination(self, client, auth_headers, seeded_mentions):
         """Test mention list pagination with page and page_size params."""
         project_id = seeded_mentions
 
         # Page 1 of 3
         resp1 = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page": 1, "page_size": 5},
         )
         assert resp1.status_code == 200
@@ -499,6 +511,7 @@ class TestMentionsAPI:
         # Page 2 of 3
         resp2 = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page": 2, "page_size": 5},
         )
         data2 = resp2.json()
@@ -508,6 +521,7 @@ class TestMentionsAPI:
         # Page 3 of 3
         resp3 = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page": 3, "page_size": 5},
         )
         data3 = resp3.json()
@@ -522,12 +536,13 @@ class TestMentionsAPI:
         assert ids_2.isdisjoint(ids_3)
         assert ids_1.isdisjoint(ids_3)
 
-    async def test_mention_pagination_beyond_last_page(self, client, seeded_mentions):
+    async def test_mention_pagination_beyond_last_page(self, client, auth_headers, seeded_mentions):
         """Test requesting a page beyond available data returns empty items."""
         project_id = seeded_mentions
 
         resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page": 100, "page_size": 10},
         )
         assert resp.status_code == 200
@@ -535,18 +550,19 @@ class TestMentionsAPI:
         assert data["total"] == 15
         assert len(data["items"]) == 0
 
-    async def test_get_single_mention(self, client, seeded_mentions):
+    async def test_get_single_mention(self, client, auth_headers, seeded_mentions):
         """Test fetching a single mention by ID."""
         project_id = seeded_mentions
 
         # Find a valid mention ID from the list
         list_resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page_size": 1},
         )
         mention_id = list_resp.json()["items"][0]["id"]
 
-        resp = await client.get(f"/api/v1/mentions/{mention_id}")
+        resp = await client.get(f"/api/v1/mentions/{mention_id}", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == mention_id
@@ -554,28 +570,29 @@ class TestMentionsAPI:
         assert "sentiment" in data
         assert "platform" in data
 
-    async def test_get_mention_not_found(self, client):
+    async def test_get_mention_not_found(self, client, auth_headers):
         """Test fetching a non-existent mention returns 404."""
-        resp = await client.get("/api/v1/mentions/99999")
+        resp = await client.get("/api/v1/mentions/99999", headers=auth_headers)
         assert resp.status_code == 404
 
-    async def test_toggle_mention_flag(self, client, seeded_mentions):
+    async def test_toggle_mention_flag(self, client, auth_headers, seeded_mentions):
         """Test toggling the flagged status on a mention."""
         project_id = seeded_mentions
 
         list_resp = await client.get(
             "/api/v1/mentions/",
+            headers=auth_headers,
             params={"project_id": project_id, "page_size": 1},
         )
         mention_id = list_resp.json()["items"][0]["id"]
 
         # Flag it
-        flag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag")
+        flag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag", headers=auth_headers)
         assert flag_resp.status_code == 200
         assert flag_resp.json()["is_flagged"] is True
 
         # Toggle again to unflag
-        unflag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag")
+        unflag_resp = await client.patch(f"/api/v1/mentions/{mention_id}/flag", headers=auth_headers)
         assert unflag_resp.status_code == 200
         assert unflag_resp.json()["is_flagged"] is False
 

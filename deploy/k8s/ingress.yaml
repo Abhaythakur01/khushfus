@@ -8,6 +8,30 @@ metadata:
     nginx.ingress.kubernetes.io/websocket-services: realtime
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # -----------------------------------------------------------------------
+    # Rate limiting
+    # -----------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # -----------------------------------------------------------------------
+    # WAF — OWASP ModSecurity Core Rule Set
+    # Uncomment to enable once mod_security is installed in the ingress controller.
+    # Install: helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
+    #   --set controller.config.enable-modsecurity=true \
+    #   --set controller.config.enable-owasp-modsecurity-crs=true
+    # -----------------------------------------------------------------------
+    # nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    # nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+    # nginx.ingress.kubernetes.io/modsecurity-snippet: |
+    #   SecRuleEngine On
+    #   SecRequestBodyAccess On
+    #   SecAuditEngine RelevantOnly
+    #   SecAuditLogParts ABIJDEFHZ
+    #   SecAuditLogType Serial
+    #   SecRule REQUEST_HEADERS:Content-Type "text/xml" "id:200000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
+    #   SecRule REQUEST_HEADERS:Content-Type "application/json" "id:200001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+    #   Include /etc/nginx/owasp-modsecurity-crs/nginx-modsecurity.conf
 spec:
   ingressClassName: nginx
   tls:

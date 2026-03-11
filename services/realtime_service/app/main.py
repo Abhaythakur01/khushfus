@@ -31,10 +31,12 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 
 from shared.cors import get_cors_origins
+from shared.database import create_db, init_tables
 from shared.tracing import setup_tracing
 
 setup_tracing("realtime")
@@ -43,6 +45,10 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus",
+)
 
 # ---------------------------------------------------------------------------
 # JWT Authentication
@@ -287,6 +293,9 @@ async def redis_subscriber(redis_url: str):
     await pubsub.psubscribe(f"{CHANNEL_PREFIX}:*")
     logger.info("Redis subscriber listening on pattern '%s:*'", CHANNEL_PREFIX)
 
+    max_consecutive_errors = 10
+    consecutive_errors = 0
+
     try:
         while True:
             try:
@@ -344,8 +353,18 @@ async def redis_subscriber(redis_url: str):
                 # Also push to SSE clients
                 await sse_manager.publish(project_id, envelope)
 
+                # Reset error counter on success
+                consecutive_errors = 0
+
             except aioredis.ConnectionError:
-                logger.error("Redis connection lost, reconnecting in 2s...")
+                consecutive_errors += 1
+                logger.error(
+                    "Redis connection lost (attempt %d/%d), reconnecting...",
+                    consecutive_errors, max_consecutive_errors,
+                )
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error("Redis pubsub max retries exceeded, stopping")
+                    break
                 await asyncio.sleep(2)
                 try:
                     await pubsub.punsubscribe()
@@ -355,7 +374,14 @@ async def redis_subscriber(redis_url: str):
                 pubsub = redis_conn.pubsub()
                 await pubsub.psubscribe(f"{CHANNEL_PREFIX}:*")
             except Exception as e:
-                logger.error("Redis subscriber error: %s", e)
+                consecutive_errors += 1
+                logger.error(
+                    "Redis subscriber error (attempt %d/%d): %s",
+                    consecutive_errors, max_consecutive_errors, e,
+                )
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error("Redis pubsub max retries exceeded, stopping")
+                    break
                 await asyncio.sleep(0.5)
     finally:
         await pubsub.punsubscribe()
@@ -398,8 +424,32 @@ async def heartbeat_loop():
 # ============================================================
 
 
+async def _verify_ws_project_access(project_id: int, token_payload: dict) -> bool:
+    """Verify the user's org owns the project for WebSocket access."""
+    user_org = token_payload.get("organization_id") or token_payload.get("org_id")
+    if token_payload.get("is_superadmin"):
+        return True
+    if not user_org:
+        return False
+    try:
+        async with app.state.db_session() as db:
+            from shared.models import Project
+
+            project = await db.get(Project, project_id)
+            if not project:
+                return False
+            return project.organization_id == int(user_org)
+    except Exception:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Init database for project access checks
+    engine, session_factory = create_db(DATABASE_URL)
+    await init_tables(engine)
+    app.state.db_session = session_factory
+
     # Start background tasks
     subscriber_task = asyncio.create_task(redis_subscriber(REDIS_URL))
     heartbeat_task = asyncio.create_task(heartbeat_loop())
@@ -408,16 +458,40 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    subscriber_task.cancel()
-    heartbeat_task.cancel()
+    # --- Graceful shutdown ---
+    logger.info("Realtime service shutting down -- closing WebSocket connections and background tasks")
+
+    # Close all active WebSocket connections with a proper close frame
+    all_projects = list(manager._connections.keys())
+    for pid in all_projects:
+        channel_types = list(manager._connections.get(pid, {}).keys())
+        for ct in channel_types:
+            connections = list(manager._connections.get(pid, {}).get(ct, set()))
+            for ws in connections:
+                try:
+                    await ws.close(code=1001, reason="Server shutting down")
+                except Exception:
+                    pass
+            async with manager._lock:
+                if pid in manager._connections and ct in manager._connections[pid]:
+                    manager._connections[pid][ct].clear()
+
+    # Cancel background tasks
+    for task_name, task in [("subscriber", subscriber_task), ("heartbeat", heartbeat_task)]:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.debug("Background task '%s' cancelled", task_name)
+        except Exception as exc:
+            logger.warning("Error stopping background task '%s': %s", task_name, exc)
+
     try:
-        await subscriber_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await heartbeat_task
-    except asyncio.CancelledError:
-        pass
+        await engine.dispose()
+    except Exception as exc:
+        logger.warning("Error disposing DB engine: %s", exc)
+
+    logger.info("Realtime service stopped")
 
 
 app = FastAPI(
@@ -444,6 +518,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="realtime")
+except ImportError:
+    pass
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -493,9 +574,12 @@ async def ws_mentions(websocket: WebSocket, project_id: int, token: str = Query(
         await websocket.close(code=4001, reason="Token required")
         return
     try:
-        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        payload = jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
     except JWTError:
         await websocket.close(code=4001, reason="Invalid token")
+        return
+    if not await _verify_ws_project_access(project_id, payload):
+        await websocket.close(code=4003, reason="Access denied")
         return
     await manager.connect(websocket, project_id, "mentions")
     try:
@@ -542,9 +626,12 @@ async def ws_dashboard(websocket: WebSocket, project_id: int, token: str = Query
         await websocket.close(code=4001, reason="Token required")
         return
     try:
-        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        payload = jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
     except JWTError:
         await websocket.close(code=4001, reason="Invalid token")
+        return
+    if not await _verify_ws_project_access(project_id, payload):
+        await websocket.close(code=4003, reason="Access denied")
         return
     await manager.connect(websocket, project_id, "dashboard")
     try:
@@ -588,9 +675,12 @@ async def ws_alerts(websocket: WebSocket, project_id: int, token: str = Query(""
         await websocket.close(code=4001, reason="Token required")
         return
     try:
-        jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+        payload = jose_jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
     except JWTError:
         await websocket.close(code=4001, reason="Invalid token")
+        return
+    if not await _verify_ws_project_access(project_id, payload):
+        await websocket.close(code=4003, reason="Access denied")
         return
     await manager.connect(websocket, project_id, "alerts")
     try:

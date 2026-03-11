@@ -8,22 +8,29 @@ Responsibilities:
 - Request/response logging
 """
 
+import logging
 import os
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
+from fastapi import Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import EventBus
+from shared.request_size_limit import RequestSizeLimitMiddleware
 from shared.tracing import setup_tracing
 
 from .middleware import RateLimitMiddleware, close_http_client
 from .routes import alerts, auth, dashboard, mentions, projects, reports
+
+logger = logging.getLogger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -36,6 +43,34 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
         return response
 
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log every request with method, path, status, latency, and user context."""
+
+    async def dispatch(self, request: Request, call_next):
+        import time
+
+        start = time.monotonic()
+        response = await call_next(request)
+        latency_ms = round((time.monotonic() - start) * 1000, 1)
+
+        request_id = getattr(request.state, "request_id", "-")
+        user = getattr(request.state, "_current_user", None)
+        user_id = user.id if user else "-"
+        client_ip = request.client.host if request.client else "-"
+
+        logger.info(
+            "request %s %s status=%d latency=%.1fms user=%s ip=%s req_id=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            latency_ms,
+            user_id,
+            client_ip,
+            request_id,
+        )
+        return response
+
 setup_tracing("gateway")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
@@ -46,12 +81,19 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 async def lifespan(app: FastAPI):
     engine, session_factory = create_db(DATABASE_URL)
     app.state.db_session = session_factory
-    app.state.event_bus = EventBus(REDIS_URL)
+    app.state.event_bus = EventBus(REDIS_URL, max_reconnect_attempts=1, reconnect_delay=0.5)
     await init_tables(engine)
-    await app.state.event_bus.connect()
+    try:
+        await app.state.event_bus.connect()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Redis unavailable — event bus disabled: {e}")
     yield
     await close_http_client()
-    await app.state.event_bus.close()
+    try:
+        await app.state.event_bus.close()
+    except Exception:
+        pass
     await engine.dispose()
 
 
@@ -100,7 +142,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Request correlation ID (outermost — runs first on every request)
+# Request logging (outermost — captures all requests)
+app.add_middleware(RequestLoggingMiddleware)
+
+# Request correlation ID
 app.add_middleware(RequestIDMiddleware)
 
 app.add_middleware(
@@ -110,6 +155,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request body size limit (default 10 MB, configurable via MAX_REQUEST_BODY_SIZE env)
+app.add_middleware(RequestSizeLimitMiddleware)
 
 # Rate limiting via centralized Rate Limiter service (fail-open if unreachable)
 app.add_middleware(RateLimitMiddleware)
@@ -121,12 +169,50 @@ try:
 except ImportError:
     pass
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: FastAPIRequest, exc: Exception):
+    request_id = getattr(request.state, "request_id", "unknown")
+    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+    logger.error(f"Unhandled exception [request_id={request_id}]: {''.join(tb)}")
+    # Include CORS headers so the browser can read the error response
+    origin = request.headers.get("origin", "")
+    headers = {}
+    allowed = get_cors_origins()
+    if origin and (origin in allowed or "*" in allowed):
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": request_id},
+        headers=headers,
+    )
+
+
+# --- API v1 routes (current, stable) ---
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"])
 app.include_router(mentions.router, prefix="/api/v1/mentions", tags=["Mentions"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
+
+# --- API v2 routes (future) ---
+# When v2 endpoints are ready, create route modules under routes/v2/ and mount them here.
+# v1 endpoints should remain available with Deprecation headers (see shared.deprecation)
+# until the sunset date passes.
+#
+# Example:
+#   from .routes.v2 import projects as projects_v2
+#   app.include_router(projects_v2.router, prefix="/api/v2/projects", tags=["Projects v2"])
+v2_router = APIRouter()
+
+
+@v2_router.get("/", summary="API v2 placeholder", include_in_schema=False)
+async def v2_root():
+    return {"message": "API v2 is under development. Please use /api/v1/ endpoints."}
+
+
+app.include_router(v2_router, prefix="/api/v2")
 
 
 @app.get(

@@ -1,13 +1,16 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models import Mention, Platform, Sentiment
+from shared.models import Mention, Platform, Project, Sentiment
 from shared.schemas import MentionListOut, MentionOut
 
-from ..deps import get_db, require_auth
+from ..deps import get_db, get_user_org_id, require_auth
+
+MAX_BULK_IDS = 100
 
 router = APIRouter()
 
@@ -20,6 +23,7 @@ router = APIRouter()
 )
 async def list_mentions(
     project_id: int,
+    request: Request,
     platform: str | None = None,
     sentiment: str | None = None,
     keyword: str | None = None,
@@ -32,6 +36,13 @@ async def list_mentions(
     db: AsyncSession = Depends(get_db),
 ):
     """List mentions with optional filters for platform, sentiment, keyword, date range, and flagged status."""
+    # Verify project belongs to user's org
+    org_id = get_user_org_id(request)
+    if org_id:
+        project = await db.get(Project, project_id)
+        if not project or project.organization_id != org_id:
+            raise HTTPException(status_code=404, detail="Project not found")
+
     query = select(Mention).where(Mention.project_id == project_id)
     count_query = select(func.count(Mention.id)).where(Mention.project_id == project_id)
 
@@ -68,11 +79,20 @@ async def list_mentions(
     summary="Get mention by ID",
     description="Retrieve a single mention by its unique identifier.",
 )
-async def get_mention(mention_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
-    """Fetch a single mention by ID."""
+async def get_mention(
+    mention_id: int, request: Request,
+    user=Depends(require_auth), db: AsyncSession = Depends(get_db),
+):
+    """Fetch a single mention by ID, scoped to user's organization."""
     mention = await db.get(Mention, mention_id)
     if not mention:
         raise HTTPException(status_code=404, detail="Mention not found")
+    # Verify mention's project belongs to user's org
+    org_id = get_user_org_id(request)
+    if org_id:
+        project = await db.get(Project, mention.project_id)
+        if not project or project.organization_id != org_id:
+            raise HTTPException(status_code=404, detail="Mention not found")
     return mention
 
 
@@ -81,7 +101,10 @@ async def get_mention(mention_id: int, user=Depends(require_auth), db: AsyncSess
     summary="Toggle mention flag",
     description="Toggle the flagged status of a mention for review or follow-up.",
 )
-async def toggle_flag(mention_id: int, user=Depends(require_auth), db: AsyncSession = Depends(get_db)):
+async def toggle_flag(
+    mention_id: int, request: Request,
+    user=Depends(require_auth), db: AsyncSession = Depends(get_db),
+):
     """Toggle the is_flagged boolean on a mention."""
     mention = await db.get(Mention, mention_id)
     if not mention:
@@ -89,3 +112,63 @@ async def toggle_flag(mention_id: int, user=Depends(require_auth), db: AsyncSess
     mention.is_flagged = not mention.is_flagged
     await db.commit()
     return {"id": mention.id, "is_flagged": mention.is_flagged}
+
+
+class BulkFlagRequest(BaseModel):
+    mention_ids: list[int] = Field(..., min_length=1, max_length=MAX_BULK_IDS)
+    flagged: bool = True
+
+
+class BulkAssignRequest(BaseModel):
+    mention_ids: list[int] = Field(..., min_length=1, max_length=MAX_BULK_IDS)
+    assignee: str = Field(..., min_length=1, max_length=255)
+
+
+@router.post(
+    "/bulk/flag",
+    summary="Bulk flag/unflag mentions",
+    description=f"Flag or unflag up to {MAX_BULK_IDS} mentions at once.",
+)
+async def bulk_flag(
+    payload: BulkFlagRequest,
+    request: Request,
+    user=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set is_flagged on multiple mentions in one request."""
+    result = await db.execute(select(Mention).where(Mention.id.in_(payload.mention_ids)))
+    mentions = result.scalars().all()
+    if not mentions:
+        raise HTTPException(status_code=404, detail="No mentions found")
+
+    updated_ids = []
+    for m in mentions:
+        m.is_flagged = payload.flagged
+        updated_ids.append(m.id)
+    await db.commit()
+    return {"updated": len(updated_ids), "mention_ids": updated_ids, "flagged": payload.flagged}
+
+
+@router.post(
+    "/bulk/assign",
+    summary="Bulk assign mentions",
+    description=f"Assign up to {MAX_BULK_IDS} mentions to a user at once.",
+)
+async def bulk_assign(
+    payload: BulkAssignRequest,
+    request: Request,
+    user=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign multiple mentions to a user in one request."""
+    result = await db.execute(select(Mention).where(Mention.id.in_(payload.mention_ids)))
+    mentions = result.scalars().all()
+    if not mentions:
+        raise HTTPException(status_code=404, detail="No mentions found")
+
+    updated_ids = []
+    for m in mentions:
+        m.assigned_to = payload.assignee
+        updated_ids.append(m.id)
+    await db.commit()
+    return {"updated": len(updated_ids), "mention_ids": updated_ids, "assignee": payload.assignee}

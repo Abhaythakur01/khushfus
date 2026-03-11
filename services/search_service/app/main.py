@@ -24,14 +24,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from opensearchpy import AsyncOpenSearch
 from opensearchpy import NotFoundError as ESNotFoundError
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from shared.database import create_db, init_tables
-from shared.models import SavedSearch
+from shared.models import Mention, SavedSearch
 from shared.tracing import setup_tracing
 
 setup_tracing("search")
@@ -195,6 +196,13 @@ app = FastAPI(
 )
 
 try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="search")
+except ImportError:
+    pass
+
+try:
     from prometheus_fastapi_instrumentator import Instrumentator
 
     Instrumentator().instrument(app).expose(app)
@@ -275,6 +283,80 @@ def _build_es_query(req: SearchRequest) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Postgres fallback for basic text search when OpenSearch is unavailable
+# ---------------------------------------------------------------------------
+
+
+async def _postgres_text_search(req: SearchRequest, session_factory) -> SearchResponse:
+    """Fall back to SQL LIKE queries on the mentions table when OpenSearch index is missing."""
+    from sqlalchemy import and_, func, or_
+
+    conditions = []
+    if req.query:
+        like_pat = f"%{req.query}%"
+        conditions.append(
+            or_(
+                Mention.text.ilike(like_pat),
+                Mention.matched_keywords.ilike(like_pat),
+                Mention.author_name.ilike(like_pat),
+                Mention.author_handle.ilike(like_pat),
+            )
+        )
+    if req.project_id is not None:
+        conditions.append(Mention.project_id == req.project_id)
+    if req.platform:
+        conditions.append(Mention.platform == req.platform.lower())
+    if req.sentiment:
+        conditions.append(Mention.sentiment == req.sentiment.lower())
+    if req.language:
+        conditions.append(Mention.language == req.language.lower())
+    if req.author:
+        conditions.append(
+            or_(Mention.author_name == req.author, Mention.author_handle == req.author)
+        )
+    if req.date_from:
+        conditions.append(Mention.published_at >= req.date_from)
+    if req.date_to:
+        conditions.append(Mention.published_at <= req.date_to)
+
+    where_clause = and_(*conditions) if conditions else True
+
+    async with session_factory() as db:
+        count_result = await db.execute(select(func.count(Mention.id)).where(where_clause))
+        total = count_result.scalar() or 0
+
+        sort_col = getattr(Mention, req.sort_by, Mention.published_at)
+        order = sort_col.desc() if req.sort_order == "desc" else sort_col.asc()
+
+        stmt = (
+            select(Mention)
+            .where(where_clause)
+            .order_by(order)
+            .offset((req.page - 1) * req.page_size)
+            .limit(req.page_size)
+        )
+        result = await db.execute(stmt)
+        rows = result.scalars().all()
+
+    hits = [
+        SearchHit(
+            id=str(row.id),
+            score=None,
+            source={
+                "text": row.text,
+                "platform": row.platform.value if hasattr(row.platform, "value") else str(row.platform),
+                "sentiment": row.sentiment.value if hasattr(row.sentiment, "value") else str(row.sentiment),
+                "author_name": row.author_name,
+                "author_handle": row.author_handle,
+                "published_at": row.published_at.isoformat() if row.published_at else None,
+            },
+        )
+        for row in rows
+    ]
+    return SearchResponse(total=total, page=req.page, page_size=req.page_size, hits=hits)
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -307,13 +389,19 @@ async def health():
 )
 async def search(req: SearchRequest, user: dict = Depends(require_auth)):
     """Full-text search with filters across mentions."""
+    user_id = user.get("sub", user.get("user_id", "unknown"))
+    logger.info(
+        "search_query user_id=%s query=%r project_id=%s platform=%s sentiment=%s",
+        user_id, req.query, req.project_id, req.platform, req.sentiment,
+    )
     es: AsyncOpenSearch = app.state.es
     body = _build_es_query(req)
 
     try:
         resp = await es.search(index=ES_INDEX, body=body)
     except ESNotFoundError:
-        raise HTTPException(status_code=503, detail=f"Index '{ES_INDEX}' not found — has the query service created it?")
+        logger.warning("OpenSearch index '%s' not found — falling back to Postgres text search", ES_INDEX)
+        return await _postgres_text_search(req, app.state.db_session)
     except Exception as exc:
         logger.error("ES search error: %s", exc)
         raise HTTPException(status_code=502, detail="OpenSearch query failed")
@@ -341,8 +429,32 @@ async def search(req: SearchRequest, user: dict = Depends(require_auth)):
 )
 async def search_advanced(req: AdvancedSearchRequest, user: dict = Depends(require_auth)):
     """Execute a raw OpenSearch DSL query."""
+    user_id = user.get("sub", user.get("user_id", "unknown"))
+    logger.info("advanced_search_query user_id=%s body_keys=%s", user_id, list(req.body.keys()))
     # Hardcode index to prevent OpenSearch DSL injection
     index = "khushfus-mentions"
+
+    # Validate body size to prevent abuse
+    body_str = json.dumps(req.body)
+    if len(body_str) > 10000:
+        raise HTTPException(status_code=400, detail="Query body too large")
+
+    # Block dangerous keys in DSL body
+    _dangerous_keys = {"script", "script_fields", "scripted_metric", "runtime_mappings"}
+    def _check_dangerous(obj: Any, depth: int = 0) -> None:
+        if depth > 20:
+            raise HTTPException(status_code=400, detail="Query body too deeply nested")
+        if isinstance(obj, dict):
+            for key in obj:
+                if key in _dangerous_keys:
+                    raise HTTPException(status_code=400, detail=f"Disallowed query key: {key}")
+                _check_dangerous(obj[key], depth + 1)
+        elif isinstance(obj, list):
+            for item in obj:
+                _check_dangerous(item, depth + 1)
+
+    _check_dangerous(req.body)
+
     es: AsyncOpenSearch = app.state.es
     try:
         resp = await es.search(index=index, body=req.body)
@@ -351,7 +463,7 @@ async def search_advanced(req: AdvancedSearchRequest, user: dict = Depends(requi
         raise HTTPException(status_code=503, detail=f"Index '{index}' not found")
     except Exception as exc:
         logger.error("ES advanced search error: %s", exc)
-        raise HTTPException(status_code=502, detail=f"OpenSearch query failed: {exc}")
+        raise HTTPException(status_code=502, detail="OpenSearch query failed")
 
 
 # ---- Autocomplete / suggest ----

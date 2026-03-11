@@ -1,3 +1,20 @@
+# =============================================================================
+# Redis — Single-node for dev/staging
+# =============================================================================
+# PRODUCTION HA OPTIONS (choose one):
+#   1. Redis Sentinel (built-in):
+#      - Deploy 3 Sentinel pods + 3 Redis pods (1 master + 2 replicas)
+#      - Use Bitnami Redis Helm chart: helm install redis bitnami/redis --set sentinel.enabled=true
+#   2. Redis Cluster:
+#      - For >16GB datasets or high write throughput
+#      - helm install redis bitnami/redis-cluster --set cluster.nodes=6
+#   3. Managed service:
+#      - AWS ElastiCache / GCP Memorystore / Azure Cache for Redis
+#      - Remove this Deployment entirely; update REDIS_URL in secrets
+#
+# NOTE: When using Sentinel, update REDIS_URL to use sentinel:// scheme
+# and configure the application's Redis client for Sentinel discovery.
+# =============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +37,19 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          command:
+            - redis-server
+          args:
+            - "--appendonly"
+            - "yes"
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: khushfus-secrets
+                  key: REDIS_PASSWORD
           ports:
             - containerPort: 6379
           resources:

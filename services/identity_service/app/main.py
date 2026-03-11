@@ -18,6 +18,7 @@ import os
 import secrets
 import time as _time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -48,7 +49,11 @@ DATABASE_URL = os.getenv(
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+if not SECRET_KEY and os.getenv("ENVIRONMENT", "development") == "production":
+    raise RuntimeError("FATAL: JWT_SECRET_KEY must be set in production")
+if not SECRET_KEY:
+    SECRET_KEY = "change-me-in-production"  # Dev-only default
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -59,6 +64,24 @@ OIDC_DISCOVERY_SUFFIX = "/.well-known/openid-configuration"
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Auth rate limiting (in-memory sliding window)
+# ---------------------------------------------------------------------------
+
+_auth_rate_limits: dict[str, list[datetime]] = defaultdict(list)
+MAX_AUTH_ATTEMPTS = int(os.getenv("MAX_AUTH_ATTEMPTS_PER_MINUTE", "10"))
+
+
+def _check_auth_rate_limit(identifier: str):
+    """Check if auth rate limit is exceeded. Raises 429 if too many attempts."""
+    now = datetime.utcnow()
+    cutoff = now - timedelta(minutes=1)
+    _auth_rate_limits[identifier] = [t for t in _auth_rate_limits[identifier] if t > cutoff]
+    if len(_auth_rate_limits[identifier]) >= MAX_AUTH_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many authentication attempts")
+    _auth_rate_limits[identifier].append(now)
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -374,6 +397,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="identity")
+except ImportError:
+    logger.debug("RequestLoggingMiddleware not available")
+
 
 # ---------------------------------------------------------------------------
 # Health
@@ -424,6 +454,7 @@ async def register(
     bus: EventBus = Depends(get_event_bus),
 ):
     """Register a new user with email/password.  Optionally join an org."""
+    _check_auth_rate_limit(request.client.host if request.client else "unknown")
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -469,11 +500,20 @@ async def login(
     bus: EventBus = Depends(get_event_bus),
 ):
     """Authenticate with email/password and receive JWT tokens."""
+    client_ip = _client_ip(request)
+    _check_auth_rate_limit(client_ip)
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if not user or not user.hashed_password or not _verify_password(data.password, user.hashed_password):
+        logger.warning("login_failed email=%s ip=%s reason=invalid_credentials", data.email, client_ip)
+        await _audit(bus, 0, "auth.login_failed", "user", details=json.dumps({"email": data.email, "ip": client_ip}))
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
+        logger.warning("login_failed email=%s ip=%s reason=account_deactivated", data.email, client_ip)
+        await _audit(
+            bus, user.id, "auth.login_failed", "user", user.id,
+            details=json.dumps({"email": data.email, "ip": client_ip, "reason": "deactivated"}),
+        )
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     # Determine primary org for the token claims
@@ -740,7 +780,14 @@ async def saml_acs(
         if issuer_match.group(1) != org.sso_entity_id:
             raise HTTPException(status_code=400, detail="SAML Issuer mismatch")
 
-    logger.warning("SAML signature verification not implemented — add python3-saml for production use")
+    # SECURITY: Verify SAML assertion signature
+    # In production, python3-saml with want_assertions_signed=True handles this.
+    # For now, reject unsigned assertions to prevent forged SAML responses.
+    import re as _re_sig
+    has_signature = bool(_re_sig.search(r'<(?:ds:)?Signature[\s>]', decoded_xml))
+    if not has_signature:
+        raise HTTPException(status_code=400, detail="Unsigned SAML assertions are not accepted")
+    logger.warning("SAML XML signature present but cryptographic verification requires python3-saml")
 
     # Extract from SAML assertion (simplified -- production uses python3-saml)
     # These would come from the validated assertion's NameID and Attributes

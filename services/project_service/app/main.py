@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.models import (
     Keyword,
@@ -29,6 +30,8 @@ from shared.models import (
 from shared.tracing import setup_tracing
 
 setup_tracing("project")
+
+RESERVED_PROJECT_NAMES = {"admin", "api", "system", "health", "internal", "test"}
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -131,12 +134,18 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="project")
+except ImportError:
+    pass
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -229,6 +238,8 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new project with optional keywords. Requires org_id from header."""
+    if payload.name.strip().lower() in RESERVED_PROJECT_NAMES:
+        raise HTTPException(status_code=400, detail=f"Project name '{payload.name.strip()}' is reserved")
     try:
         project = Project(
             organization_id=org_id,

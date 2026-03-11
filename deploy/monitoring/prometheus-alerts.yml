@@ -1,0 +1,136 @@
+# =============================================================================
+# 7.28 Prometheus Alert Rules
+# =============================================================================
+groups:
+  - name: khushfus-service-alerts
+    rules:
+      # HighErrorRate: >5% 5xx responses for 5 minutes
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "{{ $labels.service }} has >5% error rate (current: {{ $value | humanizePercentage }})"
+
+      # ServiceDown: target down for 2 minutes
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been unreachable for more than 2 minutes."
+
+      # HighLatency: p95 response time >2s for 5 minutes
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.service }}"
+          description: "p95 latency is {{ $value }}s on {{ $labels.service }} (threshold: 2s)"
+
+      # HighMemoryUsage: >85% memory usage for 5 minutes
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            process_resident_memory_bytes
+            /
+            (container_spec_memory_limit_bytes > 0)
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.job }}"
+          description: "Memory usage is above 85% on {{ $labels.job }}"
+
+  - name: khushfus-infrastructure-alerts
+    rules:
+      # DiskSpaceWarning: >80% disk usage
+      - alert: DiskSpaceWarning
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/"}
+            /
+            node_filesystem_size_bytes{mountpoint="/"}
+          ) < 0.20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space running low"
+          description: "Less than 20% disk space remaining ({{ $value | humanizePercentage }} free)"
+
+      # DiskSpaceCritical: >90% disk usage
+      - alert: DiskSpaceCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/"}
+            /
+            node_filesystem_size_bytes{mountpoint="/"}
+          ) < 0.10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space critically low"
+          description: "Less than 10% disk space remaining ({{ $value | humanizePercentage }} free)"
+
+  - name: khushfus-pipeline-alerts
+    rules:
+      # ConsumerLag: pending messages >1000 for 10 minutes
+      - alert: ConsumerLag
+        expr: |
+          redis_stream_pending_messages > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High consumer lag on {{ $labels.stream }}"
+          description: "Stream {{ $labels.stream }} has {{ $value }} pending messages for >10 minutes"
+
+      # DeadLetterQueueGrowing: DLQ messages increasing
+      - alert: DeadLetterQueueGrowing
+        expr: |
+          increase(redis_stream_dlq_messages_total[30m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dead letter queue growing on {{ $labels.stream }}"
+          description: "{{ $value }} messages added to DLQ in the last 30 minutes"
+
+  - name: khushfus-database-alerts
+    rules:
+      # PostgresConnectionPoolExhausted: >90% connections used
+      - alert: PostgresConnectionPoolExhausted
+        expr: |
+          pg_stat_activity_count / pg_settings_max_connections > 0.90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL connection pool nearly exhausted"
+          description: "{{ $value | humanizePercentage }} of max connections are in use"
+
+      # PostgresSlowQueries: slow queries detected
+      - alert: PostgresSlowQueries
+        expr: |
+          rate(pg_stat_activity_max_tx_duration{state="active"}[5m]) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow PostgreSQL queries detected"
+          description: "Active transactions running longer than 30s"

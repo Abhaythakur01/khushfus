@@ -28,16 +28,29 @@ from shared.events import (
     AnalyzedMentionEvent,
     EventBus,
 )
+from shared.logging_config import setup_logging
+from shared.service_utils import (
+    ConsumerMetrics,
+    backoff_with_jitter,
+    is_transient_error,
+    start_liveness_server,
+    validate_env,
+)
 from src.nlp.analyzer import SentimentAnalyzer
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("analyzer-service")
 logger = logging.getLogger(__name__)
+
+validate_env(warn_if_missing=["REDIS_URL"])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 GROUP_NAME = "analyzer-service"
 CONSUMER_NAME = f"analyzer-{os.getpid()}"
 BATCH_SIZE = int(os.getenv("ANALYZER_BATCH_SIZE", "20"))
 HIGH_ENGAGEMENT_THRESHOLD = int(os.getenv("HIGH_ENGAGEMENT_THRESHOLD", "100"))
+NLP_TIMEOUT = int(os.getenv("NLP_TIMEOUT_SECONDS", "30"))
+
+metrics = ConsumerMetrics("analyzer-service")
 
 analyzer = SentimentAnalyzer()
 
@@ -109,25 +122,66 @@ async def process_loop(bus: EventBus, shutdown_event: asyncio.Event):
 
             analyzed_events = []
             ack_ids = []
+            failed_msgs = []
+
+            batch_start = metrics.start_timer()
 
             for msg_id, data in messages:
                 try:
                     loop = asyncio.get_running_loop()
-                    event = await loop.run_in_executor(None, analyze_mention, data)
+                    event = await asyncio.wait_for(
+                        loop.run_in_executor(None, analyze_mention, data),
+                        timeout=NLP_TIMEOUT,
+                    )
                     analyzed_events.append(event)
                     ack_ids.append(msg_id)
+                except asyncio.TimeoutError:
+                    logger.warning(f"NLP timeout ({NLP_TIMEOUT}s) for mention {msg_id}")
+                    failed_msgs.append((msg_id, f"NLP timeout after {NLP_TIMEOUT}s"))
                 except Exception as e:
                     logger.error(f"Failed to analyze mention {msg_id}: {e}")
-                    ack_ids.append(msg_id)  # ack anyway to avoid stuck messages
+                    if is_transient_error(e):
+                        # Retry once with backoff for transient errors
+                        delay = backoff_with_jitter(0, base=0.5, max_delay=5.0)
+                        await asyncio.sleep(delay)
+                        try:
+                            event = await asyncio.wait_for(
+                                loop.run_in_executor(None, analyze_mention, data),
+                                timeout=NLP_TIMEOUT,
+                            )
+                            analyzed_events.append(event)
+                            ack_ids.append(msg_id)
+                            continue
+                        except Exception as retry_err:
+                            logger.error(f"Retry also failed for {msg_id}: {retry_err}")
+                            failed_msgs.append((msg_id, str(retry_err)))
+                    else:
+                        # Permanent error — go straight to DLQ
+                        failed_msgs.append((msg_id, str(e)))
 
-            # Publish analyzed mentions
+            metrics.stop_timer(batch_start)
+
+            # Publish analyzed mentions, then ack (at-least-once delivery)
             if analyzed_events:
                 await bus.publish_batch(STREAM_ANALYZED_MENTIONS, analyzed_events)
+                metrics.record_processed(len(analyzed_events))
                 logger.info(f"Analyzed and published {len(analyzed_events)} mentions")
 
-            # Acknowledge all processed messages
+            # Acknowledge successfully processed messages
             for mid in ack_ids:
                 await bus.ack(STREAM_RAW_MENTIONS, GROUP_NAME, mid)
+
+            # Move failed messages to DLQ instead of silently dropping them
+            if failed_msgs:
+                metrics.record_failed(len(failed_msgs))
+            for mid, error in failed_msgs:
+                try:
+                    await bus.move_to_dlq(STREAM_RAW_MENTIONS, GROUP_NAME, mid, error)
+                    metrics.record_dlq()
+                except Exception as dlq_err:
+                    logger.error(f"Failed to move {mid} to DLQ: {dlq_err}")
+                    # Last resort: ack to avoid infinite stuck messages
+                    await bus.ack(STREAM_RAW_MENTIONS, GROUP_NAME, mid)
 
         except Exception as e:
             logger.error(f"Analyzer loop error: {e}")
@@ -149,10 +203,14 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9091"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Analyzer Service started")
     try:
         await process_loop(bus, shutdown_event)
     finally:
+        liveness.close()
         logger.info("Analyzer Service shutting down gracefully")
         await bus.close()
 

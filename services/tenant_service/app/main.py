@@ -21,6 +21,7 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -55,7 +56,11 @@ DATABASE_URL = os.getenv(
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+if not SECRET_KEY and os.getenv("ENVIRONMENT", "development") == "production":
+    raise RuntimeError("FATAL: JWT_SECRET_KEY must be set in production")
+if not SECRET_KEY:
+    SECRET_KEY = "change-me-in-production"  # Dev-only default
 ALGORITHM = "HS256"
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -199,7 +204,17 @@ def _client_ip(request: Request) -> str:
 
 
 def _hash_api_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+    """Hash an API key with bcrypt for secure storage."""
+    return bcrypt.hashpw(raw_key.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_api_key(raw_key: str, hashed: str) -> bool:
+    """Verify a raw API key against its bcrypt hash."""
+    try:
+        return bcrypt.checkpw(raw_key.encode(), hashed.encode())
+    except Exception:
+        # Fall back to SHA256 check for keys created before bcrypt migration
+        return hashlib.sha256(raw_key.encode()).hexdigest() == hashed
 
 
 async def _audit(
@@ -338,6 +353,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="tenant")
+except ImportError:
+    logger.debug("RequestLoggingMiddleware not available")
 
 
 try:
@@ -1012,9 +1034,16 @@ async def validate_api_key(
     Validate an API key and return org info + scopes.
     Used internally by the gateway for API-key-authenticated requests.
     """
-    key_hash = _hash_api_key(key)
-    result = await db.execute(select(ApiKey).where(ApiKey.key_hash == key_hash))
-    api_key = result.scalar_one_or_none()
+    # Look up by prefix (first 10 chars), then verify with bcrypt
+    prefix = key[:10] if len(key) >= 10 else key
+    result = await db.execute(select(ApiKey).where(ApiKey.prefix == prefix))
+    candidates = result.scalars().all()
+
+    api_key = None
+    for candidate in candidates:
+        if _verify_api_key(key, candidate.key_hash):
+            api_key = candidate
+            break
 
     if not api_key or not api_key.is_active:
         raise HTTPException(status_code=401, detail="Invalid or revoked API key")
@@ -1028,6 +1057,14 @@ async def validate_api_key(
     await db.commit()
 
     org = await db.get(Organization, api_key.organization_id)
+
+    # Audit log for API key validation
+    logger.info(
+        "API key validated: org=%s key_id=%s prefix=%s",
+        api_key.organization_id,
+        api_key.id,
+        api_key.prefix,
+    )
 
     return {
         "valid": True,

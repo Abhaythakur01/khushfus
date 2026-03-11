@@ -20,7 +20,8 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +33,8 @@ from shared.models import (
     Project,
     Sentiment,
 )
+from shared.project_auth import verify_project_access
+from shared.request_logging import RequestLoggingMiddleware
 from shared.tracing import setup_tracing
 
 setup_tracing("competitive")
@@ -180,6 +183,8 @@ app = FastAPI(
 )
 
 
+app.add_middleware(RequestLoggingMiddleware, service_name="competitive")
+
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -209,14 +214,14 @@ def _parse_competitor_ids(project: Project) -> list[int]:
         part = part.strip()
         if part.isdigit():
             ids.append(int(part))
+    if len(ids) > 20:
+        logger.warning("Competitor IDs list truncated from %d to 20 for project %d", len(ids), project.id)
+        ids = ids[:20]
     return ids
 
 
-async def _get_project_or_404(db: AsyncSession, project_id: int) -> Project:
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-    return project
+async def _get_project_or_404(db: AsyncSession, project_id: int, user: dict) -> Project:
+    return await verify_project_access(db, project_id, user)
 
 
 async def _aggregate_brand_metrics(
@@ -366,7 +371,7 @@ async def get_benchmark(
     engagement comparison, and trending keywords for the project
     and all its configured competitors.
     """
-    project = await _get_project_or_404(db, project_id)
+    project = await _get_project_or_404(db, project_id, user)
     competitor_ids = _parse_competitor_ids(project)
 
     end = datetime.utcnow()
@@ -411,7 +416,7 @@ async def share_of_voice(
     user: dict = Depends(require_auth),
 ):
     """Dedicated share-of-voice breakdown across project and competitors."""
-    project = await _get_project_or_404(db, project_id)
+    project = await _get_project_or_404(db, project_id, user)
     competitor_ids = _parse_competitor_ids(project)
 
     end = datetime.utcnow()
@@ -475,7 +480,7 @@ async def sentiment_comparison(
     user: dict = Depends(require_auth),
 ):
     """Sentiment comparison chart data across project and competitors."""
-    project = await _get_project_or_404(db, project_id)
+    project = await _get_project_or_404(db, project_id, user)
     competitor_ids = _parse_competitor_ids(project)
 
     end = datetime.utcnow()
@@ -541,7 +546,7 @@ async def trending_comparison(
     user: dict = Depends(require_auth),
 ):
     """Trending topics and keywords comparison between brand and competitors."""
-    project = await _get_project_or_404(db, project_id)
+    project = await _get_project_or_404(db, project_id, user)
     competitor_ids = _parse_competitor_ids(project)
 
     end = datetime.utcnow()
@@ -610,7 +615,7 @@ async def generate_benchmark(
     user: dict = Depends(require_auth),
 ):
     """Generate and store CompetitorBenchmark records for each competitor."""
-    project = await _get_project_or_404(db, project_id)
+    project = await _get_project_or_404(db, project_id, user)
     competitor_ids = _parse_competitor_ids(project)
 
     if not competitor_ids:
@@ -696,7 +701,7 @@ async def benchmark_history(
     user: dict = Depends(require_auth),
 ):
     """List past benchmark records for a project, optionally filtered by competitor."""
-    await _get_project_or_404(db, project_id)
+    await _get_project_or_404(db, project_id, user)
 
     stmt = (
         select(CompetitorBenchmark)

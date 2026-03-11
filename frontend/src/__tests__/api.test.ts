@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import { parseResponse, ProjectListSchema, UserSchema } from "@/lib/schemas";
 
 // Mock global fetch
 const mockFetch = jest.fn();
@@ -151,12 +152,16 @@ describe("ApiClient", () => {
       expect(url).toContain("sentiment=positive");
     });
 
-    it("search builds query string from params", async () => {
+    it("search sends POST with params in body (6.39)", async () => {
       mockFetch.mockResolvedValueOnce(mockJsonResponse(200, { results: [] }));
       await api.search({ query: "test", platform: "twitter" });
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain("query=test");
-      expect(url).toContain("platform=twitter");
+      expect(url).toContain("/search");
+      const options = mockFetch.mock.calls[0][1] as RequestInit;
+      expect(options.method).toBe("POST");
+      const body = JSON.parse(options.body as string);
+      expect(body.query).toBe("test");
+      expect(body.platform).toBe("twitter");
     });
 
     it("generateReport sends POST", async () => {
@@ -182,5 +187,165 @@ describe("ApiClient", () => {
         })
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6.5 — ApiError.safeMessage
+// ---------------------------------------------------------------------------
+
+describe("ApiError.safeMessage", () => {
+  it("returns user-friendly message for 401", () => {
+    const err = new ApiError(401, "token expired");
+    expect(err.safeMessage).toBe("Your session has expired. Please log in again.");
+  });
+
+  it("returns user-friendly message for 403", () => {
+    const err = new ApiError(403, "forbidden");
+    expect(err.safeMessage).toBe("You do not have permission to perform this action.");
+  });
+
+  it("returns user-friendly message for 404", () => {
+    const err = new ApiError(404, "");
+    expect(err.safeMessage).toBe("The requested resource was not found.");
+  });
+
+  it("returns user-friendly message for 429", () => {
+    const err = new ApiError(429, "rate limited");
+    expect(err.safeMessage).toBe("Too many requests. Please wait a moment and try again.");
+  });
+
+  it("returns server error message for 500", () => {
+    const err = new ApiError(500, "internal error");
+    expect(err.safeMessage).toBe("A server error occurred. Please try again later.");
+  });
+
+  it("strips HTML tags from body in safeMessage", () => {
+    const err = new ApiError(400, '<script>alert("xss")</script>Bad input');
+    expect(err.safeMessage).not.toContain("<script>");
+    expect(err.safeMessage).toContain("Bad input");
+  });
+
+  it("truncates long error bodies", () => {
+    const longBody = "x".repeat(1000);
+    const err = new ApiError(400, longBody);
+    // safeMessage should be capped (truncateText at 500 chars)
+    expect(err.safeMessage.length).toBeLessThan(600);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6.7 — Retry logic
+// ---------------------------------------------------------------------------
+
+describe("Retry logic", () => {
+  it("retries GET on 500 and eventually succeeds", async () => {
+    // First call: 500, second call: 200
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve("Server Error"),
+        headers: new Headers(),
+      })
+      .mockResolvedValueOnce(mockJsonResponse(200, { ok: true }));
+
+    const result = await api.getMe();
+    expect(result).toEqual({ ok: true });
+    // Should have been called twice (1 initial + 1 retry)
+    expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not retry POST on 500 (no idempotency key)", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Server Error"),
+      headers: new Headers(),
+    });
+
+    await expect(api.createProject({ name: "Test" })).rejects.toThrow(ApiError);
+    // POST without idempotency key should NOT retry
+    expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  it("does not retry on 400 client error", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve("Bad Request"),
+    });
+
+    await expect(api.getMe()).rejects.toThrow(ApiError);
+    expect(mockFetch.mock.calls.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6.3 — CSRF token generation
+// ---------------------------------------------------------------------------
+
+describe("CSRF token", () => {
+  it("includes X-CSRF-Token header on requests", async () => {
+    mockFetch.mockResolvedValueOnce(mockJsonResponse(200, {}));
+    await api.getMe();
+    const callArgs = mockFetch.mock.calls[0];
+    const csrfToken = callArgs[1].headers["X-CSRF-Token"];
+    expect(csrfToken).toBeDefined();
+    expect(typeof csrfToken).toBe("string");
+    expect(csrfToken.length).toBeGreaterThan(0);
+  });
+
+  it("includes X-Requested-With header for CORS protection", async () => {
+    mockFetch.mockResolvedValueOnce(mockJsonResponse(200, {}));
+    await api.getMe();
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers["X-Requested-With"]).toBe("XMLHttpRequest");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6.15 — Zod parseResponse
+// ---------------------------------------------------------------------------
+
+describe("parseResponse (Zod validation)", () => {
+  it("returns parsed data on valid input", () => {
+    const validUser = { id: 1, email: "a@b.com", full_name: "Test", role: "admin", org_id: 1 };
+    const result = parseResponse(UserSchema, validUser);
+    expect(result).toEqual(validUser);
+  });
+
+  it("logs warning and returns raw data on invalid input (graceful degradation)", () => {
+    const consoleSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const invalidUser = { id: "not-a-number", email: 123 };
+    const result = parseResponse(UserSchema, invalidUser);
+    // Should return the raw data as-is
+    expect(result).toEqual(invalidUser);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[schema validation]"),
+      expect.any(Array),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("validates project list schema correctly", () => {
+    const projects = [
+      {
+        id: 1,
+        name: "Project A",
+        client_name: "Client",
+        status: "active",
+        platforms: ["twitter"],
+        keywords: [],
+        mention_count: 0,
+        avg_sentiment: 0,
+        total_reach: 0,
+        created_at: "2024-01-01",
+        updated_at: "2024-01-01",
+      },
+    ];
+    const result = parseResponse(ProjectListSchema, projects);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Project A");
   });
 });

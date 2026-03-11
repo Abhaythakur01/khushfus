@@ -24,10 +24,12 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 
+from shared.circuit_breaker import CircuitBreaker, CircuitBreakerError
 from shared.database import create_db, init_tables
 from shared.events import (
     STREAM_AUDIT,
@@ -41,6 +43,8 @@ from shared.models import (
     PublishStatus,
     ScheduledPost,
 )
+from shared.project_auth import verify_project_access
+from shared.request_logging import RequestLoggingMiddleware
 from shared.tracing import setup_tracing
 
 setup_tracing("publishing")
@@ -89,6 +93,15 @@ GROUP_NAME = "publishing-service"
 CONSUMER_NAME = f"publisher-{os.getpid()}"
 
 SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "15"))
+
+# ---------------------------------------------------------------------------
+# Per-platform circuit breakers for external API calls
+# ---------------------------------------------------------------------------
+
+_twitter_breaker = CircuitBreaker("twitter-api", failure_threshold=5, recovery_timeout=60.0)
+_facebook_breaker = CircuitBreaker("facebook-api", failure_threshold=5, recovery_timeout=60.0)
+_linkedin_breaker = CircuitBreaker("linkedin-api", failure_threshold=5, recovery_timeout=60.0)
+_instagram_breaker = CircuitBreaker("instagram-api", failure_threshold=5, recovery_timeout=60.0)
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +168,8 @@ async def _acquire_rate_limit(platform: str, endpoint: str) -> dict:
             if resp.status_code == 200:
                 return resp.json()
     except Exception as e:
-        logger.warning(f"Rate limiter unreachable, defaulting to allow: {e}")
-    return {"allowed": True, "wait_seconds": 0}
+        logger.warning(f"Rate limiter unreachable, defaulting to deny: {e}")
+    return {"allowed": False, "wait_seconds": 5}
 
 
 async def publish_to_twitter(content: str, reply_to_id: Optional[str] = None) -> dict:
@@ -175,13 +188,18 @@ async def publish_to_twitter(content: str, reply_to_id: Optional[str] = None) ->
         "Content-Type": "application/json",
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                return {"success": True, "platform_post_id": data["data"]["id"]}
-            else:
-                return {"success": False, "error": f"Twitter API {resp.status_code}: {resp.text}"}
+        async def _call():
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                return await client.post(url, json=payload, headers=headers)
+
+        resp = await _twitter_breaker.call(_call)
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            return {"success": True, "platform_post_id": data["data"]["id"]}
+        else:
+            return {"success": False, "error": f"Twitter API {resp.status_code}: {resp.text}"}
+    except CircuitBreakerError:
+        return {"success": False, "error": "Twitter API circuit breaker is open — too many recent failures"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -203,13 +221,18 @@ async def publish_to_facebook(content: str, media_urls: Optional[str] = None) ->
             params["link"] = first_url
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, data=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                return {"success": True, "platform_post_id": data.get("id", "")}
-            else:
-                return {"success": False, "error": f"Facebook API {resp.status_code}: {resp.text}"}
+        async def _call():
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                return await client.post(url, data=params)
+
+        resp = await _facebook_breaker.call(_call)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {"success": True, "platform_post_id": data.get("id", "")}
+        else:
+            return {"success": False, "error": f"Facebook API {resp.status_code}: {resp.text}"}
+    except CircuitBreakerError:
+        return {"success": False, "error": "Facebook API circuit breaker is open — too many recent failures"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -238,13 +261,18 @@ async def publish_to_linkedin(content: str) -> dict:
         "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                return {"success": True, "platform_post_id": data.get("id", "")}
-            else:
-                return {"success": False, "error": f"LinkedIn API {resp.status_code}: {resp.text}"}
+        async def _call():
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                return await client.post(url, json=payload, headers=headers)
+
+        resp = await _linkedin_breaker.call(_call)
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            return {"success": True, "platform_post_id": data.get("id", "")}
+        else:
+            return {"success": False, "error": f"LinkedIn API {resp.status_code}: {resp.text}"}
+    except CircuitBreakerError:
+        return {"success": False, "error": "LinkedIn API circuit breaker is open — too many recent failures"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -262,36 +290,44 @@ async def publish_to_instagram(content: str, media_urls: Optional[str] = None) -
     base = "https://graph.facebook.com/v19.0"
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            # Step 1: Create media container
-            create_resp = await client.post(
-                f"{base}/{INSTAGRAM_USER_ID}/media",
-                data={
-                    "image_url": image_url,
-                    "caption": content,
-                    "access_token": INSTAGRAM_ACCESS_TOKEN,
-                },
-            )
-            if create_resp.status_code != 200:
-                return {"success": False, "error": f"IG media create {create_resp.status_code}: {create_resp.text}"}
+        async def _call():
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                # Step 1: Create media container
+                create_resp = await client.post(
+                    f"{base}/{INSTAGRAM_USER_ID}/media",
+                    data={
+                        "image_url": image_url,
+                        "caption": content,
+                        "access_token": INSTAGRAM_ACCESS_TOKEN,
+                    },
+                )
+                if create_resp.status_code != 200:
+                    raise RuntimeError(f"IG media create {create_resp.status_code}: {create_resp.text}")
 
-            container_id = create_resp.json().get("id")
-            if not container_id:
-                return {"success": False, "error": "No container ID returned from Instagram"}
+                container_id = create_resp.json().get("id")
+                if not container_id:
+                    raise RuntimeError("No container ID returned from Instagram")
 
-            # Step 2: Publish the container
-            publish_resp = await client.post(
-                f"{base}/{INSTAGRAM_USER_ID}/media_publish",
-                data={
-                    "creation_id": container_id,
-                    "access_token": INSTAGRAM_ACCESS_TOKEN,
-                },
-            )
-            if publish_resp.status_code == 200:
-                data = publish_resp.json()
-                return {"success": True, "platform_post_id": data.get("id", "")}
-            else:
-                return {"success": False, "error": f"IG publish {publish_resp.status_code}: {publish_resp.text}"}
+                # Step 2: Publish the container
+                publish_resp = await client.post(
+                    f"{base}/{INSTAGRAM_USER_ID}/media_publish",
+                    data={
+                        "creation_id": container_id,
+                        "access_token": INSTAGRAM_ACCESS_TOKEN,
+                    },
+                )
+                return create_resp, publish_resp
+
+        create_resp, publish_resp = await _instagram_breaker.call(_call)
+        if publish_resp.status_code == 200:
+            data = publish_resp.json()
+            return {"success": True, "platform_post_id": data.get("id", "")}
+        else:
+            return {"success": False, "error": f"IG publish {publish_resp.status_code}: {publish_resp.text}"}
+    except CircuitBreakerError:
+        return {"success": False, "error": "Instagram API circuit breaker is open — too many recent failures"}
+    except RuntimeError as e:
+        return {"success": False, "error": str(e)}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -462,22 +498,36 @@ async def lifespan(app: FastAPI):
     scheduler_task = asyncio.create_task(scheduler_loop(session_factory, bus))
     consumer_task = asyncio.create_task(consume_publish_requests(session_factory, bus))
 
+    app.state.engine = engine
+    app.state.scheduler_task = scheduler_task
+    app.state.consumer_task = consumer_task
+
     logger.info("Publishing Service started on port 8013")
     yield
 
-    scheduler_task.cancel()
-    consumer_task.cancel()
-    try:
-        await scheduler_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    # --- Graceful shutdown ---
+    logger.info("Publishing Service shutting down -- cancelling background tasks")
 
-    await bus.close()
-    await engine.dispose()
+    for task_name, task in [("scheduler", scheduler_task), ("consumer", consumer_task)]:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.debug("Background task '%s' cancelled", task_name)
+        except Exception as exc:
+            logger.warning("Error stopping background task '%s': %s", task_name, exc)
+
+    try:
+        await bus.close()
+    except Exception as exc:
+        logger.warning("Error closing event bus: %s", exc)
+
+    try:
+        await engine.dispose()
+    except Exception as exc:
+        logger.warning("Error disposing DB engine: %s", exc)
+
+    logger.info("Publishing Service stopped")
 
 
 app = FastAPI(
@@ -494,6 +544,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+app.add_middleware(RequestLoggingMiddleware, service_name="publishing")
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -539,6 +591,7 @@ async def create_post(body: PostCreate, user: dict = Depends(require_auth)):
     session_factory = app.state.db_session
 
     async with session_factory() as db:
+        await verify_project_access(db, body.project_id, user)
         post = ScheduledPost(
             project_id=body.project_id,
             created_by=body.created_by,
@@ -588,12 +641,15 @@ async def list_posts(
     project_id: int = Query(..., description="Filter by project ID"),
     status: Optional[str] = Query(None, description="Filter by status: draft, scheduled, published, failed"),
     platform: Optional[str] = Query(None, description="Filter by platform"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     user: dict = Depends(require_auth),
 ):
     """List scheduled posts for a project, with optional status/platform filters."""
     session_factory = app.state.db_session
 
     async with session_factory() as db:
+        await verify_project_access(db, project_id, user)
         stmt = select(ScheduledPost).where(ScheduledPost.project_id == project_id)
 
         if status:
@@ -602,6 +658,7 @@ async def list_posts(
             stmt = stmt.where(ScheduledPost.platform == Platform(platform))
 
         stmt = stmt.order_by(ScheduledPost.scheduled_at.desc())
+        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
         result = await db.execute(stmt)
         posts = result.scalars().all()
         return [PostOut.model_validate(p) for p in posts]
@@ -616,12 +673,17 @@ async def list_posts(
 )
 async def approve_post(post_id: int, body: ApproveRequest, user: dict = Depends(require_auth)):
     """Approve a draft post and move it to SCHEDULED status."""
+    if user.get("role") not in ("admin", "editor", "manager") and not user.get("is_superadmin"):
+        raise HTTPException(status_code=403, detail="Approval requires editor role or higher")
+
     session_factory = app.state.db_session
 
     async with session_factory() as db:
         post = await db.get(ScheduledPost, post_id)
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
+
+        await verify_project_access(db, post.project_id, user)
 
         if post.status != PublishStatus.DRAFT:
             raise HTTPException(
@@ -669,6 +731,8 @@ async def delete_post(post_id: int, user: dict = Depends(require_auth)):
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
+        await verify_project_access(db, post.project_id, user)
+
         if post.status == PublishStatus.PUBLISHED:
             raise HTTPException(
                 status_code=400,
@@ -714,6 +778,8 @@ async def publish_now(post_id: int, user: dict = Depends(require_auth)):
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
+        await verify_project_access(db, post.project_id, user)
+
         if post.status == PublishStatus.PUBLISHED:
             raise HTTPException(status_code=400, detail="Post is already published")
 
@@ -746,8 +812,9 @@ async def create_reply(body: ReplyCreate, user: dict = Depends(require_auth)):
     """Create a reply to a specific mention. Optionally schedule it or draft it."""
     session_factory = app.state.db_session
 
-    # Verify the mention exists
+    # Verify project access and mention existence
     async with session_factory() as db:
+        await verify_project_access(db, body.project_id, user)
         mention = await db.get(Mention, body.mention_id)
         if not mention:
             raise HTTPException(status_code=404, detail="Mention not found")

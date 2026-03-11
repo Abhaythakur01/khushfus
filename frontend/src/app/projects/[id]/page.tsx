@@ -14,18 +14,18 @@ import {
   Calendar,
   Plus,
   X,
-  Trash2,
-  ToggleLeft,
-  ToggleRight,
   AlertTriangle,
   Check,
   Loader2,
   Eye,
-  Globe,
   Target,
+  Play,
+  Globe,
 } from "lucide-react";
 import { cn, formatNumber, formatDate } from "@/lib/utils";
-import { useProject, type ProjectKeyword } from "@/hooks/useProjects";
+import { useProject, type Project, type ProjectKeyword } from "@/hooks/useProjects";
+import { AppShell } from "@/components/layout/AppShell";
+import toast from "react-hot-toast";
 
 const PLATFORM_LABELS: Record<string, string> = {
   twitter: "Twitter",
@@ -36,53 +36,50 @@ const PLATFORM_LABELS: Record<string, string> = {
   reddit: "Reddit",
   tiktok: "TikTok",
   news: "News & Blogs",
+  mastodon: "Mastodon",
+  telegram: "Telegram",
 };
 
 const PLATFORM_COLORS: Record<string, string> = {
-  twitter: "bg-sky-500",
-  instagram: "bg-gradient-to-br from-purple-500 to-pink-500",
-  facebook: "bg-blue-600",
-  linkedin: "bg-blue-700",
-  youtube: "bg-red-600",
-  reddit: "bg-orange-500",
-  tiktok: "bg-gray-900",
-  news: "bg-emerald-600",
+  twitter: "bg-[#1DA1F2]",
+  reddit: "bg-[#FF4500]",
+  news: "bg-indigo-500",
+  youtube: "bg-[#FF0000]",
+  mastodon: "bg-[#6364FF]",
+  instagram: "bg-[#E4405F]",
+  facebook: "bg-[#1877F2]",
+  linkedin: "bg-[#0A66C2]",
+  tiktok: "bg-slate-300 text-slate-900",
+  telegram: "bg-[#26A5E4]",
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  paused: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  archived: "bg-gray-100 text-gray-600 border-gray-200",
+  active: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  paused: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  archived: "bg-slate-500/15 text-slate-400 border-slate-500/30",
 };
 
 const KEYWORD_TYPE_COLORS: Record<string, string> = {
-  brand: "bg-indigo-100 text-indigo-700 border-indigo-200",
-  competitor: "bg-red-100 text-red-700 border-red-200",
-  product: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  campaign: "bg-amber-100 text-amber-700 border-amber-200",
-  topic: "bg-violet-100 text-violet-700 border-violet-200",
+  brand: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+  competitor: "bg-red-500/20 text-red-300 border-red-500/30",
+  product: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  campaign: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  topic: "bg-violet-500/20 text-violet-300 border-violet-500/30",
 };
 
 const KEYWORD_TYPES = ["brand", "competitor", "product", "campaign", "topic"] as const;
 
 const ALL_PLATFORMS = [
   { id: "twitter", label: "Twitter" },
+  { id: "reddit", label: "Reddit" },
+  { id: "news", label: "News & Blogs" },
+  { id: "youtube", label: "YouTube" },
+  { id: "mastodon", label: "Mastodon" },
   { id: "instagram", label: "Instagram" },
   { id: "facebook", label: "Facebook" },
   { id: "linkedin", label: "LinkedIn" },
-  { id: "youtube", label: "YouTube" },
-  { id: "reddit", label: "Reddit" },
   { id: "tiktok", label: "TikTok" },
-  { id: "news", label: "News & Blogs" },
-];
-
-// Mock recent mentions for overview
-const RECENT_MENTIONS = [
-  { id: 1, text: "Loving the new NovaBrand serum! Skin feels amazing.", platform: "twitter", sentiment: "positive", time: "2h ago" },
-  { id: 2, text: "NovaBrand customer service needs improvement. Waited 3 days for a reply.", platform: "reddit", sentiment: "negative", time: "4h ago" },
-  { id: 3, text: "Comparing NovaBrand vs GlowCo moisturizers - full review coming soon!", platform: "youtube", sentiment: "neutral", time: "6h ago" },
-  { id: 4, text: "The NovaBrand pop-up in NYC was incredible! So many free samples.", platform: "instagram", sentiment: "positive", time: "8h ago" },
-  { id: 5, text: "Anyone else notice NovaBrand raised their prices again?", platform: "twitter", sentiment: "negative", time: "12h ago" },
+  { id: "telegram", label: "Telegram" },
 ];
 
 type TabKey = "overview" | "keywords" | "settings";
@@ -96,29 +93,33 @@ export default function ProjectDetailPage() {
     error,
     updateProject,
     addKeyword,
-    removeKeyword,
-    toggleKeywordStatus,
+    triggerCollection,
+    refetch,
   } = useProject(projectId);
 
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-      </div>
+      <AppShell title="Project">
+        <div className="flex items-center justify-center h-64">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+        </div>
+      </AppShell>
     );
   }
 
   if (error || !project) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <AlertTriangle className="h-12 w-12 text-gray-400 mb-3" />
-        <p className="text-lg font-medium text-gray-600">Project not found</p>
-        <Link href="/projects" className="text-sm text-indigo-600 hover:text-indigo-700 mt-2">
-          Back to projects
-        </Link>
-      </div>
+      <AppShell title="Project">
+        <div className="flex flex-col items-center justify-center h-64">
+          <AlertTriangle className="h-12 w-12 text-slate-600 mb-3" />
+          <p className="text-lg font-medium text-slate-300">Project not found</p>
+          <Link href="/projects" className="text-sm text-indigo-400 hover:text-indigo-300 mt-2">
+            Back to projects
+          </Link>
+        </div>
+      </AppShell>
     );
   }
 
@@ -129,13 +130,13 @@ export default function ProjectDetailPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppShell title={project.name}>
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <Link
             href="/projects"
-            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4"
+            className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors mb-4"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Projects
@@ -143,23 +144,26 @@ export default function ProjectDetailPage() {
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+                <h1 className="text-2xl font-bold text-slate-100">{project.name}</h1>
                 <span
                   className={cn(
                     "inline-flex items-center px-2.5 py-0.5 text-xs font-semibold rounded-full border",
-                    STATUS_STYLES[project.status]
+                    STATUS_STYLES[project.status] || STATUS_STYLES.archived
                   )}
                 >
                   {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
                 </span>
               </div>
-              <p className="text-sm text-gray-500 mt-1">{project.client_name}</p>
+              <p className="text-sm text-slate-400 mt-1 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                {project.client_name}
+              </p>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200 mb-6">
+        <div className="border-b border-slate-800 mb-6">
           <nav className="flex gap-6">
             {tabs.map((tab) => (
               <button
@@ -168,8 +172,8 @@ export default function ProjectDetailPage() {
                 className={cn(
                   "flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-colors",
                   activeTab === tab.key
-                    ? "border-indigo-600 text-indigo-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700"
+                    ? "border-indigo-500 text-indigo-400"
+                    : "border-transparent text-slate-500 hover:text-slate-300"
                 )}
               >
                 <tab.icon className="h-4 w-4" />
@@ -180,26 +184,34 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Tab content */}
-        {activeTab === "overview" && <OverviewTab project={project} />}
+        {activeTab === "overview" && (
+          <OverviewTab project={project} onTriggerCollection={triggerCollection} />
+        )}
         {activeTab === "keywords" && (
           <KeywordsTab
             keywords={project.keywords}
             onAdd={addKeyword}
-            onRemove={removeKeyword}
-            onToggle={toggleKeywordStatus}
           />
         )}
         {activeTab === "settings" && (
           <SettingsTab project={project} onUpdate={updateProject} />
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
 
 // ---------- Overview Tab ----------
 
-function OverviewTab({ project }: { project: ReturnType<typeof useProject>["project"] & {} }) {
+function OverviewTab({
+  project,
+  onTriggerCollection,
+}: {
+  project: Project;
+  onTriggerCollection: (hoursBack: number) => Promise<any>;
+}) {
+  const [isCollecting, setIsCollecting] = useState(false);
+
   const sentimentLabel =
     project.avg_sentiment > 0.2
       ? "Positive"
@@ -208,154 +220,193 @@ function OverviewTab({ project }: { project: ReturnType<typeof useProject>["proj
         : "Neutral";
   const sentimentColor =
     project.avg_sentiment > 0.2
-      ? "text-emerald-600"
+      ? "text-emerald-400"
       : project.avg_sentiment < -0.2
-        ? "text-red-600"
-        : "text-gray-600";
+        ? "text-red-400"
+        : "text-slate-400";
+
+  async function handleCollect() {
+    setIsCollecting(true);
+    try {
+      await onTriggerCollection(24);
+      toast.success("Data collection triggered successfully");
+    } catch (err: any) {
+      console.error("Failed to trigger collection:", err);
+      toast.error("Failed to trigger collection");
+    } finally {
+      setIsCollecting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
       {/* Project info */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">Project Information</h2>
-        <p className="text-sm text-gray-600 mb-4">{project.description}</p>
-        <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" />
-            Created {formatDate(project.created_at)}
-          </span>
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" />
-            Updated {formatDate(project.updated_at)}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-3">
-          {project.platforms.map((p) => (
-            <span
-              key={p}
-              className={cn(
-                "h-6 px-2 rounded text-white text-[10px] font-bold inline-flex items-center justify-center",
-                PLATFORM_COLORS[p] || "bg-gray-500"
+      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100 mb-2">Project Information</h2>
+            <p className="text-sm text-slate-400 mb-4">
+              {project.description || "No description provided."}
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                Created {project.created_at ? formatDate(project.created_at) : "---"}
+              </span>
+              {project.updated_at && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Updated {formatDate(project.updated_at)}
+                </span>
               )}
-            >
-              {PLATFORM_LABELS[p] || p}
-            </span>
-          ))}
+            </div>
+            <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+              {project.platforms.map((p) => (
+                <span
+                  key={p}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-semibold inline-flex items-center justify-center text-white",
+                    PLATFORM_COLORS[p] || "bg-slate-600"
+                  )}
+                >
+                  {PLATFORM_LABELS[p] || p}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={handleCollect}
+            disabled={isCollecting}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors shrink-0"
+          >
+            {isCollecting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Collecting...
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" /> Trigger Collection
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center">
-              <MessageSquare className="h-5 w-5 text-indigo-600" />
+            <div className="h-10 w-10 rounded-lg bg-indigo-500/15 flex items-center justify-center">
+              <MessageSquare className="h-5 w-5 text-indigo-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-2xl font-bold text-slate-100">
                 {formatNumber(project.mention_count)}
               </p>
-              <p className="text-xs text-gray-500">Total Mentions</p>
+              <p className="text-xs text-slate-500">Total Mentions</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-              <TrendingUp className="h-5 w-5 text-emerald-600" />
+            <div className="h-10 w-10 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-emerald-400" />
             </div>
             <div>
               <p className={cn("text-2xl font-bold", sentimentColor)}>
                 {project.avg_sentiment > 0 ? "+" : ""}
                 {project.avg_sentiment.toFixed(2)}
               </p>
-              <p className="text-xs text-gray-500">Avg Sentiment ({sentimentLabel})</p>
+              <p className="text-xs text-slate-500">Avg Sentiment ({sentimentLabel})</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-violet-50 flex items-center justify-center">
-              <Eye className="h-5 w-5 text-violet-600" />
+            <div className="h-10 w-10 rounded-lg bg-violet-500/15 flex items-center justify-center">
+              <Eye className="h-5 w-5 text-violet-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-2xl font-bold text-slate-100">
                 {formatNumber(project.total_reach)}
               </p>
-              <p className="text-xs text-gray-500">Total Reach</p>
+              <p className="text-xs text-slate-500">Total Reach</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center">
-              <Target className="h-5 w-5 text-amber-600" />
+            <div className="h-10 w-10 rounded-lg bg-amber-500/15 flex items-center justify-center">
+              <Target className="h-5 w-5 text-amber-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">
-                {project.keywords.filter((k) => k.status === "active").length}
+              <p className="text-2xl font-bold text-slate-100">
+                {project.keywords.filter((k) => k.is_active).length}
               </p>
-              <p className="text-xs text-gray-500">Active Keywords</p>
+              <p className="text-xs text-slate-500">Active Keywords</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Activity chart placeholder + recent mentions */}
+      {/* Platforms + Keywords summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Mention Activity (7 days)</h3>
-          <div className="h-48 flex items-end gap-2 px-2">
-            {[65, 42, 78, 55, 91, 68, 84].map((v, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full bg-indigo-500 rounded-t-md transition-all hover:bg-indigo-600"
-                  style={{ height: `${(v / 100) * 160}px` }}
-                />
-                <span className="text-[10px] text-gray-400">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}
-                </span>
-              </div>
-            ))}
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+          <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+            <Globe className="h-4 w-4 text-slate-400" />
+            Monitored Platforms
+          </h3>
+          <div className="space-y-2">
+            {project.platforms.length === 0 ? (
+              <p className="text-sm text-slate-500">No platforms configured.</p>
+            ) : (
+              project.platforms.map((p) => (
+                <div key={p} className="flex items-center gap-3 p-2 bg-slate-800/40 rounded-lg">
+                  <span
+                    className={cn(
+                      "h-7 w-7 rounded text-white text-[9px] font-bold inline-flex items-center justify-center shrink-0",
+                      PLATFORM_COLORS[p] || "bg-slate-600"
+                    )}
+                  >
+                    {(PLATFORM_LABELS[p] || p).substring(0, 2)}
+                  </span>
+                  <span className="text-sm font-medium text-slate-300">
+                    {PLATFORM_LABELS[p] || p}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Recent Mentions</h3>
-          <div className="space-y-3">
-            {RECENT_MENTIONS.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100"
-              >
-                <span
-                  className={cn(
-                    "h-5 w-5 rounded text-white text-[8px] font-bold inline-flex items-center justify-center shrink-0 mt-0.5",
-                    PLATFORM_COLORS[m.platform] || "bg-gray-500"
-                  )}
-                >
-                  {(PLATFORM_LABELS[m.platform] || m.platform).charAt(0)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-700 line-clamp-2">{m.text}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={cn(
-                        "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
-                        m.sentiment === "positive"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : m.sentiment === "negative"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-600"
-                      )}
-                    >
-                      {m.sentiment}
-                    </span>
-                    <span className="text-[10px] text-gray-400">{m.time}</span>
-                  </div>
+        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+          <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+            <Hash className="h-4 w-4 text-slate-400" />
+            Keywords ({project.keywords.length})
+          </h3>
+          <div className="space-y-2">
+            {project.keywords.length === 0 ? (
+              <p className="text-sm text-slate-500">No keywords configured.</p>
+            ) : (
+              project.keywords.slice(0, 8).map((kw) => (
+                <div key={kw.id} className="flex items-center gap-3 p-2 bg-slate-800/40 rounded-lg">
+                  <span className="text-sm font-medium text-slate-300 flex-1">{kw.term}</span>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 text-[10px] font-semibold rounded-full border",
+                      KEYWORD_TYPE_COLORS[kw.keyword_type] || "bg-slate-500/20 text-slate-400 border-slate-500/30"
+                    )}
+                  >
+                    {kw.keyword_type}
+                  </span>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
+            {project.keywords.length > 8 && (
+              <p className="text-xs text-slate-500 text-center pt-1">
+                +{project.keywords.length - 8} more keywords
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -368,33 +419,39 @@ function OverviewTab({ project }: { project: ReturnType<typeof useProject>["proj
 function KeywordsTab({
   keywords,
   onAdd,
-  onRemove,
-  onToggle,
 }: {
   keywords: ProjectKeyword[];
-  onAdd: (kw: Omit<ProjectKeyword, "id">) => void;
-  onRemove: (id: number) => void;
-  onToggle: (id: number) => void;
+  onAdd: (term: string, keywordType: string) => Promise<any>;
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newTerm, setNewTerm] = useState("");
-  const [newType, setNewType] = useState<ProjectKeyword["type"]>("brand");
+  const [newType, setNewType] = useState("brand");
+  const [isAdding, setIsAdding] = useState(false);
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!newTerm.trim()) return;
-    onAdd({ term: newTerm.trim(), type: newType, status: "active" });
-    setNewTerm("");
-    setShowAdd(false);
+    setIsAdding(true);
+    try {
+      await onAdd(newTerm.trim(), newType);
+      toast.success(`Keyword "${newTerm.trim()}" added`);
+      setNewTerm("");
+      setShowAdd(false);
+    } catch (err: any) {
+      console.error("Failed to add keyword:", err);
+      toast.error("Failed to add keyword");
+    } finally {
+      setIsAdding(false);
+    }
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200">
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="bg-slate-900/60 rounded-xl border border-slate-800">
+      <div className="flex items-center justify-between p-4 border-b border-slate-800">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Keywords</h2>
-          <p className="text-sm text-gray-500">
-            {keywords.filter((k) => k.status === "active").length} active,{" "}
-            {keywords.filter((k) => k.status === "inactive").length} inactive
+          <h2 className="text-base font-semibold text-slate-100">Keywords</h2>
+          <p className="text-sm text-slate-500">
+            {keywords.filter((k) => k.is_active).length} active,{" "}
+            {keywords.filter((k) => !k.is_active).length} inactive
           </p>
         </div>
         <button
@@ -407,20 +464,20 @@ function KeywordsTab({
 
       {/* Add keyword inline form */}
       {showAdd && (
-        <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
+        <div className="p-4 bg-indigo-500/10 border-b border-indigo-500/20 flex items-center gap-2">
           <input
             type="text"
             value={newTerm}
             onChange={(e) => setNewTerm(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="Keyword term..."
-            className="flex-1 h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 h-9 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             autoFocus
           />
           <select
             value={newType}
-            onChange={(e) => setNewType(e.target.value as ProjectKeyword["type"])}
-            className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm"
+            onChange={(e) => setNewType(e.target.value)}
+            className="h-9 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {KEYWORD_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -430,13 +487,19 @@ function KeywordsTab({
           </select>
           <button
             onClick={handleAdd}
-            className="inline-flex items-center gap-1 px-3 h-9 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+            disabled={isAdding}
+            className="inline-flex items-center gap-1 px-3 h-9 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-60"
           >
-            <Check className="h-4 w-4" /> Add
+            {isAdding ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
+            Add
           </button>
           <button
             onClick={() => setShowAdd(false)}
-            className="p-2 text-gray-400 hover:text-gray-600"
+            className="p-2 text-slate-500 hover:text-slate-300"
           >
             <X className="h-4 w-4" />
           </button>
@@ -447,70 +510,45 @@ function KeywordsTab({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/50">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <tr className="border-b border-slate-800 bg-slate-800/30">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Term
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Type
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Status
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Actions
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-slate-800/60">
             {keywords.map((kw) => (
-              <tr key={kw.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={kw.id} className="hover:bg-slate-800/30 transition-colors">
                 <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-gray-900">{kw.term}</span>
+                  <span className="text-sm font-medium text-slate-200">{kw.term}</span>
                 </td>
                 <td className="px-4 py-3">
                   <span
                     className={cn(
                       "inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-full border",
-                      KEYWORD_TYPE_COLORS[kw.type]
+                      KEYWORD_TYPE_COLORS[kw.keyword_type] || "bg-slate-500/20 text-slate-400 border-slate-500/30"
                     )}
                   >
-                    {kw.type.charAt(0).toUpperCase() + kw.type.slice(1)}
+                    {kw.keyword_type.charAt(0).toUpperCase() + kw.keyword_type.slice(1)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <span
                     className={cn(
                       "inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full",
-                      kw.status === "active"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-100 text-gray-500"
+                      kw.is_active
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-slate-500/15 text-slate-500"
                     )}
                   >
-                    {kw.status === "active" ? "Active" : "Inactive"}
+                    {kw.is_active ? "Active" : "Inactive"}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => onToggle(kw.id)}
-                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                      title={kw.status === "active" ? "Deactivate" : "Activate"}
-                    >
-                      {kw.status === "active" ? (
-                        <ToggleRight className="h-5 w-5 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="h-5 w-5" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => onRemove(kw.id)}
-                      className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
                 </td>
               </tr>
             ))}
@@ -519,8 +557,8 @@ function KeywordsTab({
       </div>
 
       {keywords.length === 0 && (
-        <div className="py-12 text-center text-gray-400">
-          <Hash className="h-10 w-10 mx-auto mb-2" />
+        <div className="py-12 text-center text-slate-500">
+          <Hash className="h-10 w-10 mx-auto mb-2 text-slate-600" />
           <p>No keywords configured</p>
         </div>
       )}
@@ -534,8 +572,8 @@ function SettingsTab({
   project,
   onUpdate,
 }: {
-  project: NonNullable<ReturnType<typeof useProject>["project"]>;
-  onUpdate: (u: Partial<typeof project>) => void;
+  project: Project;
+  onUpdate: (u: Record<string, any>) => Promise<any>;
 }) {
   const router = useRouter();
   const [name, setName] = useState(project.name);
@@ -553,50 +591,61 @@ function SettingsTab({
 
   async function handleSave() {
     setIsSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
-    onUpdate({ name, description, platforms, status });
-    setIsSaving(false);
+    try {
+      await onUpdate({ name, description, platforms, status });
+      toast.success("Project updated successfully");
+    } catch (err: any) {
+      console.error("Failed to update project:", err);
+      toast.error("Failed to save changes");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function handleArchive() {
-    onUpdate({ status: "archived" });
-    setShowArchiveConfirm(false);
-    router.push("/projects");
+    try {
+      await onUpdate({ status: "archived" });
+      toast.success("Project archived");
+      setShowArchiveConfirm(false);
+      router.push("/projects");
+    } catch (err: any) {
+      toast.error("Failed to archive project");
+    }
   }
 
   return (
     <div className="space-y-6">
       {/* Edit form */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Project Settings</h2>
+      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+        <h2 className="text-base font-semibold text-slate-100 mb-4">Project Settings</h2>
 
         <div className="space-y-4 max-w-2xl">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Project Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              className="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as typeof status)}
-              className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="active">Active</option>
               <option value="paused">Paused</option>
@@ -605,8 +654,8 @@ function SettingsTab({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Platforms</label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Platforms</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               {ALL_PLATFORMS.map((p) => {
                 const selected = platforms.includes(p.id);
                 return (
@@ -617,20 +666,20 @@ function SettingsTab({
                     className={cn(
                       "flex items-center gap-2 p-2.5 rounded-lg border transition-all text-left text-sm",
                       selected
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                        : "border-slate-700 text-slate-400 hover:border-slate-600"
                     )}
                   >
                     <span
                       className={cn(
                         "h-5 w-5 rounded text-white text-[8px] font-bold inline-flex items-center justify-center",
-                        PLATFORM_COLORS[p.id] || "bg-gray-500"
+                        PLATFORM_COLORS[p.id] || "bg-slate-600"
                       )}
                     >
                       {p.label.charAt(0)}
                     </span>
-                    {p.label}
-                    {selected && <Check className="h-3.5 w-3.5 ml-auto text-indigo-600" />}
+                    <span className="truncate">{p.label}</span>
+                    {selected && <Check className="h-3.5 w-3.5 ml-auto text-indigo-400 shrink-0" />}
                   </button>
                 );
               })}
@@ -656,17 +705,17 @@ function SettingsTab({
       </div>
 
       {/* Danger zone */}
-      <div className="bg-white rounded-xl border border-red-200 p-6">
-        <h2 className="text-base font-semibold text-red-700 mb-2">Danger Zone</h2>
-        <p className="text-sm text-gray-600 mb-4">
+      <div className="bg-slate-900/60 rounded-xl border border-red-500/30 p-6">
+        <h2 className="text-base font-semibold text-red-400 mb-2">Danger Zone</h2>
+        <p className="text-sm text-slate-400 mb-4">
           Archiving a project will stop all monitoring and data collection. This action can be
           reversed by changing the project status.
         </p>
 
         {showArchiveConfirm ? (
-          <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg border border-red-200">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
-            <p className="text-sm text-red-700 flex-1">
+          <div className="flex items-center gap-3 p-4 bg-red-500/10 rounded-lg border border-red-500/20">
+            <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+            <p className="text-sm text-red-300 flex-1">
               Are you sure you want to archive this project? Monitoring will be paused.
             </p>
             <button
@@ -677,7 +726,7 @@ function SettingsTab({
             </button>
             <button
               onClick={() => setShowArchiveConfirm(false)}
-              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg hover:bg-slate-700"
             >
               Cancel
             </button>
@@ -685,7 +734,7 @@ function SettingsTab({
         ) : (
           <button
             onClick={() => setShowArchiveConfirm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-red-300 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
           >
             <AlertTriangle className="h-4 w-4" />
             Archive Project

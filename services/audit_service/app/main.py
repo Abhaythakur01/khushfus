@@ -23,7 +23,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import (
     DateTime,
@@ -40,6 +41,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import STREAM_AUDIT, EventBus
+from shared.logging_config import setup_logging
 from shared.models import (
     AuditLog,
     Base,
@@ -49,12 +51,14 @@ from shared.models import (
     Report,
     User,
 )
+from shared.service_utils import ConsumerMetrics
 from shared.tracing import setup_tracing
 
 setup_tracing("audit")
-
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("audit-service")
 logger = logging.getLogger(__name__)
+
+metrics = ConsumerMetrics("audit-service")
 
 # ---------------------------------------------------------------------------
 # JWT Authentication
@@ -189,12 +193,12 @@ class GDPRPurgeOut(BaseModel):
 # ============================================================
 
 
-async def audit_consumer(bus: EventBus, session_factory):
+async def audit_consumer(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """Consume audit events from STREAM_AUDIT and persist them."""
     await bus.ensure_group(STREAM_AUDIT, GROUP_NAME)
     logger.info("Audit consumer listening on '%s'...", STREAM_AUDIT)
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_AUDIT,
@@ -217,10 +221,14 @@ async def audit_consumer(bus: EventBus, session_factory):
                     async with session_factory() as db:
                         db.add(log)
                         await db.commit()
+                    metrics.record_processed()
                 except Exception as e:
+                    metrics.record_failed()
                     logger.error("Failed to store audit log %s: %s", msg_id, e)
                 finally:
                     await bus.ack(STREAM_AUDIT, GROUP_NAME, msg_id)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.error("Audit consumer error: %s", e)
             await asyncio.sleep(1)
@@ -340,16 +348,16 @@ async def enforce_retention_cleanup(session_factory) -> dict:
     return summary
 
 
-async def retention_enforcement_loop(session_factory):
+async def retention_enforcement_loop(session_factory, shutdown_event: asyncio.Event):
     """Background loop that enforces retention on a configurable interval."""
     logger.info(
         "Retention enforcement loop started (interval=%ds, default_days=%d)",
         RETENTION_CHECK_INTERVAL, DEFAULT_RETENTION_DAYS,
     )
-    while True:
+    while not shutdown_event.is_set():
         try:
-            await asyncio.sleep(RETENTION_CHECK_INTERVAL)
             await enforce_retention_cleanup(session_factory)
+            await asyncio.sleep(RETENTION_CHECK_INTERVAL)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -372,12 +380,16 @@ async def lifespan(app: FastAPI):
     app.state.db_session = session_factory
     app.state.event_bus = bus
 
+    shutdown_event = asyncio.Event()
+    app.state.shutdown_event = shutdown_event
+
     # Start background consumer
-    consumer_task = asyncio.create_task(audit_consumer(bus, session_factory))
-    retention_task = asyncio.create_task(retention_enforcement_loop(session_factory))
+    consumer_task = asyncio.create_task(audit_consumer(bus, session_factory, shutdown_event))
+    retention_task = asyncio.create_task(retention_enforcement_loop(session_factory, shutdown_event))
 
     yield
 
+    shutdown_event.set()
     retention_task.cancel()
     consumer_task.cancel()
     for task in (consumer_task, retention_task):

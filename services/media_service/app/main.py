@@ -25,21 +25,25 @@ import torch
 from PIL import Image
 from sqlalchemy import update
 
+from shared.circuit_breaker import CircuitBreaker
 from shared.database import create_db
-from shared.url_validator import validate_url
 from shared.events import (
     STREAM_MEDIA_ANALYSIS,
     STREAM_MEDIA_RESULTS,
     EventBus,
     MediaResultEvent,
 )
+from shared.logging_config import setup_logging
 from shared.models import Mention
+from shared.service_utils import ConsumerMetrics, start_liveness_server
+from shared.url_validator import validate_url
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+_download_breaker = CircuitBreaker(name="media-download")
+
+setup_logging("media-service")
 logger = logging.getLogger(__name__)
+
+metrics = ConsumerMetrics("media-service")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -85,6 +89,11 @@ LOGO_CANDIDATES = [
     "no brand logo",
 ]
 LOGO_CONFIDENCE_THRESHOLD = float(os.getenv("LOGO_CONFIDENCE_THRESHOLD", "0.35"))
+
+# Concurrency controls
+MAX_CONCURRENT = int(os.getenv("MEDIA_MAX_CONCURRENT", "3"))
+_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+_gpu_lock = asyncio.Lock()
 
 # ---------------------------------------------------------------------------
 # Lazy-loaded ML models (heavy; only initialise once on first use)
@@ -146,7 +155,12 @@ def _get_whisper_model():
         import whisper
 
         _whisper_model = whisper.load_model(WHISPER_MODEL_SIZE)
-        logger.info("Whisper model loaded: %s", WHISPER_MODEL_SIZE)
+        logger.info(
+            "Whisper model loaded: %s — CUDA %s, using %s",
+            WHISPER_MODEL_SIZE,
+            "available" if torch.cuda.is_available() else "not available (CPU mode)",
+            "GPU" if torch.cuda.is_available() else "CPU",
+        )
         return _whisper_model
     except ImportError:
         logger.warning("whisper not installed — audio transcription disabled")
@@ -176,7 +190,12 @@ def _get_clip():
             _clip_text_features = _clip_model.get_text_features(**inputs)
             _clip_text_features = _clip_text_features / _clip_text_features.norm(dim=-1, keepdim=True)
 
-        logger.info("CLIP model loaded: %s", CLIP_MODEL_NAME)
+        logger.info(
+            "CLIP model loaded: %s — CUDA %s, using %s",
+            CLIP_MODEL_NAME,
+            "available" if torch.cuda.is_available() else "not available (CPU mode)",
+            "GPU" if torch.cuda.is_available() else "CPU",
+        )
         return _clip_model, _clip_processor, _clip_text_features
     except ImportError:
         logger.warning("transformers/CLIP not installed — logo detection disabled")
@@ -192,24 +211,28 @@ async def download_media(url: str, dest_dir: str) -> str:
     """Download a media file from *url* into *dest_dir*. Returns local path."""
     validate_url(url)
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=httpx.Timeout(DOWNLOAD_TIMEOUT, connect=30.0),
-    ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
+    async def _do_download():
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=httpx.Timeout(DOWNLOAD_TIMEOUT, connect=30.0),
+        ) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp
 
-        content_type = resp.headers.get("content-type", "application/octet-stream")
-        ext = _ext_from_content_type(content_type, url)
-        local_path = os.path.join(dest_dir, f"media{ext}")
+    resp = await _download_breaker.call(_do_download)
 
-        # Enforce size limit
-        content_length = len(resp.content)
-        if content_length > MAX_MEDIA_SIZE_MB * 1024 * 1024:
-            raise ValueError(f"Media file too large ({content_length / 1024 / 1024:.1f} MB > {MAX_MEDIA_SIZE_MB} MB)")
+    content_type = resp.headers.get("content-type", "application/octet-stream")
+    ext = _ext_from_content_type(content_type, url)
+    local_path = os.path.join(dest_dir, f"media{ext}")
 
-        with open(local_path, "wb") as f:
-            f.write(resp.content)
+    # Enforce size limit
+    content_length = len(resp.content)
+    if content_length > MAX_MEDIA_SIZE_MB * 1024 * 1024:
+        raise ValueError(f"Media file too large ({content_length / 1024 / 1024:.1f} MB > {MAX_MEDIA_SIZE_MB} MB)")
+
+    with open(local_path, "wb") as f:
+        f.write(resp.content)
 
     return local_path
 
@@ -674,8 +697,15 @@ async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.E
 
             for msg_id, data in messages:
                 try:
-                    await process_message(bus, session_factory, msg_id, data)
+                    async with _semaphore:
+                        if torch.cuda.is_available():
+                            async with _gpu_lock:
+                                await process_message(bus, session_factory, msg_id, data)
+                        else:
+                            await process_message(bus, session_factory, msg_id, data)
+                    metrics.record_processed()
                 except Exception as exc:
+                    metrics.record_failed()
                     logger.error("Failed to process media message %s: %s", msg_id, exc, exc_info=True)
                 finally:
                     await bus.ack(STREAM_MEDIA_ANALYSIS, GROUP_NAME, msg_id)
@@ -706,11 +736,15 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9096"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Media Analysis Service started (group=%s, consumer=%s)", GROUP_NAME, CONSUMER_NAME)
 
     try:
         await process_loop(bus, session_factory, shutdown_event)
     finally:
+        liveness.close()
         logger.info("Media Analysis Service shutting down gracefully")
         await bus.close()
         await engine.dispose()

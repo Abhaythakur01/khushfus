@@ -1,0 +1,46 @@
+# =============================================================================
+# docker-compose.override.yml.example
+# =============================================================================
+# Copy this file to docker-compose.override.yml and fill in real secrets
+# for production or staging deployments.
+#
+# NEVER commit docker-compose.override.yml to version control.
+# =============================================================================
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"  # Required: strong random password
+
+  gateway:
+    environment: &prod-env
+      DATABASE_URL: "postgresql+asyncpg://khushfus:${POSTGRES_PASSWORD}@postgres:5432/khushfus"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY}"  # Required: generate with `openssl rand -hex 32`
+      ENVIRONMENT: "production"
+      WEBHOOK_SIGNING_SECRET: "${WEBHOOK_SIGNING_SECRET}"  # Required: generate with `openssl rand -hex 32`
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"  # Required: generate with `openssl rand -hex 32`
+
+  redis:
+    command: redis-server --requirepass "${REDIS_PASSWORD}"
+
+  opensearch:
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=false  # Security enabled in production
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+
+  grafana:
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}  # Required: strong password
+
+# All other services inherit from &prod-env via <<: *common-env in the base file.
+# Set these environment variables in your shell or .env file:
+#
+#   export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+#   export REDIS_PASSWORD="$(openssl rand -hex 16)"
+#   export JWT_SECRET_KEY="$(openssl rand -hex 32)"
+#   export WEBHOOK_SIGNING_SECRET="$(openssl rand -hex 32)"
+#   export INTERNAL_SERVICE_TOKEN="$(openssl rand -hex 32)"
+#   export GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 16)"
+#   export DISABLE_SECURITY_PLUGIN=false

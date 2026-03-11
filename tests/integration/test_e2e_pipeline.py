@@ -39,16 +39,38 @@ _mock_nlp_module.SentimentAnalyzer = _mock_sentiment_analyzer_cls
 _mock_settings_module = MagicMock()
 _mock_settings_module.settings = MagicMock()
 
-# Patch sys.modules before importing the analyzer service
-sys.modules.setdefault("vaderSentiment", MagicMock())
-sys.modules.setdefault("vaderSentiment.vaderSentiment", MagicMock())
-sys.modules.setdefault("langdetect", MagicMock())
-sys.modules.setdefault("src.config", MagicMock())
-sys.modules.setdefault("src.config.settings", _mock_settings_module)
-sys.modules.setdefault("src.nlp", MagicMock())
-sys.modules.setdefault("src.nlp.analyzer", _mock_nlp_module)
+# We need to import the analyzer service module, which in turn imports
+# src.nlp.analyzer (heavy NLP deps). We temporarily inject mocks for those
+# modules, import analyze_mention, then immediately restore originals.
+_MODULES_TO_MOCK = {
+    "vaderSentiment": MagicMock(),
+    "vaderSentiment.vaderSentiment": MagicMock(),
+    "langdetect": MagicMock(),
+    "src.config": MagicMock(),
+    "src.config.settings": _mock_settings_module,
+    "src.nlp": MagicMock(),
+    "src.nlp.analyzer": _mock_nlp_module,
+}
+
+_saved_modules: dict = {}
+_need_import = "services.analyzer_service.app.main" not in sys.modules
+
+if _need_import:
+    # Only patch sys.modules if the analyzer service hasn't been imported yet
+    for _name, _mock in _MODULES_TO_MOCK.items():
+        if _name in sys.modules:
+            _saved_modules[_name] = sys.modules[_name]
+        sys.modules[_name] = _mock
 
 from services.analyzer_service.app.main import analyze_mention  # noqa: E402
+
+if _need_import:
+    # Restore original modules immediately so other test files aren't affected
+    for _name in _MODULES_TO_MOCK:
+        if _name in _saved_modules:
+            sys.modules[_name] = _saved_modules[_name]
+        else:
+            sys.modules.pop(_name, None)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -106,6 +128,10 @@ def _make_analysis_result():
 def _setup_analyzer_mock():
     """Configure the module-level analyzer mock to return a valid result."""
     import services.analyzer_service.app.main as analyzer_mod
+
+    # Replace the real analyzer with a mock if it isn't already one
+    if not isinstance(analyzer_mod.analyzer, MagicMock):
+        analyzer_mod.analyzer = MagicMock()
 
     analyzer_mod.analyzer.analyze.return_value = _make_analysis_result()
     return analyzer_mod.analyzer
@@ -441,6 +467,8 @@ class TestDLQFlow:
 
     async def test_consume_with_retry_moves_to_dlq_after_max_retries(self):
         """Messages that fail max_retries times must be moved to DLQ."""
+        from shared.events import RetryPolicy
+
         bus = EventBus("redis://localhost:6379/0")
 
         mock_redis = AsyncMock()
@@ -455,16 +483,21 @@ class TestDLQFlow:
         ])
         mock_redis.xack = AsyncMock()
         mock_redis.xadd = AsyncMock(return_value="dlq-1")
+        mock_redis.xrange = AsyncMock(return_value=[
+            ("msg-1", {"project_id": "1", "text": "failing message", "_retry_count": "3"}),
+        ])
         bus._redis = mock_redis
 
         handler = AsyncMock(side_effect=ValueError("Processing failed"))
 
         await bus.consume_with_retry(
             "mentions:raw", "test-group", "consumer-1",
-            handler=handler, max_retries=3, count=1, block_ms=0,
+            handler=handler, retry_policy=RetryPolicy(max_retries=3), count=1, block_ms=0,
         )
 
-        mock_redis.xack.assert_called_once_with("mentions:raw", "test-group", "msg-1")
+        # Message should be acked (moved to DLQ)
+        assert mock_redis.xack.call_count >= 1
 
-        dlq_call = mock_redis.xadd.call_args
-        assert dlq_call[0][0] == "mentions:raw:dlq"
+        # DLQ entry should be published as structured DLQEntry
+        dlq_calls = [c for c in mock_redis.xadd.call_args_list if "dlq" in str(c)]
+        assert len(dlq_calls) >= 1

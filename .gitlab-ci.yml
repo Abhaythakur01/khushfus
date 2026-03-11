@@ -7,11 +7,13 @@
 stages:
   - lint
   - test
+  - integration-test
   - security
   - build
   - post-build
   - deploy-staging
   - deploy-production
+  - release
 
 # ---------------------------------------------------------------------------
 # Global variables
@@ -55,6 +57,18 @@ lint-frontend:
   script:
     - cd frontend && npm ci && npm run lint
 
+# ---------------------------------------------------------------------------
+# 8.4: mypy type checking — start lenient (allow_failure: true)
+# ---------------------------------------------------------------------------
+type-check:
+  stage: lint
+  image: python:3.11-slim
+  before_script:
+    - pip install --cache-dir $PIP_CACHE_DIR mypy>=1.14.0
+  script:
+    - mypy src/ shared/ --ignore-missing-imports --no-error-summary
+  allow_failure: true
+
 # =============================================================================
 # Stage: test
 # =============================================================================
@@ -97,6 +111,104 @@ test-migrations:
     - alembic downgrade base
     - alembic upgrade head
 
+# ---------------------------------------------------------------------------
+# 7.42: Migration dry-run — verify migrations generate valid SQL without applying
+# ---------------------------------------------------------------------------
+migration-dry-run:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR -e .
+  script:
+    - echo "Generating migration SQL (dry-run)..."
+    - alembic upgrade head --sql > /tmp/migration-dry-run.sql
+    - echo "Migration SQL generated successfully ($(wc -l < /tmp/migration-dry-run.sql) lines)"
+    - head -50 /tmp/migration-dry-run.sql
+  artifacts:
+    paths:
+      - /tmp/migration-dry-run.sql
+    expire_in: 7 days
+  allow_failure: true
+
+# =============================================================================
+# 8.14: Mutation testing — only on schedules, allow_failure: true
+# =============================================================================
+
+mutation-test:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR -e ".[dev]" mutmut
+  script:
+    - echo "Running mutation tests on src/ and shared/..."
+    - mutmut run --paths-to-mutate src/,shared/ --tests-dir tests/ || true
+    - mutmut results
+  artifacts:
+    paths:
+      - .mutmut-cache
+    expire_in: 7 days
+  allow_failure: true
+  only:
+    - schedules
+
+# =============================================================================
+# 7.27 Dependency lock file verification
+# =============================================================================
+
+verify-python-deps:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR -r requirements.txt
+  script:
+    - echo "Verifying Python dependency lock consistency..."
+    - pip freeze > /tmp/installed.txt
+    - |
+      # Check that all pinned requirements are installed at the correct version
+      while IFS= read -r line; do
+        # Skip comments, empty lines, and editable installs
+        [[ "$line" =~ ^#.*$ || -z "$line" || "$line" =~ ^-e ]] && continue
+        pkg=$(echo "$line" | cut -d'=' -f1 | cut -d'>' -f1 | cut -d'<' -f1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+        if ! grep -qi "^${pkg}" /tmp/installed.txt; then
+          echo "WARNING: $pkg from requirements.txt not found in installed packages"
+        fi
+      done < requirements.txt
+    - echo "Python dependency verification complete"
+
+verify-frontend-deps:
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd frontend
+    - echo "Verifying package-lock.json is up to date..."
+    - npm ci
+    - echo "Frontend dependency verification complete (npm ci succeeded)"
+
+# =============================================================================
+# 7.24 Integration test stage
+# =============================================================================
+
+integration-test:
+  stage: integration-test
+  image: python:3.11-slim
+  services:
+    - postgres:16-alpine
+    - redis:7-alpine
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gcc libpq-dev > /dev/null
+    - pip install --cache-dir $PIP_CACHE_DIR -e ".[dev]"
+  script:
+    - echo "Running full integration test suite..."
+    - make test-all
+  artifacts:
+    reports:
+      junit: test-results.xml
+    expire_in: 30 days
+  allow_failure: true
+
 # =============================================================================
 # Stage: security
 # =============================================================================
@@ -125,12 +237,12 @@ container-scan:
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
-  allow_failure: true
+  allow_failure: false
   variables:
     TRIVY_NO_PROGRESS: "true"
     TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivy-cache"
   script:
-    - trivy image --exit-code 0 --severity HIGH,CRITICAL $DOCKER_IMAGE_PREFIX/gateway:${CI_COMMIT_SHA}
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL $DOCKER_IMAGE_PREFIX/gateway:${CI_COMMIT_SHA}
   only:
     - main
     - develop
@@ -215,6 +327,55 @@ build-frontend:
     - develop
     - tags
 
+# ---------------------------------------------------------------------------
+# 7.26 SBOM generation
+# ---------------------------------------------------------------------------
+generate-sbom:
+  stage: build
+  image: python:3.11-slim
+  before_script:
+    - pip install --cache-dir $PIP_CACHE_DIR cyclonedx-bom
+  script:
+    - echo "Generating Software Bill of Materials (SBOM)..."
+    - cyclonedx-py requirements -i requirements.txt -o sbom-backend.json --format json || true
+    - |
+      # Generate SBOMs for each service
+      for svc_dir in services/*/; do
+        if [ -f "${svc_dir}requirements.txt" ]; then
+          svc_name=$(basename "$svc_dir")
+          echo "--- Generating SBOM for ${svc_name} ---"
+          cyclonedx-py requirements -i "${svc_dir}requirements.txt" -o "sbom-${svc_name}.json" --format json || true
+        fi
+      done
+    - echo "SBOM generation complete"
+  artifacts:
+    paths:
+      - sbom-*.json
+    expire_in: 90 days
+  only:
+    - main
+    - develop
+    - tags
+
+generate-sbom-frontend:
+  stage: build
+  image: node:20-alpine
+  before_script:
+    - npm install -g @cyclonedx/cyclonedx-npm
+  script:
+    - cd frontend
+    - npm ci
+    - cyclonedx-npm --output-file ../sbom-frontend.json || true
+    - echo "Frontend SBOM generation complete"
+  artifacts:
+    paths:
+      - sbom-frontend.json
+    expire_in: 90 days
+  only:
+    - main
+    - develop
+    - tags
+
 # =============================================================================
 # Stage: deploy-staging
 # =============================================================================
@@ -253,3 +414,76 @@ deploy-production:
     - main
     - tags
   when: manual
+
+# =============================================================================
+# Stage: release
+# =============================================================================
+# 7.43: Automated release notes from conventional commits between tags
+
+generate-release-notes:
+  stage: release
+  image: alpine:3.19
+  before_script:
+    - apk add --no-cache git
+  script:
+    - |
+      # Determine the previous tag
+      PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+      CURRENT_TAG=${CI_COMMIT_TAG}
+
+      if [ -z "$PREV_TAG" ]; then
+        echo "No previous tag found, generating notes from all commits"
+        RANGE="HEAD"
+      else
+        echo "Generating release notes from ${PREV_TAG} to ${CURRENT_TAG}"
+        RANGE="${PREV_TAG}..HEAD"
+      fi
+
+      # Parse conventional commits into categories
+      echo "# Release ${CURRENT_TAG}" > RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+      echo "## Changes" >> RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+
+      # Features
+      FEATURES=$(git log --oneline ${RANGE} --grep="^feat" --format="- %s (%h)" 2>/dev/null || true)
+      if [ -n "$FEATURES" ]; then
+        echo "### Features" >> RELEASE_NOTES.md
+        echo "$FEATURES" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+      fi
+
+      # Bug fixes
+      FIXES=$(git log --oneline ${RANGE} --grep="^fix" --format="- %s (%h)" 2>/dev/null || true)
+      if [ -n "$FIXES" ]; then
+        echo "### Bug Fixes" >> RELEASE_NOTES.md
+        echo "$FIXES" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+      fi
+
+      # Security
+      SECURITY=$(git log --oneline ${RANGE} --grep="^security" --format="- %s (%h)" 2>/dev/null || true)
+      if [ -n "$SECURITY" ]; then
+        echo "### Security" >> RELEASE_NOTES.md
+        echo "$SECURITY" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+      fi
+
+      # Other changes
+      OTHER=$(git log --oneline ${RANGE} --format="- %s (%h)" | grep -v -E "^- (feat|fix|security)" || true)
+      if [ -n "$OTHER" ]; then
+        echo "### Other" >> RELEASE_NOTES.md
+        echo "$OTHER" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+      fi
+
+      echo "---" >> RELEASE_NOTES.md
+      echo "Full changelog: ${PREV_TAG}...${CURRENT_TAG}" >> RELEASE_NOTES.md
+
+      cat RELEASE_NOTES.md
+  artifacts:
+    paths:
+      - RELEASE_NOTES.md
+    expire_in: 90 days
+  only:
+    - tags

@@ -179,7 +179,9 @@ class WebScraperCollector(BaseCollector):
                             validate_url(actual_url)
                             urls.append(actual_url)
                         except ValueError as e:
-                            logger.warning(f"Skipping search result URL due to SSRF validation failure: {actual_url} — {e}")
+                            logger.warning(
+                                f"Skipping search result URL due to SSRF validation: {actual_url} — {e}"
+                            )
 
             # Scrape top results
             for url in urls[:5]:

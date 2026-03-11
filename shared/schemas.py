@@ -1,9 +1,11 @@
 """Shared Pydantic schemas used across services for API contracts."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, EmailStr, Field
+
+T = TypeVar("T")
 
 # ============================================================
 # Auth & Identity
@@ -122,18 +124,18 @@ class ApiKeyCreated(ApiKeyOut):
 
 
 class KeywordCreate(BaseModel):
-    term: str
-    keyword_type: str = "brand"
+    term: str = Field(min_length=1, max_length=200)
+    keyword_type: str = Field(default="brand", max_length=50)
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(max_length=200)
-    description: str | None = None
-    client_name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    client_name: str = Field(min_length=1, max_length=200)
     organization_id: int | None = None
-    platforms: str = "twitter,facebook,instagram,linkedin,youtube"
-    keywords: list[KeywordCreate] = []
-    competitor_ids: str | None = None
+    platforms: str = Field(default="twitter,facebook,instagram,linkedin,youtube", max_length=500)
+    keywords: list[KeywordCreate] = Field(default=[], max_length=100)
+    competitor_ids: str | None = Field(default=None, max_length=500)
 
 
 class ProjectUpdate(BaseModel):
@@ -215,6 +217,7 @@ class ReportOut(BaseModel):
     id: int
     report_type: str
     title: str
+    format: str = "pdf"
     period_start: datetime
     period_end: datetime
     created_at: datetime
@@ -227,12 +230,12 @@ class ReportOut(BaseModel):
 
 
 class AlertRuleCreate(BaseModel):
-    name: str
-    rule_type: str
-    threshold: float = 2.0
-    window_minutes: int = 60
-    channels: str = "email"
-    webhook_url: str | None = None
+    name: str = Field(min_length=1, max_length=200)
+    rule_type: str = Field(min_length=1, max_length=50)
+    threshold: float = Field(default=2.0, ge=0)
+    window_minutes: int = Field(default=60, ge=1, le=10080)
+    channels: str = Field(default="email", max_length=200)
+    webhook_url: str | None = Field(default=None, max_length=2000)
 
 
 class AlertRuleOut(BaseModel):
@@ -422,3 +425,41 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     service: str
     version: str = "0.1.0"
+
+
+# ============================================================
+# Pagination & Error Responses
+# ============================================================
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Standard paginated response wrapper."""
+
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response for all API endpoints."""
+
+    detail: str
+    error_code: str | None = None
+    request_id: str | None = None
+
+
+class ValidationErrorDetail(BaseModel):
+    """Detail item for validation errors."""
+
+    field: str
+    message: str
+    type: str
+
+
+class ValidationErrorResponse(BaseModel):
+    """422 validation error response."""
+
+    detail: list[ValidationErrorDetail]
+    request_id: str | None = None

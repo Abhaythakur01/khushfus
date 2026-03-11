@@ -18,19 +18,44 @@ from sqlalchemy import select
 
 from shared.database import create_db
 from shared.events import STREAM_RAW_MENTIONS, EventBus, RawMentionEvent
+from shared.logging_config import setup_logging
 from shared.models import Keyword, Project, ProjectStatus
+from shared.service_utils import ConsumerMetrics, backoff_with_jitter, start_liveness_server
 
 from .collectors import PLATFORM_COLLECTORS
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("collector-service")
 logger = logging.getLogger(__name__)
+
+metrics = ConsumerMetrics("collector-service")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 COLLECTION_INTERVAL_SECONDS = int(os.getenv("COLLECTION_INTERVAL", "3600"))  # 1 hour
+DEDUP_TTL = int(os.getenv("COLLECTOR_DEDUP_TTL_SECONDS", "86400"))
 
 GROUP_NAME = "collector-service"
 CONSUMER_NAME = f"collector-{os.getpid()}"
+
+
+MAX_RETRIES = int(os.getenv("COLLECTOR_MAX_RETRIES", "3"))
+
+
+async def _collect_with_retry(collector, keywords, since, platform_name, project_name):
+    """Collect with exponential backoff retry on transient failures."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            return await collector.collect(keywords, since)
+        except Exception as e:
+            if attempt == MAX_RETRIES - 1:
+                raise  # Final attempt — let caller handle
+            backoff = backoff_with_jitter(attempt)
+            logger.warning(
+                f"[{project_name}] {platform_name} attempt {attempt + 1}/{MAX_RETRIES} "
+                f"failed: {e}, retrying in {backoff}s"
+            )
+            await asyncio.sleep(backoff)
+    return []  # unreachable but satisfies type checker
 
 
 async def collect_project(bus: EventBus, session_factory, project_id: int, hours_back: int = 1):
@@ -59,7 +84,7 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
 
         collector = collector_cls()
         try:
-            raw_mentions = await collector.collect(keywords, since)
+            raw_mentions = await _collect_with_retry(collector, keywords, since, platform_name, project.name)
             logger.info(f"[{project.name}] {platform_name}: collected {len(raw_mentions)} mentions")
 
             # Publish each mention to the event bus (with dedup)
@@ -70,7 +95,7 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
                 if r and await r.exists(dedup_key):
                     continue
                 if r:
-                    await r.setex(dedup_key, 86400, "1")
+                    await r.setex(dedup_key, DEDUP_TTL, "1")
 
                 matched = [kw for kw in keywords if kw.lower() in m.text.lower()]
                 events.append(
@@ -96,8 +121,10 @@ async def collect_project(bus: EventBus, session_factory, project_id: int, hours
             if events:
                 await bus.publish_batch(STREAM_RAW_MENTIONS, events)
                 total += len(events)
+                metrics.record_processed(len(events))
 
         except Exception as e:
+            metrics.record_failed()
             logger.error(f"[{project.name}] {platform_name} failed: {e}")
 
     logger.info(f"[{project.name}] Published {total} raw mentions to event bus")
@@ -167,6 +194,9 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9092"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Collector Service started")
 
     try:
@@ -176,6 +206,7 @@ async def main():
             periodic_collection(bus, session_factory, shutdown_event),
         )
     finally:
+        liveness.close()
         logger.info("Collector Service shutting down gracefully")
         await bus.close()
         await engine.dispose()

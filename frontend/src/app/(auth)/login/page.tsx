@@ -18,24 +18,41 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validateFields = (): boolean => {
+    const errors: { email?: string; password?: string } = {};
+    if (!email) {
+      errors.email = "Email is required.";
+    } else if (!EMAIL_RE.test(email)) {
+      errors.email = "Please enter a valid email address.";
+    }
+    if (!password) {
+      errors.password = "Password is required.";
+    } else if (password.length < 8) {
+      errors.password = "Password must be at least 8 characters.";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!email || !password) {
-      setError("Please fill in all fields.");
-      return;
-    }
+    if (!validateFields()) return;
 
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       toast.success("Welcome back!");
       router.push("/dashboard");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number };
       const message =
-        err?.status === 401
+        apiErr?.status === 401
           ? "Invalid email or password."
           : "Something went wrong. Please try again.";
       setError(message);
@@ -63,9 +80,10 @@ export default function LoginPage() {
           type="email"
           placeholder="you@company.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => { setEmail(e.target.value); setFieldErrors((f) => ({ ...f, email: undefined })); }}
           icon={<Mail className="h-4 w-4" />}
           autoComplete="email"
+          error={fieldErrors.email}
           required
         />
 
@@ -74,9 +92,10 @@ export default function LoginPage() {
           type="password"
           placeholder="Enter your password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); setFieldErrors((f) => ({ ...f, password: undefined })); }}
           icon={<Lock className="h-4 w-4" />}
           autoComplete="current-password"
+          error={fieldErrors.password}
           required
         />
 

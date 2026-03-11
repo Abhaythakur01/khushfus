@@ -182,7 +182,7 @@ class TestSearchSchemas:
     def test_search_request_defaults(self):
         req = SearchRequest(project_id=1, query="test")
         assert req.page == 1
-        assert req.page_size == 50
+        assert req.page_size == 20
         assert req.platform is None
         assert req.sentiment is None
 
@@ -206,8 +206,8 @@ class TestExportSchemas:
         assert exp.filters_json is None
 
     def test_export_create_custom_format(self):
-        exp = ExportCreate(project_id=1, export_format="excel")
-        assert exp.export_format == "excel"
+        exp = ExportCreate(project_id=1, export_format="xlsx")
+        assert exp.export_format == "xlsx"
 
 
 class TestScheduledPostSchemas:

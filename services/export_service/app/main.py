@@ -34,7 +34,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -52,6 +53,8 @@ from shared.models import (
     Integration,
     Mention,
 )
+from shared.project_auth import verify_project_access
+from shared.request_logging import RequestLoggingMiddleware
 from shared.tracing import setup_tracing
 
 setup_tracing("export")
@@ -1036,6 +1039,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware, service_name="export")
 
 
 try:
@@ -1086,6 +1090,10 @@ async def create_export(payload: ExportCreate, request: Request, user: dict = De
     """Create a new export job. Publishes to the export stream for async processing."""
     session_factory = request.app.state.db_session
     bus: EventBus = request.app.state.event_bus
+
+    # Verify project access
+    async with session_factory() as db:
+        await verify_project_access(db, payload.project_id, user)
 
     # Validate format
     try:
@@ -1146,6 +1154,7 @@ async def list_exports(request: Request, project_id: int = Query(...), user: dic
     session_factory = request.app.state.db_session
 
     async with session_factory() as db:
+        await verify_project_access(db, project_id, user)
         result = await db.execute(
             select(ExportJob).where(ExportJob.project_id == project_id).order_by(ExportJob.created_at.desc())
         )

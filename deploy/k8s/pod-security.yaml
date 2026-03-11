@@ -1,0 +1,27 @@
+# =============================================================================
+# 7.17 Pod Security Standards
+# PSA labels are on namespace.yaml. This file provides the reference ConfigMap.
+# All deployments should include the securityContext documented below.
+# =============================================================================
+
+# Security context reference for all workloads
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pod-security-reference
+  namespace: khushfus
+  annotations:
+    description: |
+      Reference security context for all deployments.
+      Pod-level securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      Container-level securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+data:
+  note: "This ConfigMap documents the required securityContext. See namespace.yaml for PSA labels and deployment YAMLs for applied contexts."

@@ -90,7 +90,7 @@ class NewsCollector(BaseCollector):
             for feed_template in DEFAULT_RSS_FEEDS:
                 feed_url = feed_template.format(keyword=keyword)
                 try:
-                    async with httpx.AsyncClient() as client:
+                    async with httpx.AsyncClient(follow_redirects=True) as client:
                         resp = await client.get(feed_url, timeout=15.0)
                         feed = feedparser.parse(resp.text)
 

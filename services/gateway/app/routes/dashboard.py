@@ -1,12 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models import Mention, Platform, Sentiment
+from shared.models import Mention, Platform, Project, Sentiment
 
-from ..deps import get_db, require_auth
+from ..deps import get_db, get_user_org_id, require_auth
 
 router = APIRouter()
 
@@ -18,11 +18,19 @@ router = APIRouter()
 )
 async def get_dashboard(
     project_id: int,
+    request: Request,
     days: int = Query(7, ge=1, le=90),
     user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    now = datetime.now(timezone.utc)
+    # Verify project belongs to user's org
+    org_id = get_user_org_id(request)
+    if org_id:
+        project = await db.get(Project, project_id)
+        if not project or project.organization_id != org_id:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+    now = datetime.utcnow()
     start = now - timedelta(days=days)
     base = [Mention.project_id == project_id, Mention.collected_at >= start, Mention.collected_at <= now]
 

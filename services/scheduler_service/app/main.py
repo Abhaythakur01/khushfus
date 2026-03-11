@@ -22,13 +22,14 @@ from datetime import datetime
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.circuit_breaker import CircuitBreaker, CircuitBreakerError
 from shared.database import create_db, init_tables
-from shared.url_validator import validate_url
 from shared.events import (
     STREAM_ANALYZED_MENTIONS,
     STREAM_REPORT_REQUESTS,
@@ -37,6 +38,7 @@ from shared.events import (
     ReportRequestEvent,
     WorkflowTriggerEvent,
 )
+from shared.logging_config import setup_logging
 from shared.models import (
     Mention,
     Project,
@@ -45,10 +47,12 @@ from shared.models import (
     WorkflowStatus,
 )
 from shared.tracing import setup_tracing
+from shared.url_validator import validate_url
+
+_action_breaker = CircuitBreaker(name="workflow-action")
 
 setup_tracing("scheduler")
-
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("scheduler-service")
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -146,6 +150,7 @@ class HealthResponse(BaseModel):
 # (In production, persist in a dedicated table; here we keep it lightweight)
 # ---------------------------------------------------------------------------
 
+# TODO: Persist to database table for durability across restarts
 _report_schedules: dict[int, list[dict]] = {}  # project_id -> list of schedule dicts
 
 # Track last workflow trigger times in-memory
@@ -169,9 +174,12 @@ async def lifespan(app: FastAPI):
 
     await init_tables(engine)
 
+    shutdown_event = asyncio.Event()
+    app.state.shutdown_event = shutdown_event
+
     # Start background tasks
-    consumer_task = asyncio.create_task(mention_consumer_loop(bus, session_factory))
-    scheduler_task = asyncio.create_task(report_scheduler_loop(bus, session_factory))
+    consumer_task = asyncio.create_task(mention_consumer_loop(bus, session_factory, shutdown_event))
+    scheduler_task = asyncio.create_task(report_scheduler_loop(bus, session_factory, shutdown_event))
     app.state._bg_tasks = [consumer_task, scheduler_task]
 
     logger.info("Scheduler/Workflow Service started with background tasks")
@@ -179,8 +187,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    shutdown_event.set()
     for t in app.state._bg_tasks:
         t.cancel()
+    for t in app.state._bg_tasks:
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
     await bus.close()
     await engine.dispose()
 
@@ -559,36 +573,42 @@ async def _execute_action(
                 logger.warning(f"Blocked unsafe webhook URL: {webhook_url} — {e}")
                 return
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(
-                        webhook_url,
-                        json={
-                            "text": f"*Workflow Triggered: {workflow.name}*",
-                            "blocks": [
-                                {
-                                    "type": "header",
-                                    "text": {
-                                        "type": "plain_text",
-                                        "text": f"Workflow: {workflow.name}",
+
+                async def _post_slack():
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        await client.post(
+                            webhook_url,
+                            json={
+                                "text": f"*Workflow Triggered: {workflow.name}*",
+                                "blocks": [
+                                    {
+                                        "type": "header",
+                                        "text": {
+                                            "type": "plain_text",
+                                            "text": f"Workflow: {workflow.name}",
+                                        },
                                     },
-                                },
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": (
-                                            f"*Author:* {author}\n"
-                                            f"*Platform:* {mention_data.get('platform', 'N/A')}\n"
-                                            f"*Sentiment:* {mention_data.get('sentiment', 'N/A')} "
-                                            f"({mention_data.get('sentiment_score', 'N/A')})\n"
-                                            f"*Text:* {mention_text}"
-                                        ),
+                                    {
+                                        "type": "section",
+                                        "text": {
+                                            "type": "mrkdwn",
+                                            "text": (
+                                                f"*Author:* {author}\n"
+                                                f"*Platform:* {mention_data.get('platform', 'N/A')}\n"
+                                                f"*Sentiment:* {mention_data.get('sentiment', 'N/A')} "
+                                                f"({mention_data.get('sentiment_score', 'N/A')})\n"
+                                                f"*Text:* {mention_text}"
+                                            ),
+                                        },
                                     },
-                                },
-                            ],
-                        },
-                    )
+                                ],
+                            },
+                        )
+
+                await _action_breaker.call(_post_slack)
                 logger.info(f"Slack notification sent for workflow {workflow.id}")
+            except CircuitBreakerError:
+                logger.warning(f"Workflow action circuit breaker open, skipping slack for workflow {workflow.id}")
             except Exception as e:
                 logger.error(f"Slack notification failed for workflow {workflow.id}: {e}")
         else:
@@ -642,22 +662,28 @@ async def _execute_action(
                 logger.warning(f"Blocked unsafe webhook URL: {escalation_url} — {e}")
                 return
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(
-                        escalation_url,
-                        json={
-                            "workflow_id": workflow.id,
-                            "workflow_name": workflow.name,
-                            "escalation_level": level,
-                            "project_id": project_id,
-                            "author": author,
-                            "sentiment": mention_data.get("sentiment"),
-                            "sentiment_score": mention_data.get("sentiment_score"),
-                            "text": mention_text,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        },
-                    )
+
+                async def _post_escalation():
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        await client.post(
+                            escalation_url,
+                            json={
+                                "workflow_id": workflow.id,
+                                "workflow_name": workflow.name,
+                                "escalation_level": level,
+                                "project_id": project_id,
+                                "author": author,
+                                "sentiment": mention_data.get("sentiment"),
+                                "sentiment_score": mention_data.get("sentiment_score"),
+                                "text": mention_text,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            },
+                        )
+
+                await _action_breaker.call(_post_escalation)
                 logger.info(f"Escalation sent for workflow {workflow.id} to level={level}")
+            except CircuitBreakerError:
+                logger.warning(f"Workflow action circuit breaker open, skipping escalation for workflow {workflow.id}")
             except Exception as e:
                 logger.error(f"Escalation failed for workflow {workflow.id}: {e}")
         else:
@@ -728,7 +754,7 @@ async def _execute_workflow_actions(
 # ---------------------------------------------------------------------------
 
 
-async def mention_consumer_loop(bus: EventBus, session_factory):
+async def mention_consumer_loop(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """
     Continuously consume from STREAM_ANALYZED_MENTIONS.
     For each mention, load active workflows for its project and evaluate triggers.
@@ -736,7 +762,7 @@ async def mention_consumer_loop(bus: EventBus, session_factory):
     await bus.ensure_group(STREAM_ANALYZED_MENTIONS, GROUP_NAME)
     logger.info("Workflow consumer listening on STREAM_ANALYZED_MENTIONS...")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             messages = await bus.consume(
                 STREAM_ANALYZED_MENTIONS,
@@ -789,7 +815,7 @@ async def mention_consumer_loop(bus: EventBus, session_factory):
 # ---------------------------------------------------------------------------
 
 
-async def report_scheduler_loop(bus: EventBus, session_factory):
+async def report_scheduler_loop(bus: EventBus, session_factory, shutdown_event: asyncio.Event):
     """
     Periodically check custom report schedules and trigger report generation.
     Also handles the default daily/weekly/monthly schedules for all active projects.
@@ -797,7 +823,7 @@ async def report_scheduler_loop(bus: EventBus, session_factory):
     """
     logger.info("Report scheduler started")
 
-    while True:
+    while not shutdown_event.is_set():
         try:
             now = datetime.utcnow()
 

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,20 +11,15 @@ router = APIRouter()
 
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    full_name: str
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(min_length=1, max_length=200)
     organization: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserOut(BaseModel):
@@ -36,18 +31,25 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
 @router.post(
     "/register",
-    response_model=UserOut,
+    response_model=AuthResponse,
     status_code=201,
     summary="Register a new user",
     description="Create a new user account with email, password, and full name.",
+    responses={409: {"description": "Email already registered"}},
 )
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Register a new user. Returns the created user profile."""
+    """Register a new user. Returns the user profile and access token."""
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Email already registered")
 
     user = User(
         email=data.email,
@@ -57,24 +59,26 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return user
+
+    token = create_access_token({"sub": str(user.id)})
+    return AuthResponse(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=AuthResponse,
     summary="Authenticate user",
     description="Authenticate with email and password to receive a JWT access token.",
 )
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Validate credentials and return a JWT access token."""
+    """Validate credentials and return a JWT access token and user profile."""
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     token = create_access_token({"sub": str(user.id)})
-    return TokenResponse(access_token=token)
+    return AuthResponse(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.get(

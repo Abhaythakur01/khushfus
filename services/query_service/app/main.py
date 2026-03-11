@@ -22,10 +22,14 @@ from shared.events import (
     STREAM_ANALYZED_MENTIONS,
     EventBus,
 )
+from shared.logging_config import setup_logging
 from shared.models import Mention, Platform, Sentiment
+from shared.service_utils import ConsumerMetrics, is_transient_error, start_liveness_server, validate_env
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+setup_logging("query-service")
 logger = logging.getLogger(__name__)
+
+validate_env(warn_if_missing=["REDIS_URL", "DATABASE_URL", "ELASTICSEARCH_URL"])
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -34,6 +38,8 @@ ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://opensearch:9200")
 GROUP_NAME = "query-service"
 CONSUMER_NAME = f"query-{os.getpid()}"
 ES_INDEX = "khushfus-mentions"
+
+metrics = ConsumerMetrics("query-service")
 
 
 async def init_elasticsearch(es: AsyncOpenSearch):
@@ -169,17 +175,28 @@ async def process_loop(bus: EventBus, db_session, es: AsyncOpenSearch, shutdown_
                 continue
 
             stored = 0
+            batch_start = metrics.start_timer()
             for msg_id, data in messages:
                 try:
                     is_new = await store_mention(db_session, es, data)
                     if is_new:
                         stored += 1
+                    await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
                 except Exception as e:
                     logger.error(f"Failed to store mention {msg_id}: {e}")
-                finally:
-                    await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
+                    metrics.record_failed()
+                    if is_transient_error(e):
+                        logger.info(f"Transient error for {msg_id}, will be retried on next consume")
+                    try:
+                        await bus.move_to_dlq(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id, str(e))
+                        metrics.record_dlq()
+                    except Exception as dlq_err:
+                        logger.error(f"Failed to move {msg_id} to DLQ: {dlq_err}")
+                        await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
+            metrics.stop_timer(batch_start)
 
             if stored:
+                metrics.record_processed(stored)
                 logger.info(f"Stored {stored} new mentions (of {len(messages)} received)")
 
         except Exception as e:
@@ -195,7 +212,12 @@ async def main():
     bus = EventBus(REDIS_URL)
     await bus.connect()
 
-    es = AsyncOpenSearch(hosts=[ELASTICSEARCH_URL])
+    es = AsyncOpenSearch(
+        hosts=[ELASTICSEARCH_URL],
+        timeout=int(os.getenv("ES_TIMEOUT", "30")),
+        max_retries=int(os.getenv("ES_MAX_RETRIES", "3")),
+        retry_on_timeout=True,
+    )
     await init_elasticsearch(es)
 
     loop = asyncio.get_running_loop()
@@ -206,10 +228,14 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9093"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Query Service started")
     try:
         await process_loop(bus, session_factory, es, shutdown_event)
     finally:
+        liveness.close()
         logger.info("Query Service shutting down gracefully")
         await es.close()
         await bus.close()

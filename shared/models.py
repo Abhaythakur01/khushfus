@@ -6,7 +6,19 @@ Single source of truth for the database schema.
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -38,6 +50,15 @@ class Platform(str, enum.Enum):
     TELEGRAM = "telegram"
     QUORA = "quora"
     PRESS = "press"
+    TIKTOK = "tiktok"
+    DISCORD = "discord"
+    THREADS = "threads"
+    BLUESKY = "bluesky"
+    PINTEREST = "pinterest"
+    APPSTORE = "appstore"
+    REVIEWS = "reviews"
+    MASTODON = "mastodon"
+    PODCAST = "podcast"
     OTHER = "other"
 
 
@@ -49,10 +70,18 @@ class Sentiment(str, enum.Enum):
 
 
 class ReportType(str, enum.Enum):
+    HOURLY = "hourly"
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    YEARLY = "yearly"
     CUSTOM = "custom"
+
+
+class ReportFormat(str, enum.Enum):
+    PDF = "pdf"
+    PPTX = "pptx"
 
 
 class AlertSeverity(str, enum.Enum):
@@ -124,10 +153,10 @@ class Organization(Base):
     # SSO
     sso_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sso_provider: Mapped[str | None] = mapped_column(String(50))  # saml, oidc
-    sso_metadata_url: Mapped[str | None] = mapped_column(Text)
+    sso_metadata_url: Mapped[str | None] = mapped_column(String(2000))
     sso_entity_id: Mapped[str | None] = mapped_column(String(255))
     # Branding
-    logo_url: Mapped[str | None] = mapped_column(Text)
+    logo_url: Mapped[str | None] = mapped_column(String(2000))
     primary_color: Mapped[str | None] = mapped_column(String(7))  # hex
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -138,6 +167,9 @@ class Organization(Base):
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
+    def __repr__(self) -> str:
+        return f"<Organization id={self.id} slug={self.slug!r} plan={self.plan}>"
+
 
 class User(Base):
     __tablename__ = "users"
@@ -146,20 +178,27 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str | None] = mapped_column(String(255))  # null for SSO-only users
     full_name: Mapped[str] = mapped_column(String(255))
-    avatar_url: Mapped[str | None] = mapped_column(Text)
+    avatar_url: Mapped[str | None] = mapped_column(String(2000))
     sso_subject: Mapped[str | None] = mapped_column(String(255))  # external SSO ID
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Soft delete
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     memberships: Mapped[list["OrgMember"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email!r}>"
+
 
 class OrgMember(Base):
     __tablename__ = "org_members"
     __table_args__ = (
+        # One membership per user per org
         UniqueConstraint("organization_id", "user_id", name="uq_org_member"),
     )
 
@@ -173,16 +212,19 @@ class OrgMember(Base):
     organization: Mapped["Organization"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship(back_populates="memberships")
 
+    def __repr__(self) -> str:
+        return f"<OrgMember id={self.id} org={self.organization_id} user={self.user_id} role={self.role}>"
+
 
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     prefix: Mapped[str] = mapped_column(String(10))  # first 8 chars for identification
-    scopes: Mapped[str] = mapped_column(Text, default="read")  # read,write,admin
+    scopes: Mapped[str] = mapped_column(String(200), default="read")  # read,write,admin
     rate_limit: Mapped[int] = mapped_column(Integer, default=1000)  # per hour
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -190,6 +232,9 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     organization: Mapped["Organization"] = relationship(back_populates="api_keys")
+
+    def __repr__(self) -> str:
+        return f"<ApiKey id={self.id} prefix={self.prefix!r} org={self.organization_id}>"
 
 
 # ============================================================
@@ -201,14 +246,20 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(String(2000))
     client_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[ProjectStatus] = mapped_column(Enum(ProjectStatus), default=ProjectStatus.ACTIVE)
-    platforms: Mapped[str] = mapped_column(Text, default="twitter,facebook,instagram,linkedin,youtube")
+    platforms: Mapped[str] = mapped_column(String(500), default="twitter,facebook,instagram,linkedin,youtube")
     # Competitor tracking
-    competitor_ids: Mapped[str | None] = mapped_column(Text)  # comma-separated project IDs for benchmarking
+    competitor_ids: Mapped[str | None] = mapped_column(String(500))  # comma-separated project IDs
+    # Audit trail
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # Soft delete
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -218,6 +269,9 @@ class Project(Base):
     reports: Mapped[list["Report"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     alert_rules: Mapped[list["AlertRule"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     saved_searches: Mapped[list["SavedSearch"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<Project id={self.id} name={self.name!r} org={self.organization_id} status={self.status}>"
 
 
 class Keyword(Base):
@@ -229,8 +283,12 @@ class Keyword(Base):
     keyword_type: Mapped[str] = mapped_column(String(50), default="brand")
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="keywords")
+
+    def __repr__(self) -> str:
+        return f"<Keyword id={self.id} term={self.term!r} project={self.project_id}>"
 
 
 # ============================================================
@@ -239,26 +297,39 @@ class Keyword(Base):
 
 
 class Mention(Base):
+    """High-volume table — consider range-partitioning by published_at (monthly) at scale.
+
+    PostgreSQL: ``CREATE TABLE mentions (...) PARTITION BY RANGE (published_at);``
+    Then create monthly partitions automatically via pg_partman or cron.
+    """
+
     __tablename__ = "mentions"
     __table_args__ = (
-        UniqueConstraint("project_id", "source_id", name="uq_mention_source"),
+        # Dedup: one mention per (project, source, platform)
+        UniqueConstraint("project_id", "source_id", "platform", name="uq_mention_source_platform"),
+        # Dashboard time-series queries
         Index("ix_mention_project_published", "project_id", "published_at"),
+        # Sentiment filter on project detail page
         Index("ix_mention_project_sentiment", "project_id", "sentiment"),
+        # Platform filter on project detail page
         Index("ix_mention_project_platform", "project_id", "platform"),
+        # Retention policy / time-range scans
         Index("ix_mention_collected", "collected_at"),
+        # Fast dedup lookup in query service
+        Index("ix_mention_dedup", "project_id", "source_id", "platform"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     platform: Mapped[Platform] = mapped_column(Enum(Platform), index=True)
     source_id: Mapped[str | None] = mapped_column(String(255), index=True)
-    source_url: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(String(2000))
 
-    text: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)  # mention text, unbounded (tweets to blog posts)
     author_name: Mapped[str | None] = mapped_column(String(255))
     author_handle: Mapped[str | None] = mapped_column(String(255))
     author_followers: Mapped[int | None] = mapped_column(Integer)
-    author_profile_url: Mapped[str | None] = mapped_column(Text)
+    author_profile_url: Mapped[str | None] = mapped_column(String(2000))
 
     likes: Mapped[int] = mapped_column(Integer, default=0)
     shares: Mapped[int] = mapped_column(Integer, default=0)
@@ -275,7 +346,7 @@ class Mention(Base):
     # Media analysis fields
     has_media: Mapped[bool] = mapped_column(Boolean, default=False)
     media_type: Mapped[str | None] = mapped_column(String(20))  # image, video, audio
-    media_url: Mapped[str | None] = mapped_column(Text)
+    media_url: Mapped[str | None] = mapped_column(String(2000))
     media_ocr_text: Mapped[str | None] = mapped_column(Text)
     media_labels: Mapped[str | None] = mapped_column(Text)  # JSON: detected objects/logos
     media_transcript: Mapped[str | None] = mapped_column(Text)  # video/audio transcript
@@ -289,8 +360,15 @@ class Mention(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     is_flagged: Mapped[bool] = mapped_column(default=False)
+    assigned_to: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Soft delete
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     project: Mapped["Project"] = relationship(back_populates="mentions")
+
+    def __repr__(self) -> str:
+        return f"<Mention id={self.id} platform={self.platform} project={self.project_id} sentiment={self.sentiment}>"
 
 
 # ============================================================
@@ -302,16 +380,27 @@ class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     report_type: Mapped[ReportType] = mapped_column(Enum(ReportType))
     title: Mapped[str] = mapped_column(String(255))
     period_start: Mapped[datetime] = mapped_column(DateTime)
     period_end: Mapped[datetime] = mapped_column(DateTime)
-    file_path: Mapped[str | None] = mapped_column(Text)
+    format: Mapped[str] = mapped_column(String(10), default="pdf")
+    file_path: Mapped[str | None] = mapped_column(String(1000))
     data_json: Mapped[str | None] = mapped_column(Text)
+    # Audit trail
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # Soft delete
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="reports")
+
+    def __repr__(self) -> str:
+        return f"<Report id={self.id} type={self.report_type} format={self.format} project={self.project_id}>"
 
 
 # ============================================================
@@ -328,31 +417,41 @@ class AlertRule(Base):
     rule_type: Mapped[str] = mapped_column(String(50))
     threshold: Mapped[float] = mapped_column(Float, default=0.0)
     window_minutes: Mapped[int] = mapped_column(Integer, default=60)
-    channels: Mapped[str] = mapped_column(Text, default="email")
-    webhook_url: Mapped[str | None] = mapped_column(Text)
+    channels: Mapped[str] = mapped_column(String(200), default="email")
+    webhook_url: Mapped[str | None] = mapped_column(String(2000))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Audit trail
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="alert_rules")
 
+    def __repr__(self) -> str:
+        return f"<AlertRule id={self.id} name={self.name!r} type={self.rule_type} project={self.project_id}>"
+
 
 class AlertLog(Base):
     __tablename__ = "alert_logs"
     __table_args__ = (
+        # Fast lookup for alert history by project, ordered by recency
         Index("ix_alert_log_project_created", "project_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    rule_id: Mapped[int | None] = mapped_column(ForeignKey("alert_rules.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("alert_rules.id", ondelete="SET NULL"))
     alert_type: Mapped[str] = mapped_column(String(50))
     severity: Mapped[AlertSeverity] = mapped_column(Enum(AlertSeverity))
     title: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(String(5000))
     data_json: Mapped[str | None] = mapped_column(Text)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<AlertLog id={self.id} type={self.alert_type} severity={self.severity} project={self.project_id}>"
 
 
 # ============================================================
@@ -364,13 +463,17 @@ class SavedSearch(Base):
     __tablename__ = "saved_searches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
-    query_json: Mapped[str] = mapped_column(Text)  # full ES query as JSON
+    query_json: Mapped[str] = mapped_column(String(10000))  # full ES query as JSON
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="saved_searches")
+
+    def __repr__(self) -> str:
+        return f"<SavedSearch id={self.id} name={self.name!r} project={self.project_id}>"
 
 
 # ============================================================
@@ -382,21 +485,26 @@ class ScheduledPost(Base):
     __tablename__ = "scheduled_posts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     platform: Mapped[Platform] = mapped_column(Enum(Platform))
-    content: Mapped[str] = mapped_column(Text)
-    media_urls: Mapped[str | None] = mapped_column(Text)  # comma-separated
+    content: Mapped[str] = mapped_column(String(10000))
+    media_urls: Mapped[str | None] = mapped_column(String(2000))  # comma-separated
     scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
     status: Mapped[PublishStatus] = mapped_column(Enum(PublishStatus), default=PublishStatus.DRAFT, index=True)
     platform_post_id: Mapped[str | None] = mapped_column(String(255))
     approved_by: Mapped[int | None] = mapped_column(Integer)
-    error_message: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(String(2000))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
 
     # Reply to a mention
-    reply_to_mention_id: Mapped[int | None] = mapped_column(ForeignKey("mentions.id"))
+    reply_to_mention_id: Mapped[int | None] = mapped_column(ForeignKey("mentions.id", ondelete="SET NULL"))
+
+    def __repr__(self) -> str:
+        return f"<ScheduledPost id={self.id} platform={self.platform} status={self.status} project={self.project_id}>"
 
 
 # ============================================================
@@ -408,31 +516,37 @@ class ExportJob(Base):
     __tablename__ = "export_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     export_format: Mapped[ExportFormat] = mapped_column(Enum(ExportFormat))
-    filters_json: Mapped[str | None] = mapped_column(Text)
+    filters_json: Mapped[str | None] = mapped_column(String(10000))
     status: Mapped[ExportStatus] = mapped_column(Enum(ExportStatus), default=ExportStatus.PENDING, index=True)
-    file_path: Mapped[str | None] = mapped_column(Text)
+    file_path: Mapped[str | None] = mapped_column(String(1000))
     row_count: Mapped[int | None] = mapped_column(Integer)
-    error_message: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(String(2000))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
+
+    def __repr__(self) -> str:
+        return f"<ExportJob id={self.id} format={self.export_format} status={self.status} project={self.project_id}>"
 
 
 class Integration(Base):
     __tablename__ = "integrations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     integration_type: Mapped[str] = mapped_column(String(50))  # salesforce, hubspot, slack, tableau, webhook
     name: Mapped[str] = mapped_column(String(255))
-    config_json: Mapped[str] = mapped_column(Text)  # encrypted connection config
+    config_json: Mapped[str] = mapped_column(String(10000))  # encrypted connection config
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
+
+    def __repr__(self) -> str:
+        return f"<Integration id={self.id} type={self.integration_type!r} org={self.organization_id}>"
 
 
 # ============================================================
@@ -444,12 +558,15 @@ class CompetitorBenchmark(Base):
     __tablename__ = "competitor_benchmarks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    competitor_project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    competitor_project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     period_start: Mapped[datetime] = mapped_column(DateTime)
     period_end: Mapped[datetime] = mapped_column(DateTime)
     data_json: Mapped[str] = mapped_column(Text)  # share_of_voice, sentiment_comparison, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<CompetitorBenchmark id={self.id} project={self.project_id} vs={self.competitor_project_id}>"
 
 
 # ============================================================
@@ -461,14 +578,19 @@ class Workflow(Base):
     __tablename__ = "workflows"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     name: Mapped[str] = mapped_column(String(255))
-    trigger_json: Mapped[str] = mapped_column(Text)  # {"type": "negative_influencer", "threshold": 10000}
-    actions_json: Mapped[str] = mapped_column(Text)  # [{"type": "notify_slack"}, {"type": "flag_mention"}]
+    trigger_json: Mapped[str] = mapped_column(String(10000))
+    actions_json: Mapped[str] = mapped_column(String(10000))
     status: Mapped[WorkflowStatus] = mapped_column(Enum(WorkflowStatus), default=WorkflowStatus.ACTIVE)
     executions: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=func.now())
+
+    def __repr__(self) -> str:
+        return f"<Workflow id={self.id} name={self.name!r} status={self.status} project={self.project_id}>"
 
 
 # ============================================================
@@ -479,12 +601,13 @@ class Workflow(Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     __table_args__ = (
+        # Fast audit trail lookup by org, ordered by recency
         Index("ix_audit_log_org_created", "organization_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str] = mapped_column(String(100))  # project.create, mention.flag, report.generate, etc.
     resource_type: Mapped[str] = mapped_column(String(50))
     resource_id: Mapped[int | None] = mapped_column(Integer)
@@ -493,6 +616,9 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="audit_logs")
+
+    def __repr__(self) -> str:
+        return f"<AuditLog id={self.id} action={self.action!r} org={self.organization_id} user={self.user_id}>"
 
 
 # ============================================================
@@ -503,6 +629,7 @@ class AuditLog(Base):
 class PlatformQuota(Base):
     __tablename__ = "platform_quotas"
     __table_args__ = (
+        # One quota entry per platform+endpoint combination
         UniqueConstraint("platform", "endpoint", name="uq_platform_quota"),
     )
 
@@ -514,3 +641,6 @@ class PlatformQuota(Base):
     requests_used: Mapped[int] = mapped_column(Integer, default=0)
     window_reset_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self) -> str:
+        return f"<PlatformQuota id={self.id} platform={self.platform} endpoint={self.endpoint!r}>"

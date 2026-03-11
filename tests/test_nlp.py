@@ -78,11 +78,11 @@ class TestLanguageDetection:
         result = analyzer.analyze("This is an English sentence about technology.")
         assert result.language == "en"
 
-    def test_empty_text_defaults_english(self):
+    def test_empty_text_defaults_unknown(self):
         analyzer = SentimentAnalyzer()
         result = analyzer.analyze("")
-        # langdetect may raise on empty text; should fall back to "en"
-        assert result.language == "en"
+        # Empty text is too short for detection; returns "unknown"
+        assert result.language == "unknown"
 
     def test_short_text(self):
         analyzer = SentimentAnalyzer()

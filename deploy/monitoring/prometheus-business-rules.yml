@@ -1,0 +1,47 @@
+# =============================================================================
+# KhushFus Prometheus Recording Rules - Business Metrics
+# =============================================================================
+# Custom recording rules for KhushFus-specific business metrics.
+# These pre-compute expensive queries for faster dashboard rendering.
+# =============================================================================
+
+groups:
+  - name: khushfus_business_metrics
+    interval: 60s
+    rules:
+      # Mentions collected per hour, broken down by project
+      - record: khushfus:mentions_collected_per_hour
+        expr: >
+          sum(increase(mentions_collected_total[1h])) by (project_id)
+
+      # Count of active projects (projects with mentions in the last 24h)
+      - record: khushfus:active_projects_count
+        expr: >
+          count(count by (project_id) (increase(mentions_collected_total[24h]) > 0))
+
+      # Average sentiment score by project (from analyzed mentions)
+      - record: khushfus:avg_sentiment_by_project
+        expr: >
+          avg(mention_sentiment_score) by (project_id)
+
+      # Total alert rules triggered
+      - record: khushfus:alert_rules_triggered_total
+        expr: >
+          sum(increase(alert_rules_triggered_total[1h]))
+
+  - name: khushfus_slo_metrics
+    interval: 30s
+    rules:
+      # Gateway error rate (5xx) for SLO tracking
+      - record: khushfus:gateway_error_rate_5m
+        expr: >
+          sum(rate(http_requests_total{job="gateway",status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{job="gateway"}[5m]))
+
+      # Gateway P95 latency for SLO tracking
+      - record: khushfus:gateway_p95_latency_5m
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="gateway"}[5m])) by (le)
+          )

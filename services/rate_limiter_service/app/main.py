@@ -339,6 +339,14 @@ app = FastAPI(
 
 
 try:
+    from shared.request_logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware, service_name="rate-limiter")
+except ImportError:
+    logger.debug("RequestLoggingMiddleware not available")
+
+
+try:
     from prometheus_fastapi_instrumentator import Instrumentator
 
     Instrumentator().instrument(app).expose(app)
@@ -390,7 +398,10 @@ async def acquire(body: AcquireRequest):
     if not config:
         raise HTTPException(
             status_code=404,
-            detail=f"No quota configuration found for {body.platform}/{body.endpoint}",
+            detail={
+                "error_code": "QUOTA_NOT_FOUND",
+                "message": f"No quota configuration found for {body.platform}/{body.endpoint}",
+            },
         )
 
     result = await limiter.acquire(
@@ -490,7 +501,10 @@ async def platform_status(platform: str):
     try:
         Platform(platform)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "INVALID_PLATFORM", "message": f"Unknown platform: {platform}"},
+        )
 
     async with session_factory() as db:
         result = await db.execute(select(PlatformQuota).where(PlatformQuota.platform == Platform(platform)))
@@ -499,7 +513,10 @@ async def platform_status(platform: str):
     if not quotas:
         raise HTTPException(
             status_code=404,
-            detail=f"No quotas configured for platform: {platform}",
+            detail={
+                "error_code": "PLATFORM_QUOTAS_NOT_FOUND",
+                "message": f"No quotas configured for platform: {platform}",
+            },
         )
 
     statuses = []

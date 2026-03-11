@@ -2,10 +2,15 @@
 
 import asyncio
 import logging
+import os
 import time
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# Defaults overridable via env vars
+DEFAULT_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
+DEFAULT_RECOVERY_TIMEOUT = float(os.getenv("CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30.0"))
 
 
 class CircuitState(Enum):
@@ -26,7 +31,12 @@ class CircuitBreaker:
         result = await breaker.call(httpx_client.get, "http://identity:8010/health")
     """
 
-    def __init__(self, name: str, failure_threshold: int = 5, recovery_timeout: float = 30.0):
+    def __init__(
+        self,
+        name: str,
+        failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
+        recovery_timeout: float = DEFAULT_RECOVERY_TIMEOUT,
+    ):
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout

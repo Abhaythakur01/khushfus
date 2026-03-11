@@ -1,3 +1,15 @@
+# =============================================================================
+# 7.13 Logging: JSON file driver with rotation (referenced via x-logging anchor)
+# 7.14 Network segmentation: frontend, backend, data networks
+# =============================================================================
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   # ============================================================
   # Infrastructure
@@ -8,7 +20,7 @@ services:
     environment:
       POSTGRES_DB: khushfus
       POSTGRES_USER: khushfus
-      POSTGRES_PASSWORD: khushfus_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khushfus_dev}
     ports:
       - "5432:5432"
     volumes:
@@ -18,9 +30,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
+    <<: *logging
+    networks:
+      - data
 
   redis:
     image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     ports:
       - "6379:6379"
     volumes:
@@ -30,13 +50,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
+    <<: *logging
+    networks:
+      - data
 
   opensearch:
     image: opensearchproject/opensearch:2.12.0
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      # WARNING: Enable security plugin in production (set DISABLE_SECURITY_PLUGIN=false)
+      - DISABLE_SECURITY_PLUGIN=${DISABLE_SECURITY_PLUGIN:-true}
+      # Production: set OPENSEARCH_HEAP="-Xms2g -Xmx2g" or higher. 512m is for dev only.
+      - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_HEAP:--Xms512m -Xmx512m}"
     ports:
       - "9200:9200"
     volumes:
@@ -46,6 +72,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
+    restart: always
+    <<: *logging
+    networks:
+      - data
 
   jaeger:
     image: jaegertracing/all-in-one:1.54
@@ -54,6 +84,10 @@ services:
       - "4317:4317"     # OTLP gRPC
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+    restart: always
+    <<: *logging
+    networks:
+      - backend
 
   # ============================================================
   # Core Services (Phase 1)
@@ -69,15 +103,36 @@ services:
     volumes:
       - .:/app
     environment: &common-env
-      DATABASE_URL: postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://khushfus:${POSTGRES_PASSWORD:-khushfus_dev}@postgres:5432/khushfus
+      REDIS_URL: redis://${REDIS_PASSWORD:+:$REDIS_PASSWORD@}redis:6379/0
       ELASTICSEARCH_URL: http://opensearch:9200
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-dev-webhook-secret}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - frontend
+      - backend
+      - data
 
   collector:
     build:
@@ -114,9 +169,27 @@ services:
       LISTEN_NOTES_API_KEY: ${LISTEN_NOTES_API_KEY:-}
       PODCAST_INDEX_API_KEY: ${PODCAST_INDEX_API_KEY:-}
       PODCAST_INDEX_API_SECRET: ${PODCAST_INDEX_API_SECRET:-}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   analyzer:
     build:
@@ -129,13 +202,26 @@ services:
       SENTIMENT_MODEL: hybrid
       USE_GPU: "false"
       ANALYZER_BATCH_SIZE: "20"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
     depends_on:
       redis: { condition: service_healthy }
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - { driver: nvidia, count: 1, capabilities: [gpu] }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   query:
     build:
@@ -145,10 +231,28 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       opensearch: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   report:
     build:
@@ -159,9 +263,27 @@ services:
       - reports_output:/app/reports_output
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   notification:
     build:
@@ -171,9 +293,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   # ============================================================
   # Phase 2: Enterprise-Ready
@@ -190,10 +330,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8010/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   tenant:
     build:
@@ -206,9 +363,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8011/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   media:
     build:
@@ -218,14 +393,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - { driver: nvidia, count: 1, capabilities: [gpu] }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   search:
     build:
@@ -238,10 +426,28 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8012/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       opensearch: { condition: service_healthy }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   # ============================================================
   # Phase 3: Competitive Parity
@@ -261,9 +467,27 @@ services:
       TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN:-}
       FACEBOOK_PAGE_ACCESS_TOKEN: ${FACEBOOK_PAGE_ACCESS_TOKEN:-}
       LINKEDIN_ACCESS_TOKEN: ${LINKEDIN_ACCESS_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8013/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   rate-limiter:
     build:
@@ -276,9 +500,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8014/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   enrichment:
     build:
@@ -288,9 +530,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   export:
     build:
@@ -304,9 +564,27 @@ services:
       - exports_output:/app/exports_output
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8015/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   # ============================================================
   # Phase 4: Differentiation
@@ -323,9 +601,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8016/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   scheduler:
     build:
@@ -338,9 +634,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8017/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   audit:
     build:
@@ -353,9 +667,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8018/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   realtime:
     build:
@@ -368,8 +700,26 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8019/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   project:
     build:
@@ -382,9 +732,27 @@ services:
       - .:/app
     environment:
       <<: *common-env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8020/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
+      - data
 
   # ============================================================
   # Frontend
@@ -398,8 +766,25 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://gateway:8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
     depends_on:
       - gateway
+    restart: unless-stopped
+    <<: *logging
+    networks:
+      - frontend
 
   # ============================================================
   # Monitoring
@@ -411,11 +796,18 @@ services:
       - "9090:9090"
     volumes:
       - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./deploy/monitoring/prometheus-business-rules.yml:/etc/prometheus/prometheus-business-rules.yml
+      - ./deploy/monitoring/prometheus-alerts.yml:/etc/prometheus/alerts.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
+      # Production: 90d retention. Adjust based on disk space (~2 bytes/sample).
+      # For 15s scrape interval with 13 targets, ~90d needs ~15-20GB.
+      - '--storage.tsdb.retention.time=90d'
     restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
 
   grafana:
     image: grafana/grafana:10.4.0
@@ -423,7 +815,7 @@ services:
       - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=khushfus
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-khushfus}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning
@@ -432,6 +824,9 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+    <<: *logging
+    networks:
+      - backend
 
 volumes:
   postgres_data:
@@ -441,3 +836,15 @@ volumes:
   exports_output:
   prometheus_data:
   grafana_data:
+
+# 7.14 Network segmentation
+networks:
+  frontend:
+    driver: bridge
+    name: khushfus-frontend
+  backend:
+    driver: bridge
+    name: khushfus-backend
+  data:
+    driver: bridge
+    name: khushfus-data

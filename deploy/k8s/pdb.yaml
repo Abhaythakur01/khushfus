@@ -1,0 +1,61 @@
+# =============================================================================
+# KhushFus Pod Disruption Budgets
+# =============================================================================
+# Ensures minimum availability during voluntary disruptions (node drains,
+# cluster upgrades, etc.). Only applied to critical-path services.
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: khushfus
+  labels:
+    app: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: collector-pdb
+  namespace: khushfus
+  labels:
+    app: collector
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: collector
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: analyzer-pdb
+  namespace: khushfus
+  labels:
+    app: analyzer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: analyzer
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: query-pdb
+  namespace: khushfus
+  labels:
+    app: query
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: query

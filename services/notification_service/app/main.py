@@ -27,13 +27,21 @@ from email.mime.text import MIMEText
 import httpx
 from sqlalchemy import func, select
 
+from shared.circuit_breaker import CircuitBreaker, CircuitBreakerError
 from shared.database import create_db
 from shared.events import STREAM_ANALYZED_MENTIONS, EventBus
+from shared.logging_config import setup_logging
 from shared.models import AlertLog, AlertRule, AlertSeverity, Mention
+from shared.service_utils import ConsumerMetrics, is_transient_error, start_liveness_server, validate_env
 from shared.url_validator import validate_url
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+_webhook_breaker = CircuitBreaker(name="webhook")
+_slack_breaker = CircuitBreaker(name="slack")
+
+setup_logging("notification-service")
 logger = logging.getLogger(__name__)
+
+validate_env(warn_if_missing=["REDIS_URL", "DATABASE_URL"])
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://khushfus:khushfus_dev@postgres:5432/khushfus")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -48,9 +56,16 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "alerts@khushfus.io")
 
+# Webhook retry configuration
+WEBHOOK_MAX_RETRIES = int(os.getenv("WEBHOOK_MAX_RETRIES", "3"))
+WEBHOOK_RETRY_BACKOFF_BASE = float(os.getenv("WEBHOOK_RETRY_BACKOFF_BASE", "2.0"))
+
 # In-memory counters for windowed analysis
+# NOTE: In-memory counters — reset on restart. For persistence, use Redis sorted sets.
 mention_counts: dict[int, list[datetime]] = defaultdict(list)
 negative_counts: dict[int, list[datetime]] = defaultdict(list)
+
+metrics = ConsumerMetrics("notification-service")
 
 
 async def evaluate_rules(session_factory, bus: EventBus, data: dict):
@@ -163,18 +178,37 @@ async def send_notifications(rule: AlertRule, title: str, description: str):
                 logger.warning(f"Blocked unsafe webhook URL: {rule.webhook_url} — {e}")
                 continue
             try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        rule.webhook_url,
-                        json={
-                            "alert_type": rule.rule_type,
-                            "title": title,
-                            "description": description,
-                            "project_id": rule.project_id,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        },
-                        timeout=10.0,
-                    )
+
+                async def _post_webhook():
+                    payload = {
+                        "alert_type": rule.rule_type,
+                        "title": title,
+                        "description": description,
+                        "project_id": rule.project_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                    last_exc: Exception | None = None
+                    for attempt in range(WEBHOOK_MAX_RETRIES):
+                        try:
+                            async with httpx.AsyncClient() as client:
+                                resp = await client.post(rule.webhook_url, json=payload, timeout=10.0)
+                                resp.raise_for_status()
+                                return
+                        except Exception as exc:
+                            last_exc = exc
+                            if attempt < WEBHOOK_MAX_RETRIES - 1:
+                                backoff = WEBHOOK_RETRY_BACKOFF_BASE ** attempt
+                                logger.warning(
+                                    "Webhook attempt %d/%d failed, retrying in %.1fs: %s",
+                                    attempt + 1, WEBHOOK_MAX_RETRIES, backoff, exc,
+                                )
+                                await asyncio.sleep(backoff)
+                    if last_exc:
+                        raise last_exc
+
+                await _webhook_breaker.call(_post_webhook)
+            except CircuitBreakerError:
+                logger.warning("Webhook circuit breaker open, skipping notification")
             except Exception as e:
                 logger.error(f"Webhook notification failed: {e}")
 
@@ -185,18 +219,37 @@ async def send_notifications(rule: AlertRule, title: str, description: str):
                 logger.warning(f"Blocked unsafe webhook URL: {rule.webhook_url} — {e}")
                 continue
             try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        rule.webhook_url,
-                        json={
-                            "text": f"*{title}*\n{description}",
-                            "blocks": [
-                                {"type": "header", "text": {"type": "plain_text", "text": title}},
-                                {"type": "section", "text": {"type": "mrkdwn", "text": description}},
-                            ],
-                        },
-                        timeout=10.0,
-                    )
+
+                async def _post_slack():
+                    payload = {
+                        "text": f"*{title}*\n{description}",
+                        "blocks": [
+                            {"type": "header", "text": {"type": "plain_text", "text": title}},
+                            {"type": "section", "text": {"type": "mrkdwn", "text": description}},
+                        ],
+                    }
+                    last_exc: Exception | None = None
+                    for attempt in range(WEBHOOK_MAX_RETRIES):
+                        try:
+                            async with httpx.AsyncClient() as client:
+                                resp = await client.post(rule.webhook_url, json=payload, timeout=10.0)
+                                resp.raise_for_status()
+                                return
+                        except Exception as exc:
+                            last_exc = exc
+                            if attempt < WEBHOOK_MAX_RETRIES - 1:
+                                backoff = WEBHOOK_RETRY_BACKOFF_BASE ** attempt
+                                logger.warning(
+                                    "Slack webhook attempt %d/%d failed, retrying in %.1fs: %s",
+                                    attempt + 1, WEBHOOK_MAX_RETRIES, backoff, exc,
+                                )
+                                await asyncio.sleep(backoff)
+                    if last_exc:
+                        raise last_exc
+
+                await _slack_breaker.call(_post_slack)
+            except CircuitBreakerError:
+                logger.warning("Slack circuit breaker open, skipping notification")
             except Exception as e:
                 logger.error(f"Slack notification failed: {e}")
 
@@ -294,13 +347,26 @@ async def process_loop(bus: EventBus, session_factory, shutdown_event: asyncio.E
                 count=20,
                 block_ms=3000,
             )
+            batch_start = metrics.start_timer()
             for msg_id, data in messages:
                 try:
                     await evaluate_rules(session_factory, bus, data)
-                except Exception as e:
-                    logger.error(f"Alert evaluation failed: {e}")
-                finally:
                     await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
+                    metrics.record_processed()
+                except Exception as e:
+                    logger.error(f"Alert evaluation failed for {msg_id}: {e}")
+                    metrics.record_failed()
+                    if is_transient_error(e):
+                        # Transient error — nack by not acking; will be redelivered
+                        logger.info(f"Transient error for {msg_id}, skipping DLQ for retry")
+                    else:
+                        # Permanent error — move to DLQ
+                        try:
+                            await bus.move_to_dlq(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id, str(e))
+                            metrics.record_dlq()
+                        except Exception:
+                            await bus.ack(STREAM_ANALYZED_MENTIONS, GROUP_NAME, msg_id)
+            metrics.stop_timer(batch_start)
 
         except Exception as e:
             logger.error(f"Notification loop error: {e}")
@@ -323,10 +389,14 @@ async def main():
         # Windows does not support add_signal_handler
         pass
 
+    liveness_port = int(os.getenv("LIVENESS_PORT", "9094"))
+    liveness = await start_liveness_server(liveness_port)
+
     logger.info("Notification Service started")
     try:
         await process_loop(bus, session_factory, shutdown_event)
     finally:
+        liveness.close()
         logger.info("Notification Service shutting down gracefully")
         await bus.close()
         await engine.dispose()

@@ -63,3 +63,7 @@ alembic/versions/__pycache__/
 
 # Generated reports
 *.pdf
+
+# Temp/generated files
+real_data_sample.json
+frontend/tsconfig.tsbuildinfo

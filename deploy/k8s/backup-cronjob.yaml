@@ -1,0 +1,87 @@
+# =============================================================================
+# KhushFus PostgreSQL Backup CronJob
+# =============================================================================
+# Runs daily pg_dump and stores to a PVC.
+# For production, consider backing up to S3-compatible storage (e.g., MinIO, AWS S3)
+# using tools like pg_dump | aws s3 cp - s3://BUCKET/backup-$(date +%F).sql.gz
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backups
+  namespace: khushfus
+  labels:
+    app: postgres-backup
+    tier: infrastructure
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      # Adjust based on database size; 50Gi supports ~30 daily backups of a ~1GB DB
+      storage: 50Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: khushfus
+  labels:
+    app: postgres-backup
+    tier: infrastructure
+spec:
+  # Run daily at 02:00 UTC
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BACKUP_FILE="/backups/khushfus-$(date +%Y%m%d-%H%M%S).sql.gz"
+                  echo "Starting backup to ${BACKUP_FILE}..."
+                  pg_dump -h postgres -U khushfus -d khushfus | gzip > "${BACKUP_FILE}"
+                  echo "Backup completed: $(du -h ${BACKUP_FILE})"
+
+                  # Retain only the last 30 daily backups
+                  echo "Cleaning up old backups (keeping last 30)..."
+                  ls -1t /backups/khushfus-*.sql.gz | tail -n +31 | xargs -r rm -v
+                  echo "Backup and cleanup done."
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: khushfus-secrets
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backups
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: postgres-backups
+          # TODO: For S3-compatible storage, replace the PVC volume with an
+          # initContainer that installs awscli, and pipe pg_dump output directly:
+          #   pg_dump ... | gzip | aws s3 cp - s3://khushfus-backups/daily/backup-$(date +%F).sql.gz
+          # Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from secrets.

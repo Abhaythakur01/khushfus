@@ -16,3 +16,51 @@ resources:
   - services/frontend.yaml
   - ingress.yaml
   - hpa.yaml
+  - pdb.yaml
+  - network-policies.yaml
+  - backup-cronjob.yaml
+  - resource-quota.yaml
+  - pod-security.yaml
+
+# 7.22 Image tag management via kustomize
+images:
+  - name: registry.gitlab.com/khushfus/khushfus/gateway
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/collector
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/analyzer
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/query
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/report
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/notification
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/identity
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/tenant
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/media
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/search
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/publishing
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/rate-limiter
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/enrichment
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/export
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/competitive
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/scheduler
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/audit
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/realtime
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/project
+    newTag: "${IMAGE_TAG}"
+  - name: registry.gitlab.com/khushfus/khushfus/frontend
+    newTag: "${IMAGE_TAG}"

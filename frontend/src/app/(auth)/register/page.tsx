@@ -19,34 +19,60 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    fullName?: string;
+    email?: string;
+    password?: string;
+    confirmPassword?: string;
+  }>({});
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const HAS_UPPERCASE = /[A-Z]/;
+  const HAS_NUMBER = /[0-9]/;
+
+  const validateFields = (): boolean => {
+    const errors: typeof fieldErrors = {};
+    if (!fullName.trim()) {
+      errors.fullName = "Full name is required.";
+    }
+    if (!email) {
+      errors.email = "Email is required.";
+    } else if (!EMAIL_RE.test(email)) {
+      errors.email = "Please enter a valid email address.";
+    }
+    if (!password) {
+      errors.password = "Password is required.";
+    } else if (password.length < 8) {
+      errors.password = "Password must be at least 8 characters.";
+    } else if (!HAS_UPPERCASE.test(password)) {
+      errors.password = "Password must contain at least one uppercase letter.";
+    } else if (!HAS_NUMBER.test(password)) {
+      errors.password = "Password must contain at least one number.";
+    }
+    if (!confirmPassword) {
+      errors.confirmPassword = "Please confirm your password.";
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = "Passwords do not match.";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!fullName || !email || !password || !confirmPassword) {
-      setError("Please fill in all fields.");
-      return;
-    }
-
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
+    if (!validateFields()) return;
 
     setLoading(true);
     try {
       await register(email, password, fullName);
       toast.success("Account created successfully!");
       router.push("/dashboard");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number };
       const message =
-        err?.status === 409
+        apiErr?.status === 409
           ? "An account with this email already exists."
           : "Something went wrong. Please try again.";
       setError(message);
@@ -76,9 +102,10 @@ export default function RegisterPage() {
           type="text"
           placeholder="Jane Smith"
           value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
+          onChange={(e) => { setFullName(e.target.value); setFieldErrors((f) => ({ ...f, fullName: undefined })); }}
           icon={<User className="h-4 w-4" />}
           autoComplete="name"
+          error={fieldErrors.fullName}
           required
         />
 
@@ -87,9 +114,10 @@ export default function RegisterPage() {
           type="email"
           placeholder="you@company.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => { setEmail(e.target.value); setFieldErrors((f) => ({ ...f, email: undefined })); }}
           icon={<Mail className="h-4 w-4" />}
           autoComplete="email"
+          error={fieldErrors.email}
           required
         />
 
@@ -98,9 +126,10 @@ export default function RegisterPage() {
           type="password"
           placeholder="At least 8 characters"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); setFieldErrors((f) => ({ ...f, password: undefined })); }}
           icon={<Lock className="h-4 w-4" />}
           autoComplete="new-password"
+          error={fieldErrors.password}
           required
         />
 
@@ -109,14 +138,10 @@ export default function RegisterPage() {
           type="password"
           placeholder="Re-enter your password"
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          onChange={(e) => { setConfirmPassword(e.target.value); setFieldErrors((f) => ({ ...f, confirmPassword: undefined })); }}
           icon={<Lock className="h-4 w-4" />}
           autoComplete="new-password"
-          error={
-            confirmPassword && password !== confirmPassword
-              ? "Passwords do not match"
-              : undefined
-          }
+          error={fieldErrors.confirmPassword}
           required
         />
 

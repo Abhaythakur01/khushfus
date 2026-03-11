@@ -1,6 +1,6 @@
 [project]
 name = "khushfus"
-version = "0.1.0"
+version = "0.2.0"
 description = "Enterprise Social Listening Platform"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,9 +16,6 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "vaderSentiment>=3.3.2",
-    "transformers>=4.47.0",
-    "torch>=2.5.0",
-    "spacy>=3.8.0",
     "opensearch-py>=2.4.0",
     "apscheduler>=3.11.0",
     "weasyprint>=63.0",
@@ -47,6 +44,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ML dependencies: install with pip install -e ".[ml]"
+# Services that don't need NLP (gateway, tenant, identity, etc.) can skip this.
+ml = [
+    "torch>=2.5.0",
+    "transformers>=4.47.0",
+    "spacy>=3.8.0",
+    "bertopic>=0.16.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
@@ -71,9 +76,129 @@ markers = [
     "slow: Slow tests (ML models, large data)",
 ]
 
+# =============================================================================
+# pytest-cov — coverage configuration (8.15)
+# =============================================================================
+
+[tool.coverage.run]
+source = [
+    "src",
+    "services",
+    "shared",
+]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/node_modules/*",
+]
+branch = true
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+skip_covered = false
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    "^\\s*pass$",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "KhushFus Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+
+# =============================================================================
+# mypy — static type checking (8.4)
+# =============================================================================
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+# Third-party libraries without type stubs — suppress all errors from these
+[[tool.mypy.overrides]]
+module = [
+    "vaderSentiment.*",
+    "vaderSentiment.vaderSentiment",
+    "redis.*",
+    "aiosmtplib.*",
+    "feedparser.*",
+    "langdetect.*",
+    "praw.*",
+    "tweepy.*",
+    "playwright.*",
+    "apscheduler.*",
+    "weasyprint.*",
+    "wordcloud.*",
+    "bertopic.*",
+    "spacy.*",
+    "transformers.*",
+    "torch.*",
+    "opensearchpy.*",
+    "opentelemetry.*",
+    "prometheus_fastapi_instrumentator.*",
+    "celery.*",
+    "googleapiclient.*",
+    "bs4.*",
+    "PIL.*",
+    "pytesseract.*",
+    "whisper.*",
+    "python3_saml.*",
+    "authlib.*",
+    "openpyxl.*",
+    "xlsxwriter.*",
+]
+ignore_missing_imports = true
+ignore_errors = true
+
+# =============================================================================
+# mutmut — mutation testing (8.14)
+# =============================================================================
+
+[tool.mutmut]
+paths_to_mutate = "src/,shared/"
+tests_dir = "tests/"
+runner = "python -m pytest"
+use_coverage = false
+
+# =============================================================================
+# bumpversion — semantic versioning (8.17)
+# =============================================================================
+
+[tool.bumpversion]
+current_version = "0.2.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "chore: bump version {current_version} → {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "frontend/package.json"
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'

@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 
 import httpx
@@ -9,6 +10,14 @@ from src.config.settings import settings
 logger = logging.getLogger(__name__)
 
 TWITTER_SEARCH_URL = "https://api.twitter.com/2/tweets/search/recent"
+
+# Strip control characters (U+0000-U+001F) except newline (\n) and tab (\t)
+_TWEET_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean_text(text: str) -> str:
+    """Strip control characters from tweet text, preserving newlines and tabs."""
+    return _TWEET_CONTROL_CHAR_RE.sub("", text)
 
 
 class TwitterCollector(BaseCollector):
@@ -72,7 +81,7 @@ class TwitterCollector(BaseCollector):
                         platform=self.platform,
                         source_id=tweet["id"],
                         source_url=f"https://twitter.com/i/status/{tweet['id']}",
-                        text=tweet["text"],
+                        text=_clean_text(tweet["text"]),
                         author_name=author.get("name", ""),
                         author_handle=author.get("username", ""),
                         author_followers=author.get("public_metrics", {}).get("followers_count", 0),

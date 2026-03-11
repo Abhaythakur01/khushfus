@@ -9,6 +9,12 @@ metadata:
     tier: core
 spec:
   replicas: 1
+  # 7.19 Rolling update strategy for single-replica services
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: collector
@@ -18,9 +24,21 @@ spec:
         app: collector
         tier: core
     spec:
+      # 7.17 Pod security context
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: collector
           image: registry.gitlab.com/khushfus/khushfus/collector:REPLACE_WITH_TAG
+          # 7.17 Container security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -33,6 +51,28 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
+          # 7.18 TCP liveness probe for consumer service
+          ports:
+            - containerPort: 9092
+              name: health
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: 9092
+            failureThreshold: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 # Analyzer - background worker for sentiment analysis (ML workload)
 apiVersion: apps/v1
@@ -45,6 +85,11 @@ metadata:
     tier: core
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: analyzer
@@ -54,9 +99,19 @@ spec:
         app: analyzer
         tier: core
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: analyzer
           image: registry.gitlab.com/khushfus/khushfus/analyzer:REPLACE_WITH_TAG
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -69,6 +124,31 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "1000m"
+          ports:
+            - containerPort: 9091
+              name: health
+          livenessProbe:
+            tcpSocket:
+              port: 9091
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: 9091
+            failureThreshold: 15
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: model-cache
+              mountPath: /home/appuser/.cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: model-cache
+          emptyDir: {}
 ---
 # Query - background worker for query processing
 apiVersion: apps/v1
@@ -81,6 +161,11 @@ metadata:
     tier: core
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: query
@@ -90,9 +175,19 @@ spec:
         app: query
         tier: core
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: query
           image: registry.gitlab.com/khushfus/khushfus/query:REPLACE_WITH_TAG
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -105,6 +200,27 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
+          ports:
+            - containerPort: 9093
+              name: health
+          livenessProbe:
+            tcpSocket:
+              port: 9093
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: 9093
+            failureThreshold: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 # Report - background worker for report generation
 apiVersion: apps/v1
@@ -117,6 +233,11 @@ metadata:
     tier: core
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: report
@@ -126,9 +247,19 @@ spec:
         app: report
         tier: core
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: report
           image: registry.gitlab.com/khushfus/khushfus/report:REPLACE_WITH_TAG
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -141,6 +272,31 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
+          ports:
+            - containerPort: 9097
+              name: health
+          livenessProbe:
+            tcpSocket:
+              port: 9097
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: 9097
+            failureThreshold: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: reports-output
+              mountPath: /app/reports_output
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: reports-output
+          emptyDir: {}
 ---
 # Notification - background worker for sending notifications
 apiVersion: apps/v1
@@ -153,6 +309,11 @@ metadata:
     tier: core
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: notification
@@ -162,9 +323,19 @@ spec:
         app: notification
         tier: core
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: notification
           image: registry.gitlab.com/khushfus/khushfus/notification:REPLACE_WITH_TAG
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -177,3 +348,24 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
+          ports:
+            - containerPort: 9094
+              name: health
+          livenessProbe:
+            tcpSocket:
+              port: 9094
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            tcpSocket:
+              port: 9094
+            failureThreshold: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

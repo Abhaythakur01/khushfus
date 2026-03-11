@@ -11,3 +11,18 @@ data:
   USE_GPU: "false"
   ANALYZER_BATCH_SIZE: "20"
   HIGH_ENGAGEMENT_THRESHOLD: "100"
+  # -------------------------------------------------------------------------
+  # Internal TLS (mTLS) between services
+  # -------------------------------------------------------------------------
+  # Set to "true" to enable mTLS for inter-service communication.
+  # Production path:
+  #   1. Deploy cert-manager with a ClusterIssuer (e.g., self-signed CA or Vault PKI)
+  #   2. Create Certificate resources for each service
+  #   3. Mount TLS secrets as volumes in each deployment
+  #   4. Configure services to use TLS certificates for HTTP clients/servers
+  #   5. Alternatively, use a service mesh (Istio/Linkerd) for transparent mTLS
+  INTERNAL_TLS_ENABLED: "false"
+  # 7.55: Correlation ID header for distributed tracing propagation via gateway
+  CORRELATION_ID_HEADER: "X-Request-ID"
+  # TODO: 7.58 Add structured log format config (LOG_FORMAT: "json")
+  # TODO: 7.60 Add graceful shutdown timeout (SHUTDOWN_TIMEOUT_SECONDS: "30")

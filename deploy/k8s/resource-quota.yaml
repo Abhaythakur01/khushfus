@@ -1,0 +1,47 @@
+# =============================================================================
+# 7.16 Resource Quotas for khushfus namespace
+# =============================================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: khushfus-resource-quota
+  namespace: khushfus
+spec:
+  hard:
+    # CPU limits
+    requests.cpu: "20"
+    limits.cpu: "40"
+    # Memory limits
+    requests.memory: "40Gi"
+    limits.memory: "80Gi"
+    # Pod count
+    pods: "100"
+    # PVC count
+    persistentvolumeclaims: "20"
+    # Service count
+    services: "30"
+    # ConfigMap / Secret count
+    configmaps: "50"
+    secrets: "50"
+---
+# Limit ranges for individual pods (defaults if not specified)
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: khushfus-limit-range
+  namespace: khushfus
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "256Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"

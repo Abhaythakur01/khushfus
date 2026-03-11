@@ -337,8 +337,13 @@ class TestConsumeWithRetry:
         bus.ack = AsyncMock()
         bus.publish_raw = AsyncMock(return_value="new-msg-id")
 
+        from shared.events import RetryPolicy
+
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            await bus.consume_with_retry("stream", "group", "consumer", handler, max_retries=3)
+            await bus.consume_with_retry(
+                "stream", "group", "consumer", handler,
+                retry_policy=RetryPolicy(max_retries=3),
+            )
 
         # Should republish with incremented retry count
         bus.publish_raw.assert_awaited_once()
@@ -351,26 +356,27 @@ class TestConsumeWithRetry:
 
     @pytest.mark.asyncio
     async def test_moves_to_dlq_after_max_retries(self):
+        from shared.events import RetryPolicy
+
         bus = self._make_event_bus()
         handler = AsyncMock(side_effect=ValueError("permanent error"))
 
         msg_data = {"text": "bad", "_retry_count": "3"}
         bus.consume = AsyncMock(return_value=[("msg-1", msg_data)])
-        bus.ack = AsyncMock()
-        bus.publish_raw = AsyncMock(return_value="dlq-msg-id")
+        bus.move_to_dlq = AsyncMock()
 
-        await bus.consume_with_retry("mystream", "group", "consumer", handler, max_retries=3)
+        await bus.consume_with_retry(
+            "mystream", "group", "consumer", handler,
+            retry_policy=RetryPolicy(max_retries=3),
+        )
 
-        # Should publish to DLQ
-        bus.publish_raw.assert_awaited_once()
-        call_args = bus.publish_raw.call_args
-        assert call_args[0][0] == "mystream:dlq"
-        assert call_args[0][1]["_original_stream"] == "mystream"
-        assert call_args[0][1]["_error"] == "permanent error"
-        assert call_args[0][1]["_retry_count"] == "4"
-
-        # Should ack the original
-        bus.ack.assert_awaited_once_with("mystream", "group", "msg-1")
+        # Should call move_to_dlq with structured DLQ entry
+        bus.move_to_dlq.assert_awaited_once()
+        call_args = bus.move_to_dlq.call_args
+        assert call_args[0][0] == "mystream"  # stream
+        assert call_args[0][1] == "group"  # group
+        assert call_args[0][2] == "msg-1"  # msg_id
+        assert "permanent error" in call_args[1]["error_reason"]
 
     @pytest.mark.asyncio
     async def test_no_messages(self):
@@ -403,8 +409,13 @@ class TestConsumeWithRetry:
         bus.ack = AsyncMock()
         bus.publish_raw = AsyncMock(return_value="new-id")
 
+        from shared.events import RetryPolicy
+
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            await bus.consume_with_retry("stream", "group", "consumer", handler, max_retries=3)
+            await bus.consume_with_retry(
+                "stream", "group", "consumer", handler,
+                retry_policy=RetryPolicy(max_retries=3),
+            )
 
         assert call_count == 2
         # msg-1 acked, msg-2 acked (after republish for retry)
@@ -542,6 +553,50 @@ class TestRequestIDMiddleware:
 
         result = await middleware.dispatch(request, call_next)
         assert result.headers["x-request-id"] == existing_id
+
+
+# ============================================================================
+# Email Notification Sync Fallback Test
+# ============================================================================
+
+
+class TestEmailNotificationSyncFallback:
+    """Test that email notification falls back to sync smtplib when aiosmtplib unavailable."""
+
+    @pytest.mark.asyncio
+    async def test_email_notification_sync_fallback(self):
+        """When aiosmtplib raises ImportError, send_email_notification should use smtplib."""
+        mock_rule = MagicMock()
+        mock_rule.webhook_url = "test@example.com"
+        mock_rule.rule_type = "volume_spike"
+        mock_rule.project_id = 1
+        mock_rule.name = "Test Rule"
+
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.__enter__ = MagicMock(return_value=mock_smtp_instance)
+        mock_smtp_instance.__exit__ = MagicMock(return_value=False)
+        mock_smtp_cls = MagicMock(return_value=mock_smtp_instance)
+
+        # We need to make `import aiosmtplib` inside send_email_notification raise ImportError.
+        # The function does: try: import aiosmtplib; ... except ImportError: ...
+        # Remove aiosmtplib from sys.modules and patch builtins __import__ to block it.
+        original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+
+        def _mock_import(name, *args, **kwargs):
+            if name == "aiosmtplib":
+                raise ImportError("mocked: no aiosmtplib")
+            return original_import(name, *args, **kwargs)
+
+        # Ensure the notification module is loaded fresh
+        from services.notification_service.app.main import send_email_notification
+
+        with patch("builtins.__import__", side_effect=_mock_import), \
+             patch("smtplib.SMTP", mock_smtp_cls):
+            await send_email_notification(mock_rule, "Test Alert", "Test description")
+
+        # Verify smtplib was used as fallback
+        mock_smtp_cls.assert_called_once()
+        mock_smtp_instance.sendmail.assert_called_once()
 
 
 class TestRateLimitMiddlewareHelpers:

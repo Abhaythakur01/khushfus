@@ -35,6 +35,7 @@ def _async_client_mock(response):
     client = AsyncMock()
     client.get = AsyncMock(return_value=response)
     client.post = AsyncMock(return_value=response)
+    client.request = AsyncMock(return_value=response)
     cm = AsyncMock()
     cm.__aenter__ = AsyncMock(return_value=client)
     cm.__aexit__ = AsyncMock(return_value=False)
@@ -736,10 +737,10 @@ class TestMastodonCollector:
         assert MastodonCollector().platform == "mastodon"
 
     def test_strip_html(self):
-        from src.collectors.mastodon import MastodonCollector
+        from shared.sanitize import strip_html
 
         html = "<p>Hello <a href='#'>world</a></p><br/>Next line"
-        text = MastodonCollector._strip_html(html)
+        text = strip_html(html)
         assert "<" not in text
         assert "Hello" in text
         assert "world" in text
@@ -772,25 +773,24 @@ class TestMastodonCollector:
     async def test_collect_parses_statuses(self):
         from src.collectors.mastodon import MastodonCollector
 
-        api_response = {
-            "statuses": [
-                {
-                    "id": "status_1",
-                    "content": "<p>This test brand is amazing</p>",
-                    "url": "https://mastodon.social/@alice/status_1",
-                    "created_at": "2025-01-15T10:00:00Z",
-                    "account": {
-                        "display_name": "Alice",
-                        "acct": "alice",
-                        "followers_count": 300,
-                        "url": "https://mastodon.social/@alice",
-                    },
-                    "favourites_count": 20,
-                    "reblogs_count": 5,
-                    "replies_count": 3,
-                }
-            ]
-        }
+        # Hashtag timeline returns a flat list of statuses (no access_token → uses hashtag endpoint)
+        api_response = [
+            {
+                "id": "status_1",
+                "content": "<p>This test brand is amazing</p>",
+                "url": "https://mastodon.social/@alice/status_1",
+                "created_at": "2025-01-15T10:00:00Z",
+                "account": {
+                    "display_name": "Alice",
+                    "acct": "alice",
+                    "followers_count": 300,
+                    "url": "https://mastodon.social/@alice",
+                },
+                "favourites_count": 20,
+                "reblogs_count": 5,
+                "replies_count": 3,
+            }
+        ]
 
         resp = _mock_response(200, api_response)
         cm, client = _async_client_mock(resp)

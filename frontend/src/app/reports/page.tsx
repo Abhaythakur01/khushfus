@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   FileText,
   Download,
-  Eye,
-  Trash2,
   Plus,
-  FileBarChart,
-  Brain,
-  Target,
   Loader2,
+  FolderOpen,
+  Presentation,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,7 +21,6 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
   Table,
@@ -33,379 +32,363 @@ import {
 } from "@/components/ui/table";
 import {
   Dialog,
+  DialogHeader,
+  DialogContent,
+  DialogFooter,
 } from "@/components/ui/dialog";
 
-type ReportStatus = "ready" | "generating" | "failed";
-type ReportFormat = "PDF" | "HTML";
-type ReportType = "Daily Summary" | "Weekly Analysis" | "Monthly Comprehensive" | "Custom";
-
-interface Report {
-  id: string;
-  title: string;
-  type: ReportType;
-  periodStart: string;
-  periodEnd: string;
-  status: ReportStatus;
-  format: ReportFormat;
-  createdAt: string;
+interface Project {
+  id: number;
+  name: string;
 }
 
-const mockReports: Report[] = [
-  {
-    id: "1",
-    title: "Weekly Sentiment Analysis - W9 2026",
-    type: "Weekly Analysis",
-    periodStart: "2026-02-23",
-    periodEnd: "2026-03-01",
-    status: "ready",
-    format: "PDF",
-    createdAt: "2026-03-02T09:00:00Z",
-  },
-  {
-    id: "2",
-    title: "February 2026 Comprehensive Report",
-    type: "Monthly Comprehensive",
-    periodStart: "2026-02-01",
-    periodEnd: "2026-02-28",
-    status: "ready",
-    format: "PDF",
-    createdAt: "2026-03-01T08:30:00Z",
-  },
-  {
-    id: "3",
-    title: "Daily Summary - Mar 6, 2026",
-    type: "Daily Summary",
-    periodStart: "2026-03-06",
-    periodEnd: "2026-03-06",
-    status: "generating",
-    format: "HTML",
-    createdAt: "2026-03-06T23:00:00Z",
-  },
-  {
-    id: "4",
-    title: "Custom: Product Launch Analysis",
-    type: "Custom",
-    periodStart: "2026-01-15",
-    periodEnd: "2026-02-15",
-    status: "ready",
-    format: "PDF",
-    createdAt: "2026-02-16T10:00:00Z",
-  },
-  {
-    id: "5",
-    title: "Weekly Sentiment Analysis - W8 2026",
-    type: "Weekly Analysis",
-    periodStart: "2026-02-16",
-    periodEnd: "2026-02-22",
-    status: "ready",
-    format: "HTML",
-    createdAt: "2026-02-23T09:00:00Z",
-  },
-  {
-    id: "6",
-    title: "January 2026 Comprehensive Report",
-    type: "Monthly Comprehensive",
-    periodStart: "2026-01-01",
-    periodEnd: "2026-01-31",
-    status: "ready",
-    format: "PDF",
-    createdAt: "2026-02-01T08:30:00Z",
-  },
-  {
-    id: "7",
-    title: "Custom: Competitor Benchmark Q1",
-    type: "Custom",
-    periodStart: "2026-01-01",
-    periodEnd: "2026-03-05",
-    status: "failed",
-    format: "PDF",
-    createdAt: "2026-03-05T14:00:00Z",
-  },
-  {
-    id: "8",
-    title: "Daily Summary - Mar 5, 2026",
-    type: "Daily Summary",
-    periodStart: "2026-03-05",
-    periodEnd: "2026-03-05",
-    status: "ready",
-    format: "HTML",
-    createdAt: "2026-03-05T23:00:00Z",
-  },
-];
+interface Report {
+  id: number | string;
+  title?: string;
+  report_type?: string;
+  type?: string;
+  status?: string;
+  format?: string;
+  file_path?: string;
+  created_at?: string;
+  createdAt?: string;
+}
 
-const statusStyles: Record<ReportStatus, string> = {
-  ready: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  generating: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-  failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+const statusColor = (s: string) => {
+  switch (s) {
+    case "ready":
+    case "completed":
+      return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+    case "generating":
+    case "pending":
+    case "processing":
+      return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+    case "failed":
+      return "bg-red-500/10 text-red-400 border-red-500/20";
+    default:
+      return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+  }
 };
 
-const templates = [
-  {
-    title: "Executive Summary",
-    description:
-      "High-level overview of brand sentiment, key metrics, and trending topics for leadership stakeholders.",
-    icon: FileBarChart,
-  },
-  {
-    title: "Sentiment Deep-Dive",
-    description:
-      "Detailed sentiment breakdown by source, topic, and time period with anomaly detection insights.",
-    icon: Brain,
-  },
-  {
-    title: "Competitive Analysis",
-    description:
-      "Side-by-side comparison of brand mentions, sentiment, and share of voice against competitors.",
-    icon: Target,
-  },
+const formatBadgeColor = (fmt: string) => {
+  switch (fmt) {
+    case "pptx":
+      return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+    default:
+      return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+  }
+};
+
+const REPORT_TYPES = [
+  { value: "summary", label: "Summary" },
+  { value: "sentiment", label: "Sentiment Analysis" },
+  { value: "competitive", label: "Competitive Analysis" },
+];
+
+const SCHEDULE_FREQUENCIES = [
+  { value: "hourly", label: "Hourly" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "yearly", label: "Yearly" },
+];
+
+const FORMATS = [
+  { value: "pdf", label: "PDF", icon: FileText },
+  { value: "pptx", label: "PPTX", icon: Presentation },
+  { value: "csv", label: "CSV", icon: FileText },
+  { value: "xlsx", label: "Excel", icon: FileText },
 ];
 
 export default function ReportsPage() {
-  const [reports, setReports] = useState<Report[]>(
-    [...mockReports].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )
-  );
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [formType, setFormType] = useState<ReportType>("Daily Summary");
-  const [formFormat, setFormFormat] = useState<ReportFormat>("PDF");
-  const [formStart, setFormStart] = useState("");
-  const [formEnd, setFormEnd] = useState("");
+  const [reportType, setReportType] = useState("summary");
+  const [reportFormat, setReportFormat] = useState("pdf");
+  const [scheduleFrequency, setScheduleFrequency] = useState("daily");
+
+  // Load projects
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.getProjects();
+        if (cancelled) return;
+        setProjects(list ?? []);
+        if (list?.length > 0) {
+          setSelectedProjectId(list[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load projects:", err);
+      } finally {
+        if (!cancelled) setProjectsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load reports when project changes
+  const fetchReports = useCallback(async (projectId: number) => {
+    setLoading(true);
+    try {
+      const data = await api.getReports(projectId);
+      setReports(data ?? []);
+    } catch (err: any) {
+      console.error("Failed to load reports:", err);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      fetchReports(selectedProjectId);
+    }
+  }, [selectedProjectId, fetchReports]);
 
   const handleGenerate = async () => {
+    if (!selectedProjectId) return;
     setGenerating(true);
-    // Simulate generation delay
-    await new Promise((r) => setTimeout(r, 1500));
-    const newReport: Report = {
-      id: String(Date.now()),
-      title: `${formType} - ${formStart}`,
-      type: formType,
-      periodStart: formStart,
-      periodEnd: formEnd,
-      status: "generating",
-      format: formFormat,
-      createdAt: new Date().toISOString(),
-    };
-    setReports((prev) => [newReport, ...prev]);
-    setGenerating(false);
-    setDialogOpen(false);
-    setFormStart("");
-    setFormEnd("");
+    try {
+      await api.generateReport(selectedProjectId, scheduleFrequency, reportFormat);
+      toast.success(`${scheduleFrequency.charAt(0).toUpperCase() + scheduleFrequency.slice(1)} ${reportFormat.toUpperCase()} report generation started`);
+      setDialogOpen(false);
+      // Refresh list
+      await fetchReports(selectedProjectId);
+    } catch (err: any) {
+      console.error("Failed to generate report:", err);
+      toast.error("Failed to generate report");
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setReports((prev) => prev.filter((r) => r.id !== id));
-  };
+  const getDate = (r: Report) => r.created_at || r.createdAt || "";
+  const getType = (r: Report) => r.report_type || r.type || "unknown";
+  const getStatus = (r: Report) => r.status || "unknown";
+  const getFormat = (r: Report) => r.format || "pdf";
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
-          <p className="text-muted-foreground mt-1">
-            Generate, view, and download analytical reports.
-          </p>
+    <AppShell title="Reports">
+      <div className="space-y-6">
+        {/* Top bar: project selector + generate button */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-64">
+            {projectsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading projects...
+              </div>
+            ) : projects.length > 0 ? (
+              <Select
+                value={String(selectedProjectId ?? "")}
+                onValueChange={(v) => setSelectedProjectId(Number(v))}
+                className="bg-slate-900 border-slate-700 text-slate-100"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <p className="text-sm text-slate-500">No projects found</p>
+            )}
+          </div>
+          <Button
+            onClick={() => setDialogOpen(true)}
+            disabled={!selectedProjectId}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Generate Report
+          </Button>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Generate Report
-        </Button>
+
+        {/* Reports table */}
+        <Card className="bg-slate-900/60 border-slate-800">
+          <CardHeader className="border-slate-800">
+            <CardTitle className="text-slate-100">Reports</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              </div>
+            ) : reports.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FolderOpen className="mb-3 h-10 w-10 text-slate-600" />
+                <p className="text-sm text-slate-500">No reports generated yet</p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Select a project and click &quot;Generate Report&quot; to get started.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-800/50 border-slate-700">
+                    <TableRow className="hover:bg-transparent border-slate-700">
+                      <TableHead className="text-slate-400">Title</TableHead>
+                      <TableHead className="text-slate-400">Type</TableHead>
+                      <TableHead className="text-slate-400">Format</TableHead>
+                      <TableHead className="text-slate-400">Status</TableHead>
+                      <TableHead className="text-slate-400">Created</TableHead>
+                      <TableHead className="text-slate-400 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-slate-800">
+                    {reports.map((report) => (
+                      <TableRow key={report.id} className="border-slate-800 hover:bg-slate-800/40">
+                        <TableCell className="text-slate-200 font-medium">
+                          <div className="flex items-center gap-2">
+                            {getFormat(report) === "pptx" ? (
+                              <Presentation className="h-4 w-4 text-orange-400" />
+                            ) : (
+                              <FileText className="h-4 w-4 text-blue-400" />
+                            )}
+                            {report.title || `${getType(report)} report`}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-slate-300 capitalize">{getType(report)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={cn("uppercase border text-xs", formatBadgeColor(getFormat(report)))}>
+                            {getFormat(report)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={cn("capitalize border", statusColor(getStatus(report)))}>
+                            {getStatus(report)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-slate-400 text-sm whitespace-nowrap">
+                          {getDate(report) ? formatDate(getDate(report)) : "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={getStatus(report) !== "ready" && getStatus(report) !== "completed"}
+                            title="Download"
+                            className="text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            onClick={() => {
+                              if (report.file_path) {
+                                window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${report.file_path}`, '_blank');
+                              } else {
+                                toast("Report file not yet available");
+                              }
+                            }}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Generate Report Dialog */}
-      {dialogOpen && (
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-background rounded-lg border shadow-lg w-full max-w-md mx-4 p-6">
-              <h2 className="text-lg font-semibold mb-4">Generate Report</h2>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-slate-900 border border-slate-700">
+        <DialogHeader onClose={() => setDialogOpen(false)} className="border-slate-700">
+          <span className="text-slate-100">Generate Report</span>
+        </DialogHeader>
+        <DialogContent className="space-y-5">
+          {/* Report Type */}
+          <div>
+            <label className="text-sm font-medium text-slate-300 mb-1 block">Report Type</label>
+            <Select
+              value={reportType}
+              onValueChange={(v) => setReportType(v)}
+              className="bg-slate-800 border-slate-700 text-slate-100"
+            >
+              {REPORT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Report Type
-                  </label>
-                  <Select
-                    value={formType}
-                    onValueChange={(v: string) => setFormType(v as ReportType)}
-                  >
-                    <option value="Daily Summary">Daily Summary</option>
-                    <option value="Weekly Analysis">Weekly Analysis</option>
-                    <option value="Monthly Comprehensive">Monthly Comprehensive</option>
-                    <option value="Custom">Custom</option>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">
-                      Start Date
-                    </label>
-                    <Input
-                      type="date"
-                      value={formStart}
-                      onChange={(e) => setFormStart(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">
-                      End Date
-                    </label>
-                    <Input
-                      type="date"
-                      value={formEnd}
-                      onChange={(e) => setFormEnd(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Format
-                  </label>
-                  <div className="flex gap-4">
-                    {(["PDF", "HTML"] as ReportFormat[]).map((fmt) => (
-                      <label
-                        key={fmt}
-                        className="flex items-center gap-2 cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name="format"
-                          checked={formFormat === fmt}
-                          onChange={() => setFormFormat(fmt)}
-                          className="accent-primary"
-                        />
-                        <span className="text-sm">{fmt}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={generating || !formStart || !formEnd}
-                >
-                  {generating && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {/* Schedule Frequency */}
+          <div>
+            <label className="text-sm font-medium text-slate-300 mb-1 block">Frequency</label>
+            <div className="grid grid-cols-3 gap-2">
+              {SCHEDULE_FREQUENCIES.map((freq) => (
+                <button
+                  key={freq.value}
+                  type="button"
+                  onClick={() => setScheduleFrequency(freq.value)}
+                  className={cn(
+                    "rounded-lg px-3 py-2 text-sm font-medium transition-all border",
+                    scheduleFrequency === freq.value
+                      ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
+                      : "bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
                   )}
-                  Generate
-                </Button>
-              </div>
+                >
+                  {freq.label}
+                </button>
+              ))}
             </div>
           </div>
-        </Dialog>
-      )}
 
-      {/* Reports Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Reports</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reports.map((report) => (
-                  <TableRow key={report.id}>
-                    <TableCell className="font-medium max-w-[250px] truncate">
-                      {report.title}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{report.type}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {report.periodStart} &mdash; {report.periodEnd}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("capitalize", statusStyles[report.status])}>
-                        {report.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {formatDate(report.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={report.status !== "ready"}
-                          title="Download"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={report.status !== "ready"}
-                          title="View"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(report.id)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          {/* Format */}
+          <div>
+            <label className="text-sm font-medium text-slate-300 mb-2 block">Format</label>
+            <div className="flex gap-3">
+              {FORMATS.map((fmt) => {
+                const Icon = fmt.icon;
+                return (
+                  <button
+                    key={fmt.value}
+                    type="button"
+                    onClick={() => setReportFormat(fmt.value)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all border",
+                      reportFormat === fmt.value
+                        ? fmt.value === "pptx"
+                          ? "bg-orange-600/20 border-orange-500 text-orange-300"
+                          : "bg-blue-600/20 border-blue-500 text-blue-300"
+                        : "bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {fmt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Report Templates */}
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Report Templates</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {templates.map((tpl) => (
-            <Card key={tpl.title}>
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <tpl.icon className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold">{tpl.title}</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {tpl.description}
-                    </p>
-                    <Button variant="outline" size="sm" className="mt-3">
-                      Use Template
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </div>
+        </DialogContent>
+        <DialogFooter className="border-slate-700 bg-slate-900/50">
+          <Button
+            variant="outline"
+            onClick={() => setDialogOpen(false)}
+            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            {generating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Generate
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </AppShell>
   );
 }

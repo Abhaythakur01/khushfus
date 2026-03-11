@@ -15,7 +15,8 @@ import asyncio
 import dataclasses
 import json
 import logging
-from dataclasses import asdict, dataclass
+import uuid
+from dataclasses import asdict, dataclass, field
 
 import redis.asyncio as aioredis
 
@@ -23,6 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 # --- Event Definitions ---
+
+
+def _new_event_id() -> str:
+    return str(uuid.uuid4())
+
+
+# Schema version for forward/backward compatibility of events.
+# Bump when adding fields (minor) or changing field semantics (major).
+EVENT_SCHEMA_VERSION = "1.0"
+
+# Maximum character length for the text field in mention events
+EVENT_TEXT_MAX_LENGTH = 5000
 
 
 @dataclass
@@ -44,6 +57,12 @@ class RawMentionEvent:
     reach: int = 0
     published_at: str = ""  # ISO format string
     matched_keywords: str = ""  # comma-separated
+    event_id: str = field(default_factory=_new_event_id)  # idempotency key
+    schema_version: str = EVENT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.text and len(self.text) > EVENT_TEXT_MAX_LENGTH:
+            self.text = self.text[:EVENT_TEXT_MAX_LENGTH]
 
 
 @dataclass
@@ -76,6 +95,12 @@ class AnalyzedMentionEvent:
     aspects_json: str = ""  # JSON string: [{"aspect": ..., "sentiment": ..., "score": ...}]
     sarcasm: bool = False
     sentiment_tier: str = "vader"  # vader, transformer, claude
+    event_id: str = field(default_factory=_new_event_id)  # idempotency key
+    schema_version: str = EVENT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.text and len(self.text) > EVENT_TEXT_MAX_LENGTH:
+            self.text = self.text[:EVENT_TEXT_MAX_LENGTH]
 
 
 @dataclass
@@ -89,6 +114,7 @@ class AlertEvent:
     description: str
     data: str = ""  # JSON string of relevant data
     timestamp: str = ""
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -96,8 +122,10 @@ class ReportRequestEvent:
     """Request to generate a report."""
 
     project_id: int
-    report_type: str  # daily, weekly, monthly, custom
+    report_type: str  # hourly, daily, weekly, monthly, quarterly, yearly, custom
+    format: str = "pdf"  # pdf, pptx
     requested_by: str = ""
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -109,6 +137,7 @@ class MediaAnalysisEvent:
     media_url: str
     media_type: str  # image, video, audio
     source_platform: str = ""
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -120,6 +149,7 @@ class MediaResultEvent:
     labels: str = ""  # JSON: detected objects, logos, scenes
     transcript: str = ""  # video/audio transcript
     logo_detected: str = ""  # comma-separated brand logos
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -131,6 +161,7 @@ class EnrichmentEvent:
     author_handle: str
     author_platform: str
     author_followers: int = 0
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -142,6 +173,7 @@ class EnrichmentResultEvent:
     is_bot: bool = False
     org_name: str = ""
     virality_score: float = 0.0
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -152,6 +184,7 @@ class ExportRequestEvent:
     project_id: int
     export_format: str
     filters_json: str = ""
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -164,6 +197,7 @@ class PublishRequestEvent:
     content: str
     media_urls: str = ""
     reply_to_mention_id: int = 0
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -174,6 +208,7 @@ class WorkflowTriggerEvent:
     project_id: int
     mention_id: int
     trigger_data: str = ""  # JSON
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 @dataclass
@@ -187,6 +222,7 @@ class AuditEvent:
     resource_id: int = 0
     details: str = ""
     ip_address: str = ""
+    schema_version: str = EVENT_SCHEMA_VERSION
 
 
 # --- Stream Names ---
@@ -207,17 +243,69 @@ STREAM_AUDIT = "audit:log"
 STREAM_COLLECTION_REQUEST = "collection:request"
 
 
+# --- Retry Policy ---
+
+
+@dataclass
+class RetryPolicy:
+    """Configurable retry policy per stream."""
+
+    max_retries: int = 3
+    backoff_base: float = 0.1  # seconds
+    backoff_max: float = 30.0  # cap exponential backoff
+
+
+# Per-stream retry policies (override defaults for specific streams)
+RETRY_POLICIES: dict[str, RetryPolicy] = {
+    STREAM_RAW_MENTIONS: RetryPolicy(max_retries=5, backoff_base=0.5),
+    STREAM_ANALYZED_MENTIONS: RetryPolicy(max_retries=5, backoff_base=0.5),
+    STREAM_MEDIA_ANALYSIS: RetryPolicy(max_retries=3, backoff_base=1.0, backoff_max=60.0),
+    STREAM_REPORT_REQUESTS: RetryPolicy(max_retries=2, backoff_base=1.0),
+}
+
+DEFAULT_RETRY_POLICY = RetryPolicy()
+
+
+def get_retry_policy(stream: str) -> RetryPolicy:
+    """Get the retry policy for a stream, falling back to default."""
+    return RETRY_POLICIES.get(stream, DEFAULT_RETRY_POLICY)
+
+
+# --- DLQ Structured Entry ---
+
+
+@dataclass
+class DLQEntry:
+    """Structured dead-letter queue entry with error metadata."""
+
+    original_stream: str
+    original_msg_id: str
+    error: str
+    retry_count: int
+    failed_at: str  # ISO format
+    consumer_group: str = ""
+    consumer_name: str = ""
+    original_data: str = ""  # JSON-encoded original message
+
+
 # --- Event Bus ---
 
 
 class EventBus:
     """Async Redis Streams event bus for microservice communication."""
 
-    def __init__(self, redis_url: str, max_reconnect_attempts: int = 5, reconnect_delay: float = 1.0):
+    def __init__(
+        self,
+        redis_url: str,
+        max_reconnect_attempts: int = 5,
+        reconnect_delay: float = 1.0,
+        connect_timeout: float = 5.0,
+    ):
         self.redis_url = redis_url
         self._redis: aioredis.Redis | None = None
         self._max_reconnect_attempts = max_reconnect_attempts
         self._reconnect_delay = reconnect_delay
+        self._connect_timeout = connect_timeout
 
     async def connect(self):
         """Connect to Redis, retrying with exponential backoff on failure."""
@@ -226,7 +314,12 @@ class EventBus:
         last_err = None
         for attempt in range(1, self._max_reconnect_attempts + 1):
             try:
-                self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+                self._redis = aioredis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=self._connect_timeout,
+                    socket_timeout=self._connect_timeout,
+                )
                 # Verify the connection is alive
                 await self._redis.ping()
                 logger.info("Connected to Redis at %s", self.redis_url)
@@ -320,19 +413,27 @@ class EventBus:
         r = await self._ensure_connected()
         await r.xack(stream, group, msg_id)
 
-    async def move_to_dlq(self, stream: str, group: str, msg_id: str, error_reason: str):
-        """Move a failed message to the dead-letter queue.
-
-        Reads the original message data from the stream, publishes it to
-        ``{stream}:dlq`` with error metadata, and acknowledges the original
-        message so it is no longer pending.
+    async def move_to_dlq(
+        self,
+        stream: str,
+        group: str,
+        msg_id: str,
+        error_reason: str,
+        consumer_name: str = "",
+        retry_count: int = 0,
+    ):
+        """Move a failed message to the dead-letter queue as a structured DLQEntry.
 
         Args:
             stream: The source stream name.
             group: The consumer group that owns the message.
             msg_id: The message ID to move.
             error_reason: Human-readable description of the failure.
+            consumer_name: Name of the consumer that failed.
+            retry_count: Number of retries attempted.
         """
+        from datetime import datetime, timezone
+
         r = await self._ensure_connected()
         dlq_stream = f"{stream}:dlq"
 
@@ -343,17 +444,44 @@ class EventBus:
             return
 
         _, data = entries[0]
-        data["_original_stream"] = stream
-        data["_original_msg_id"] = msg_id
-        data["_error"] = str(error_reason)
+        dlq_entry = DLQEntry(
+            original_stream=stream,
+            original_msg_id=msg_id,
+            error=str(error_reason),
+            retry_count=retry_count,
+            failed_at=datetime.now(timezone.utc).isoformat(),
+            consumer_group=group,
+            consumer_name=consumer_name,
+            original_data=json.dumps(data),
+        )
 
-        # Publish to DLQ and ack the original
-        dlq_msg_id = await self.publish_raw(dlq_stream, data)
+        # Publish structured DLQ entry and ack the original
+        dlq_msg_id = await self.publish(dlq_stream, dlq_entry)
         await r.xack(stream, group, msg_id)
         logger.info(
             "Moved message %s from %s to %s (dlq_id=%s): %s",
             msg_id, stream, dlq_stream, dlq_msg_id, error_reason,
         )
+
+    async def get_consumer_lag(self, stream: str, group: str) -> dict:
+        """Get consumer lag info via XPENDING.
+
+        Returns dict with: pending (total pending msgs), consumers (list of consumer info).
+        """
+        try:
+            r = await self._ensure_connected()
+            info = await r.xpending(stream, group)
+            return {
+                "pending": info.get("pending", 0) if isinstance(info, dict) else (info[0] if info else 0),
+                "min_id": info.get("min", None) if isinstance(info, dict) else (info[1] if len(info) > 1 else None),
+                "max_id": info.get("max", None) if isinstance(info, dict) else (info[2] if len(info) > 2 else None),
+                "consumers": (
+                    info.get("consumers", []) if isinstance(info, dict) else (info[3] if len(info) > 3 else [])
+                ),
+            }
+        except Exception as e:
+            logger.warning("Failed to get consumer lag for %s/%s: %s", stream, group, e)
+            return {"pending": -1, "error": str(e)}
 
     async def publish_batch(self, stream: str, events: list, maxlen: int = 100_000) -> list[str]:
         """Publish multiple events efficiently using pipeline."""
@@ -379,11 +507,15 @@ class EventBus:
         group: str,
         consumer: str,
         handler,
-        max_retries: int = 3,
+        retry_policy: RetryPolicy | None = None,
         count: int = 10,
         block_ms: int = 5000,
     ):
-        """Consume messages with automatic retry and DLQ on failure."""
+        """Consume messages with automatic retry and structured DLQ on failure.
+
+        Uses per-stream RetryPolicy (from RETRY_POLICIES) or a custom one.
+        """
+        policy = retry_policy or get_retry_policy(stream)
         messages = await self.consume(stream, group, consumer, count, block_ms)
         for msg_id, data in messages:
             retries = int(data.get("_retry_count", "0"))
@@ -391,23 +523,27 @@ class EventBus:
                 await handler(data)
                 await self.ack(stream, group, msg_id)
             except Exception as e:
-                logger.error(f"Failed processing {msg_id} on {stream}: {e}")
-                if retries >= max_retries:
-                    # Move to DLQ
-                    dlq_stream = f"{stream}:dlq"
-                    data["_original_stream"] = stream
-                    data["_error"] = str(e)
-                    data["_retry_count"] = str(retries + 1)
-                    await self.publish_raw(dlq_stream, data)
-                    await self.ack(stream, group, msg_id)
-                    logger.warning(f"Message {msg_id} moved to DLQ {dlq_stream}")
+                logger.error("Failed processing %s on %s: %s", msg_id, stream, e)
+                if retries >= policy.max_retries:
+                    await self.move_to_dlq(
+                        stream, group, msg_id,
+                        error_reason=str(e),
+                        consumer_name=consumer,
+                        retry_count=retries + 1,
+                    )
                 else:
                     # Re-publish with incremented retry count for retry
                     data["_retry_count"] = str(retries + 1)
                     await self.publish_raw(stream, data)
                     await self.ack(stream, group, msg_id)
-                    backoff = 2 ** retries * 0.1  # Exponential backoff
-                    logger.info(f"Retrying message {msg_id} (attempt {retries + 1}), backoff {backoff:.1f}s")
+                    backoff = min(
+                        policy.backoff_base * (2 ** retries),
+                        policy.backoff_max,
+                    )
+                    logger.info(
+                        "Retrying %s (attempt %d/%d), backoff %.1fs",
+                        msg_id, retries + 1, policy.max_retries, backoff,
+                    )
                     await asyncio.sleep(backoff)
 
     async def get_dlq_messages(self, stream: str, count: int = 100) -> list[tuple[str, dict]]:
@@ -428,6 +564,9 @@ class EventBus:
     async def reprocess_dlq(self, stream: str, count: int = 100) -> int:
         """Move messages from a DLQ back to the original stream for reprocessing.
 
+        Handles both structured DLQEntry format (original_data JSON) and
+        legacy flat dict format for backward compatibility.
+
         Args:
             stream: The original stream name (`:dlq` suffix is appended automatically).
             count: Maximum number of messages to reprocess.
@@ -440,13 +579,20 @@ class EventBus:
         messages = await r.xrange(dlq_stream, count=count)
         moved = 0
         for msg_id, data in messages:
-            # Reset retry count and remove DLQ metadata
-            data.pop("_error", None)
-            data.pop("_original_stream", None)
-            data["_retry_count"] = "0"
-            await self.publish_raw(stream, data)
+            # Structured DLQEntry: extract original_data JSON
+            if "original_data" in data and data["original_data"]:
+                try:
+                    original = json.loads(data["original_data"])
+                except (json.JSONDecodeError, TypeError):
+                    original = data
+            else:
+                # Legacy flat format: strip DLQ metadata
+                original = {k: v for k, v in data.items() if not k.startswith("_")}
+
+            original["_retry_count"] = "0"
+            await self.publish_raw(stream, original)
             await r.xdel(dlq_stream, msg_id)
             moved += 1
         if moved:
-            logger.info(f"Reprocessed {moved} messages from {dlq_stream} back to {stream}")
+            logger.info("Reprocessed %d messages from %s back to %s", moved, dlq_stream, stream)
         return moved

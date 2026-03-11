@@ -509,9 +509,12 @@ class TestSearchService:
     @pytest_asyncio.fixture(autouse=True)
     async def setup(self):
         with patch("shared.tracing.setup_tracing"):
-            from services.search_service.app.main import app
+            from services.search_service.app.main import app, require_auth
 
         self.app = app
+
+        # Override auth to skip JWT validation in tests
+        app.dependency_overrides[require_auth] = lambda: {"sub": "1", "email": "test@example.com"}
 
         # Mock Elasticsearch client on app.state
         self.mock_es = AsyncMock()
@@ -522,6 +525,8 @@ class TestSearchService:
         app.state.db_session = _mock_session_factory(self.mock_db)
 
         yield
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_search_success(self):
@@ -675,9 +680,11 @@ class TestExportService:
     @pytest_asyncio.fixture(autouse=True)
     async def setup(self):
         with patch("shared.tracing.setup_tracing"):
-            from services.export_service.app.main import app
+            from services.export_service.app.main import app, require_auth
 
         self.app = app
+
+        app.dependency_overrides[require_auth] = lambda: {"sub": "1", "email": "test@example.com"}
 
         self.mock_db = _make_mock_db_session()
         self.mock_bus = _make_mock_event_bus()
@@ -686,6 +693,8 @@ class TestExportService:
         app.state.event_bus = self.mock_bus
 
         yield
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_create_export_success(self):
@@ -794,7 +803,7 @@ class TestCompetitiveService:
     @pytest_asyncio.fixture(autouse=True)
     async def setup(self):
         with patch("shared.tracing.setup_tracing"):
-            from services.competitive_service.app.main import app, get_db
+            from services.competitive_service.app.main import app, get_db, require_auth
 
         self.app = app
         self.mock_db = _make_mock_db_session()
@@ -803,6 +812,7 @@ class TestCompetitiveService:
             yield self.mock_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[require_auth] = lambda: {"sub": "1", "email": "test@example.com"}
 
         yield
 
@@ -922,9 +932,11 @@ class TestPublishingService:
     @pytest_asyncio.fixture(autouse=True)
     async def setup(self):
         with patch("shared.tracing.setup_tracing"):
-            from services.publishing_service.app.main import app
+            from services.publishing_service.app.main import app, require_auth
 
         self.app = app
+
+        app.dependency_overrides[require_auth] = lambda: {"sub": "1", "email": "test@example.com"}
 
         self.mock_db = _make_mock_db_session()
         self.mock_bus = _make_mock_event_bus()
@@ -933,6 +945,8 @@ class TestPublishingService:
         app.state.event_bus = self.mock_bus
 
         yield
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_create_post_success(self):
