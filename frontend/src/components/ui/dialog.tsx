@@ -14,9 +14,11 @@ interface DialogProps {
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
+  /** ID of the element that labels this dialog (typically the DialogHeader's h2). Auto-set to "dialog-title" if omitted. */
+  "aria-labelledby"?: string;
 }
 
-function Dialog({ open, onClose, onOpenChange, children, className }: DialogProps) {
+function Dialog({ open, onClose, onOpenChange, children, className, "aria-labelledby": ariaLabelledBy }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
 
@@ -100,6 +102,7 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={ariaLabelledBy ?? "dialog-title"}
         className={cn(
           "relative z-10 w-full max-w-lg mx-4 bg-[#141925] rounded-2xl border border-white/[0.08] shadow-2xl animate-slide-up",
           className,
@@ -128,7 +131,7 @@ function DialogHeader({
         className,
       )}
     >
-      <h2 className="text-base font-semibold text-slate-100">{children}</h2>
+      <h2 id="dialog-title" className="text-base font-semibold text-slate-100">{children}</h2>
       {onClose && (
         <button
           onClick={onClose}

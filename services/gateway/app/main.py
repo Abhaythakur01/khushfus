@@ -30,7 +30,7 @@ from shared.request_size_limit import RequestSizeLimitMiddleware
 from shared.tracing import setup_tracing
 
 from .middleware import RateLimitMiddleware, close_http_client
-from .routes import alerts, auth, dashboard, mentions, notifications, projects, reports
+from .routes import alerts, auth, copilot, dashboard, mentions, notifications, projects, reports
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +209,7 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(copilot.router, prefix="/api/v1/copilot", tags=["Copilot"])
 
 # --- API v2 routes (future) ---
 # When v2 endpoints are ready, create route modules under routes/v2/ and mount them here.

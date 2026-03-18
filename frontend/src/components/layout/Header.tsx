@@ -154,6 +154,7 @@ export function Header({ title, onMenuClick, sidebarCollapsed }: HeaderProps) {
 
   return (
     <header
+      role="banner"
       className="sticky top-0 z-20 flex items-center h-16 bg-[#0a0f1a]/80 backdrop-blur-xl border-b border-white/[0.04] px-4 lg:px-6 xl:px-8 transition-all duration-300"
     >
       {/* Mobile menu button */}
@@ -217,12 +218,12 @@ export function Header({ title, onMenuClick, sidebarCollapsed }: HeaderProps) {
           >
             <Bell className="h-[18px] w-[18px]" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-indigo-500 text-white rounded-full px-0.5 ring-2 ring-[#0a0f1a]">
-                {unreadCount > 99 ? "99+" : unreadCount}
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-indigo-500 text-white rounded-full px-0.5 ring-2 ring-[#0a0f1a]" aria-label={`${unreadCount > 99 ? "99+" : unreadCount} unread notifications`}>
+                <span aria-hidden="true">{unreadCount > 99 ? "99+" : unreadCount}</span>
               </span>
             )}
             {unreadCount === 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-indigo-500 rounded-full ring-2 ring-[#0a0f1a]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-indigo-500 rounded-full ring-2 ring-[#0a0f1a]" aria-hidden="true" />
             )}
           </button>
 
@@ -230,12 +231,13 @@ export function Header({ title, onMenuClick, sidebarCollapsed }: HeaderProps) {
           {notifOpen && (
             <div
               role="dialog"
-              aria-label="Notifications panel"
+              aria-modal="true"
+              aria-labelledby="notif-panel-title"
               className="absolute right-0 mt-2 w-80 sm:w-96 bg-[#141925] rounded-xl border border-white/[0.08] shadow-2xl animate-scale-in overflow-hidden"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">Notifications</span>
+                <span id="notif-panel-title" className="text-sm font-semibold text-slate-200">Notifications</span>
                 {unreadCount > 0 && (
                   <button
                     onClick={handleMarkAllRead}
@@ -288,7 +290,9 @@ export function Header({ title, onMenuClick, sidebarCollapsed }: HeaderProps) {
                         </p>
                       </div>
                       {!n.is_read && (
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-500 shrink-0">
+                          <span className="sr-only">Unread</span>
+                        </span>
                       )}
                     </button>
                   ))

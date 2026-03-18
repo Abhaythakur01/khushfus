@@ -732,17 +732,17 @@ export default function SearchPage() {
 
           {/* Results list */}
           {isSearching ? (
-            <div className="flex items-center justify-center h-48">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+            <div role="status" aria-label="Searching" className="flex items-center justify-center h-48">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" aria-hidden="true" />
             </div>
           ) : sortedResults.length === 0 && !searchError ? (
-            <div className="flex flex-col items-center justify-center h-48 text-slate-500">
-              <Inbox className="h-12 w-12 mb-3 text-slate-600" />
+            <div role="status" aria-live="polite" className="flex flex-col items-center justify-center h-48 text-slate-500">
+              <Inbox className="h-12 w-12 mb-3 text-slate-600" aria-hidden="true" />
               <p className="text-base font-medium text-slate-400">No results found</p>
               <p className="text-sm mt-1">Try different keywords or adjust filters</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div aria-live="polite" aria-label={`${sortedResults.length} search results`} className="space-y-3">
               {sortedResults.map((result) => (
                 <div
                   key={result.id}
@@ -750,10 +750,12 @@ export default function SearchPage() {
                 >
                   <div className="flex items-start gap-3">
                     <span
+                      role="img"
+                      aria-label={PLATFORM_LABELS[result.platform] || result.platform || "Unknown platform"}
                       className="h-8 w-8 rounded-lg text-white text-xs font-bold inline-flex items-center justify-center shrink-0"
                       style={{ backgroundColor: PLATFORM_COLORS[result.platform] || "#64748b" }}
                     >
-                      {(PLATFORM_LABELS[result.platform] || result.platform || "?").charAt(0).toUpperCase()}
+                      <span aria-hidden="true">{(PLATFORM_LABELS[result.platform] || result.platform || "?").charAt(0).toUpperCase()}</span>
                     </span>
 
                     <div className="flex-1 min-w-0">

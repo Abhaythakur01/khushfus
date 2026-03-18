@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { trackPageView } from "@/lib/analytics";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { AICopilot } from "@/components/AICopilot";
 
 interface AppShellProps {
   title: string;
@@ -25,8 +26,9 @@ export function AppShell({ title, children }: AppShellProps) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0f1a]">
-        <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-indigo-500/70 border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0f1a]" role="status" aria-label="Loading application">
+        <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-indigo-500/70 border-t-transparent" aria-hidden="true" />
+        <span className="sr-only">Loading...</span>
       </div>
     );
   }
@@ -38,7 +40,7 @@ export function AppShell({ title, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-slate-200">
       {/* Subtle ambient gradient */}
-      <div className="fixed inset-0 pointer-events-none">
+      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-500/[0.03] rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-purple-500/[0.02] rounded-full blur-[100px]" />
       </div>
@@ -72,6 +74,9 @@ export function AppShell({ title, children }: AppShellProps) {
           {children}
         </main>
       </div>
+
+      {/* AI Copilot — floating chat widget, visible on all authenticated pages */}
+      <AICopilot />
     </div>
   );
 }

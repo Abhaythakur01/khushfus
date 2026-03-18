@@ -198,12 +198,15 @@ function relativeTime(dateStr: string): string {
 function PlatformIcon({ platform, size = "sm" }: { platform: string; size?: "sm" | "md" }) {
   const s = size === "sm" ? "h-5 w-5 text-[10px]" : "h-7 w-7 text-xs";
   const color = PLATFORM_COLORS[platform] || "#64748b";
+  const label = PLATFORM_LABELS[platform] || platform || "Unknown";
   return (
     <span
+      role="img"
+      aria-label={label}
       className={cn(s, "inline-flex items-center justify-center rounded-md text-white font-bold shrink-0")}
       style={{ backgroundColor: color }}
     >
-      {(PLATFORM_LABELS[platform] || platform || "?")[0].toUpperCase()}
+      <span aria-hidden="true">{label[0].toUpperCase()}</span>
     </span>
   );
 }
@@ -529,25 +532,25 @@ export default function MentionsPage() {
 
           {/* Loading overlay when refetching with existing data */}
           {isLoading && filteredMentions.length > 0 && (
-            <div className="flex items-center justify-center py-2 bg-indigo-600/5 border-b border-white/[0.06]">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mr-2" />
+            <div role="status" aria-live="polite" className="flex items-center justify-center py-2 bg-indigo-600/5 border-b border-white/[0.06]">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mr-2" aria-hidden="true" />
               <span className="text-xs text-slate-400">Updating...</span>
             </div>
           )}
 
           {isLoading && filteredMentions.length === 0 ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+            <div className="flex items-center justify-center h-64" role="status" aria-label="Loading mentions">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" aria-hidden="true" />
             </div>
           ) : !selectedProject ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-              <Inbox className="h-12 w-12 mb-3 text-slate-600" />
+              <Inbox className="h-12 w-12 mb-3 text-slate-600" aria-hidden="true" />
               <p className="text-base font-medium text-slate-400">No project selected</p>
               <p className="text-sm mt-1">Select a project to view mentions</p>
             </div>
           ) : filteredMentions.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-              <Inbox className="h-12 w-12 mb-3 text-slate-600" />
+              <Inbox className="h-12 w-12 mb-3 text-slate-600" aria-hidden="true" />
               <p className="text-base font-medium text-slate-400">
                 {selectedTags.length > 0 ? "No mentions match the selected tags" : "No mentions yet"}
               </p>
@@ -558,13 +561,18 @@ export default function MentionsPage() {
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-white/[0.04]">
+            <ul aria-live="polite" aria-label={`${filteredMentions.length} mentions`} className="divide-y divide-white/[0.04]">
               {filteredMentions.map((mention) => (
                 <li
                   key={mention.id}
                   onClick={() => setActiveMention(mention)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveMention(mention); } }}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={activeMention?.id === mention.id}
+                  aria-label={`Mention by ${mention.author.name} — ${mention.sentiment} sentiment`}
                   className={cn(
-                    "flex gap-3 px-4 py-3 cursor-pointer transition-colors",
+                    "flex gap-3 px-4 py-3 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500",
                     activeMention?.id === mention.id
                       ? "bg-indigo-600/10 border-l-2 border-indigo-500"
                       : "hover:bg-white/[0.04]"

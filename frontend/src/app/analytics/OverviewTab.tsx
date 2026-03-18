@@ -125,6 +125,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
         <div className="lg:col-span-2 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Mentions Over Time</h3>
           {metrics.mentions_over_time.length > 0 ? (
+            <div role="img" aria-label={`Area chart showing mention volume over time across ${metrics.mentions_over_time.length} data points.`}>
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={metrics.mentions_over_time}>
                 <defs>
@@ -140,6 +141,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
                 <Area type="monotone" dataKey="count" name="Mentions" stroke={COLORS.indigo} fill="url(#mentionFill)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <EmptyState message="No mention data for this period" />
           )}
@@ -148,6 +150,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
         <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Sentiment Breakdown</h3>
           {sentimentPieData.length > 0 ? (
+            <div role="img" aria-label={`Donut chart showing sentiment breakdown: ${sentimentPieData.map((d) => `${d.name} ${d.value}`).join(", ")}.`}>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
@@ -171,6 +174,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
                 />
               </PieChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <EmptyState message="No sentiment data available" />
           )}
@@ -187,12 +191,12 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
                 const maxCount = metrics.top_keywords[0]?.count || 1;
                 const pct = (kw.count / maxCount) * 100;
                 return (
-                  <div key={i} className="flex items-center gap-3">
+                  <div key={i} className="flex items-center gap-3" role="meter" aria-label={`${kw.keyword}: ${formatNumber(kw.count)} mentions`} aria-valuenow={kw.count} aria-valuemin={0} aria-valuemax={metrics.top_keywords[0]?.count || 1}>
                     <span className="text-sm text-slate-300 w-32 truncate">{kw.keyword}</span>
-                    <div className="flex-1 bg-white/[0.06] rounded-full h-2 overflow-hidden">
+                    <div className="flex-1 bg-white/[0.06] rounded-full h-2 overflow-hidden" aria-hidden="true">
                       <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-xs text-slate-500 w-12 text-right">{formatNumber(kw.count)}</span>
+                    <span className="text-xs text-slate-500 w-12 text-right" aria-hidden="true">{formatNumber(kw.count)}</span>
                   </div>
                 );
               })}

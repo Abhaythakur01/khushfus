@@ -61,7 +61,11 @@ export default function DashboardCharts({
           </CardHeader>
           <CardContent className="h-72 pr-2">
             {mentionTimeSeries.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <div
+                role="img"
+                aria-label={`Line chart showing mention volume over time. Total, positive, negative and neutral trend lines plotted across ${mentionTimeSeries.length} data points.`}
+              >
+              <ResponsiveContainer width="100%" height={272}>
                 <LineChart data={mentionTimeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis
@@ -89,6 +93,7 @@ export default function DashboardCharts({
                   <Line type="monotone" dataKey="neutral" stroke="#64748b" strokeWidth={1.5} dot={false} name="Neutral" />
                 </LineChart>
               </ResponsiveContainer>
+              </div>
             ) : (
               <EmptyState message="No mention data yet for this time period" />
             )}
@@ -105,7 +110,11 @@ export default function DashboardCharts({
           <CardContent className="flex h-72 flex-col items-center justify-center">
             {totalMentions > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height="80%">
+                <div
+                  role="img"
+                  aria-label={`Donut chart showing sentiment distribution: ${sentimentDistribution.map((s) => `${s.name} ${s.value}%`).join(", ")}.`}
+                >
+                <ResponsiveContainer width="100%" height={216}>
                   <PieChart>
                     <Pie
                       data={sentimentDistribution}
@@ -125,11 +134,12 @@ export default function DashboardCharts({
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
                 <div className="flex gap-4 text-xs text-slate-400">
                   {sentimentDistribution.map((s) => (
                     <div key={s.name} className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                      {s.name}
+                      <span className="h-2 w-2 rounded-full" aria-hidden="true" style={{ background: s.color }} />
+                      <span>{s.name}: {s.value}%</span>
                     </div>
                   ))}
                 </div>
@@ -152,7 +162,11 @@ export default function DashboardCharts({
         </CardHeader>
         <CardContent className="h-72">
           {platformData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <div
+              role="img"
+              aria-label={`Bar chart showing mention counts by platform: ${platformData.map((p) => `${p.platform} ${p.mentions}`).join(", ")}.`}
+            >
+            <ResponsiveContainer width="100%" height={272}>
               <BarChart data={platformData} layout="vertical" margin={{ left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
                 <XAxis
@@ -180,6 +194,7 @@ export default function DashboardCharts({
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <EmptyState message="No platform data yet" />
           )}

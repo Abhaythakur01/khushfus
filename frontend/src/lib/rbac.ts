@@ -46,6 +46,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "settings.apikeys",
     "settings.sso",
     "audit",
+    "compliance",
     "integrations",
   ],
   manager: [
@@ -137,6 +138,7 @@ const ROUTE_MAPPINGS: RouteMapping[] = [
   { path: "/publishing", permission: "publishing" },
   { path: "/workflows", permission: "workflows" },
   { path: "/audit", permission: "audit" },
+  { path: "/compliance", permission: "compliance" },
   { path: "/integrations", permission: "integrations" },
 ];
 

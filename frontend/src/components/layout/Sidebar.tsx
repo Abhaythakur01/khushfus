@@ -21,6 +21,7 @@ import {
   Send,
   Workflow,
   ClipboardList,
+  Shield,
   Settings,
   Plug,
   LogOut,
@@ -50,6 +51,7 @@ const navItems: NavItem[] = [
   { label: "Publishing", href: "/publishing", icon: <Send className="h-[18px] w-[18px]" /> },
   { label: "Workflows", href: "/workflows", icon: <Workflow className="h-[18px] w-[18px]" /> },
   { label: "Audit", href: "/audit", icon: <ClipboardList className="h-[18px] w-[18px]" /> },
+  { label: "Compliance", href: "/compliance", icon: <Shield className="h-[18px] w-[18px]" /> },
   { label: "Settings", href: "/settings", icon: <Settings className="h-[18px] w-[18px]" /> },
   { label: "Integrations", href: "/integrations", icon: <Plug className="h-[18px] w-[18px]" /> },
 ];
@@ -175,6 +177,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
           {!collapsed && (
             <button
               onClick={logout}
+              aria-label="Log out"
               className="p-1.5 rounded-md text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all duration-150"
               title="Log out"
             >
@@ -191,13 +194,19 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Close navigation"
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden animate-fade-in"
           onClick={onMobileClose}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onMobileClose(); }}
         />
       )}
 
       {/* Mobile sidebar */}
       <aside
+        role="navigation"
+        aria-label="Site navigation"
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-[260px] transform transition-transform duration-300 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
@@ -208,6 +217,8 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
       {/* Desktop sidebar */}
       <aside
+        role="navigation"
+        aria-label="Site navigation"
         className={cn(
           "hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 transition-all duration-300 ease-out",
           collapsed ? "lg:w-[68px]" : "lg:w-[260px]",

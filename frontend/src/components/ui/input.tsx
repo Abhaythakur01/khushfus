@@ -12,6 +12,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className, label, error, icon, id, ...props }, ref) => {
     const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
+    const errorId = error && inputId ? `${inputId}-error` : undefined;
 
     return (
       <div className="space-y-2">
@@ -25,13 +26,15 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative">
           {icon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true">
               {icon}
             </div>
           )}
           <input
             ref={ref}
             id={inputId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={errorId}
             className={cn(
               "w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-200",
               "placeholder:text-slate-500",
@@ -46,7 +49,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           />
         </div>
         {error && (
-          <p className="text-xs text-red-400 mt-1">{error}</p>
+          <p id={errorId} role="alert" className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     );
@@ -63,6 +66,7 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, label, error, id, ...props }, ref) => {
     const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
+    const errorId = error && inputId ? `${inputId}-error` : undefined;
 
     return (
       <div className="space-y-2">
@@ -77,6 +81,8 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={ref}
           id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
           className={cn(
             "w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-slate-200",
             "placeholder:text-slate-500",
@@ -90,7 +96,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
         {error && (
-          <p className="text-xs text-red-400 mt-1">{error}</p>
+          <p id={errorId} role="alert" className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     );

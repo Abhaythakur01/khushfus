@@ -1064,6 +1064,27 @@ class ApiClient {
       method: "DELETE",
     });
   }
+
+  // ---------- AI Copilot ----------
+
+  /**
+   * Ask the AI Copilot a natural-language question about a project's mention data.
+   * Uses Claude API on the backend when available, otherwise returns a rule-based answer.
+   */
+  async askCopilot(
+    projectId: number,
+    question: string,
+    signal?: AbortSignal,
+  ): Promise<{ answer: string; mention_count: number; used_llm: boolean }> {
+    return this.request<{ answer: string; mention_count: number; used_llm: boolean }>(
+      "/api/v1/copilot/ask",
+      {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, question }),
+        signal,
+      },
+    );
+  }
 }
 
 export const api = new ApiClient();
