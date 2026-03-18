@@ -143,7 +143,8 @@
       "Skill(code-review:code-review)",
       "Bash(cd:*)",
       "Bash(ls -la \"D:/Downloads/AIML/KhushFus/frontend/src/app/\\(auth\\)/\")",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(dir:*)"
     ]
   },
   "enabledPlugins": {

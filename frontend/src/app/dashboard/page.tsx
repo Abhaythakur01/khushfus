@@ -200,7 +200,7 @@ export default function DashboardPage() {
 
   const mentionTimeSeries = useMemo(
     () => dashboard?.daily_trend && sentimentBreakdown
-      ? transformDailyTrend(dashboard.daily_trend, sentimentBreakdown)
+      ? transformDailyTrend(dashboard.daily_trend, sentimentBreakdown as { positive: number; negative: number; neutral: number })
       : [],
     [dashboard?.daily_trend, sentimentBreakdown]
   );

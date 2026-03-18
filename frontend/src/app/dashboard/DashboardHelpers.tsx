@@ -135,6 +135,8 @@ export interface DashboardData {
     breakdown: { positive: number; negative: number; neutral: number };
     average_score: number;
   };
+  /** Flat sentiment breakdown returned by some API response shapes */
+  sentiment_breakdown?: Record<string, number>;
   platforms: Record<string, number>;
   engagement: {
     total_likes: number;
@@ -150,6 +152,8 @@ export interface DashboardData {
     mentions: number;
   }>;
   daily_trend: Array<{ date: string; mentions: number }>;
+  /** Additional fields from DashboardMetrics API shape */
+  [key: string]: unknown;
 }
 
 export interface MentionItem {
