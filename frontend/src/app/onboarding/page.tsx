@@ -45,7 +45,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
                   ? "border-indigo-500 bg-indigo-600 text-white"
                   : currentStep === step.num
                   ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
-                  : "border-slate-700 bg-slate-800/60 text-slate-500"
+                  : "border-white/[0.08] bg-white/[0.06]/60 text-slate-500"
               }`}
             >
               {currentStep > step.num ? (
@@ -109,7 +109,7 @@ export default function OnboardingPage() {
 
   if (authLoading || !isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0f1a]">
         <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
       </div>
     );
@@ -194,9 +194,9 @@ export default function OnboardingPage() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-[#0a0f1a] text-slate-100 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-8 py-5 border-b border-slate-800/50">
+      <div className="flex items-center justify-between px-8 py-5 border-b border-white/[0.04]">
         <div className="text-lg font-bold tracking-tight">
           <span className="text-indigo-400">Khush</span>Fus
         </div>
@@ -214,7 +214,7 @@ export default function OnboardingPage() {
 
           {/* ---- Step 1: Create Project ---- */}
           {step === 1 && (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8">
               <div className="text-center mb-8">
                 <h1 className="text-2xl font-bold mb-2">
                   Welcome to KhushFus
@@ -234,7 +234,7 @@ export default function OnboardingPage() {
                     value={projectName}
                     onChange={(e) => setProjectName(e.target.value)}
                     placeholder="e.g., Brand Monitoring Q1"
-                    className="w-full h-10 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.06] px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 
@@ -247,7 +247,7 @@ export default function OnboardingPage() {
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
                     placeholder="e.g., Acme Corp"
-                    className="w-full h-10 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.06] px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 
@@ -260,7 +260,7 @@ export default function OnboardingPage() {
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="What are you tracking? e.g., Brand sentiment across social media"
                     rows={3}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                   />
                 </div>
               </div>
@@ -285,7 +285,7 @@ export default function OnboardingPage() {
 
           {/* ---- Step 2: Platforms & Keywords ---- */}
           {step === 2 && (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8">
               <div className="text-center mb-8">
                 <h1 className="text-2xl font-bold mb-2">Configure Your Project</h1>
                 <p className="text-slate-400 text-sm">
@@ -308,7 +308,7 @@ export default function OnboardingPage() {
                         className={`flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-xs font-medium transition-all ${
                           isActive
                             ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                            : "bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600"
+                            : "bg-white/[0.04] border-white/[0.08] text-slate-400 hover:border-slate-600"
                         }`}
                       >
                         <span className="text-lg">{platform.icon}</span>
@@ -335,7 +335,7 @@ export default function OnboardingPage() {
                     onChange={(e) => setKeywordInput(e.target.value)}
                     onKeyDown={handleKeywordKeyDown}
                     placeholder="Type a keyword and press Enter"
-                    className="flex-1 h-10 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="flex-1 h-10 rounded-lg border border-white/[0.08] bg-white/[0.06] px-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <button
                     onClick={addKeyword}
@@ -374,7 +374,7 @@ export default function OnboardingPage() {
               <div className="flex justify-between mt-8">
                 <button
                   onClick={goToBack}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Back
@@ -397,7 +397,7 @@ export default function OnboardingPage() {
 
           {/* ---- Step 3: Success ---- */}
           {step === 3 && (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8">
               {isSubmitting ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Loader2 className="h-12 w-12 animate-spin text-indigo-500 mb-4" />
@@ -417,7 +417,7 @@ export default function OnboardingPage() {
                   <div className="flex gap-3">
                     <button
                       onClick={goToBack}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
                     >
                       <ChevronLeft className="h-4 w-4" />
                       Go Back

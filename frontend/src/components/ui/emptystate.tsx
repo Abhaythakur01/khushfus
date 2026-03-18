@@ -27,12 +27,12 @@ function EmptyState({
         className,
       )}
     >
-      <div className="flex items-center justify-center w-14 h-14 rounded-full bg-slate-100 text-slate-400 mb-4">
-        {icon || <Inbox className="h-7 w-7" />}
+      <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.06] text-slate-500 mb-4">
+        {icon || <Inbox className="h-6 w-6" />}
       </div>
-      <h3 className="text-base font-semibold text-slate-900 mb-1">{title}</h3>
+      <h3 className="text-sm font-semibold text-slate-300 mb-1">{title}</h3>
       {description && (
-        <p className="text-sm text-slate-500 max-w-sm mb-4">{description}</p>
+        <p className="text-sm text-slate-500 max-w-sm mb-5">{description}</p>
       )}
       {actionLabel && onAction && (
         <Button variant="primary" size="sm" onClick={onAction}>

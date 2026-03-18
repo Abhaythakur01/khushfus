@@ -15,6 +15,7 @@ import {
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,11 +33,6 @@ import {
   DialogContent,
   DialogFooter,
 } from "@/components/ui/dialog";
-
-interface Project {
-  id: number;
-  name: string;
-}
 
 interface Post {
   id: number | string;
@@ -84,9 +80,8 @@ const statusColor = (s: string) => {
 };
 
 export default function PublishingPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { projects, isLoading: projectsLoading } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-  const [projectsLoading, setProjectsLoading] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -98,23 +93,12 @@ export default function PublishingPage() {
   const [formDate, setFormDate] = useState("");
   const [formTime, setFormTime] = useState("");
 
-  // Load projects
+  // Auto-select first project
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await api.getProjects();
-        if (cancelled) return;
-        setProjects(list ?? []);
-        if (list?.length > 0) setSelectedProjectId(list[0].id);
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    if (projects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
 
   // Load posts
   const fetchPosts = useCallback(async (projectId: number) => {
@@ -188,7 +172,7 @@ export default function PublishingPage() {
               <Select
                 value={String(selectedProjectId ?? "")}
                 onValueChange={(v) => setSelectedProjectId(Number(v))}
-                className="bg-slate-900 border-slate-700 text-slate-100"
+                className="bg-[#111827]/70 border-white/[0.08] text-slate-100"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -209,8 +193,8 @@ export default function PublishingPage() {
         </div>
 
         {/* Posts list */}
-        <Card className="bg-slate-900/60 border-slate-800">
-          <CardHeader className="border-slate-800">
+        <Card>
+          <CardHeader className="border-white/[0.06]">
             <CardTitle className="text-slate-100">Scheduled Posts</CardTitle>
           </CardHeader>
           <CardContent>
@@ -231,7 +215,7 @@ export default function PublishingPage() {
                 {posts.map((post) => (
                   <div
                     key={post.id}
-                    className="rounded-lg border border-slate-800 bg-slate-800/40 p-4 space-y-3"
+                    className="rounded-lg border border-white/[0.06] bg-white/[0.04] p-4 space-y-3"
                   >
                     {/* Platform icons + status */}
                     <div className="flex items-center justify-between">
@@ -280,8 +264,8 @@ export default function PublishingPage() {
       </div>
 
       {/* New Post Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setDialogOpen(false)} className="border-slate-700">
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-[#111827]/70 border border-white/[0.08]">
+        <DialogHeader onClose={() => setDialogOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">New Post</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
@@ -300,7 +284,7 @@ export default function PublishingPage() {
                       "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
                       selected
                         ? "border-indigo-500 bg-indigo-500/10 text-slate-200"
-                        : "border-slate-700 hover:border-slate-600 text-slate-400"
+                        : "border-white/[0.08] hover:border-slate-600 text-slate-400"
                     )}
                   >
                     <Icon className={cn("h-4 w-4", selected ? platformColors[p] : "text-slate-500")} />
@@ -319,7 +303,7 @@ export default function PublishingPage() {
               onChange={(e) => setFormContent(e.target.value)}
               placeholder="What would you like to share?"
               rows={4}
-              className="resize-none bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+              className="resize-none bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
             />
             <div className="text-right mt-1">
               <span className="text-xs text-slate-500">{formContent.length} characters</span>
@@ -334,22 +318,22 @@ export default function PublishingPage() {
                 type="date"
                 value={formDate}
                 onChange={(e) => setFormDate(e.target.value)}
-                className="bg-slate-800 border-slate-700 text-slate-100"
+                className="bg-white/[0.06] border-white/[0.08] text-slate-100"
               />
               <Input
                 type="time"
                 value={formTime}
                 onChange={(e) => setFormTime(e.target.value)}
-                className="bg-slate-800 border-slate-700 text-slate-100"
+                className="bg-white/[0.06] border-white/[0.08] text-slate-100"
               />
             </div>
           </div>
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-[#111827]/70">
           <Button
             variant="outline"
             onClick={() => { resetForm(); setDialogOpen(false); }}
-            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
           >
             Cancel
           </Button>

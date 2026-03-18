@@ -9,14 +9,14 @@ interface SpinnerProps {
 const sizeStyles = {
   sm: "h-4 w-4 border-2",
   md: "h-6 w-6 border-2",
-  lg: "h-10 w-10 border-3",
+  lg: "h-10 w-10 border-[3px]",
 };
 
 function Spinner({ size = "md", className }: SpinnerProps) {
   return (
     <div
       className={cn(
-        "animate-spin rounded-full border-primary-600 border-t-transparent",
+        "animate-spin rounded-full border-indigo-500/70 border-t-transparent",
         sizeStyles[size],
         className,
       )}

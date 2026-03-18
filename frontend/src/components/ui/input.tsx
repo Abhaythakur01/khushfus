@@ -14,18 +14,18 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
 
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-slate-300"
           >
             {label}
           </label>
         )}
         <div className="relative">
           {icon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
               {icon}
             </div>
           )}
@@ -33,19 +33,20 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              "w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900",
-              "placeholder:text-slate-400",
-              "input-focus transition-colors duration-150",
-              "disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed",
+              "w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-200",
+              "placeholder:text-slate-500",
+              "input-focus transition-all duration-200",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              "hover:border-white/[0.12] hover:bg-white/[0.06]",
               icon && "pl-10",
-              error && "border-danger-500 focus:ring-danger-500/20 focus:border-danger-500",
+              error && "border-red-500/50 focus:ring-red-500/20 focus:border-red-500/50",
               className,
             )}
             {...props}
           />
         </div>
         {error && (
-          <p className="text-xs text-danger-600 mt-1">{error}</p>
+          <p className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     );
@@ -64,11 +65,11 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
 
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-slate-300"
           >
             {label}
           </label>
@@ -77,18 +78,19 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900",
-            "placeholder:text-slate-400",
-            "input-focus transition-colors duration-150",
-            "disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed",
+            "w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-slate-200",
+            "placeholder:text-slate-500",
+            "input-focus transition-all duration-200",
+            "disabled:opacity-40 disabled:cursor-not-allowed",
+            "hover:border-white/[0.12] hover:bg-white/[0.06]",
             "min-h-[80px] resize-y",
-            error && "border-danger-500 focus:ring-danger-500/20 focus:border-danger-500",
+            error && "border-red-500/50 focus:ring-red-500/20 focus:border-red-500/50",
             className,
           )}
           {...props}
         />
         {error && (
-          <p className="text-xs text-danger-600 mt-1">{error}</p>
+          <p className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     );

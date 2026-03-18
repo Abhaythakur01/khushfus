@@ -163,7 +163,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-slate-800 mb-6">
+        <div className="border-b border-white/[0.06] mb-6">
           <nav className="flex gap-6">
             {tabs.map((tab) => (
               <button
@@ -241,7 +241,7 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       {/* Project info */}
-      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-base font-semibold text-slate-100 mb-2">Project Information</h2>
@@ -294,7 +294,7 @@ function OverviewTab({
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-indigo-500/15 flex items-center justify-center">
               <MessageSquare className="h-5 w-5 text-indigo-400" />
@@ -307,7 +307,7 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-emerald-500/15 flex items-center justify-center">
               <TrendingUp className="h-5 w-5 text-emerald-400" />
@@ -321,7 +321,7 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-violet-500/15 flex items-center justify-center">
               <Eye className="h-5 w-5 text-violet-400" />
@@ -334,7 +334,7 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-amber-500/15 flex items-center justify-center">
               <Target className="h-5 w-5 text-amber-400" />
@@ -351,7 +351,7 @@ function OverviewTab({
 
       {/* Platforms + Keywords summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
           <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
             <Globe className="h-4 w-4 text-slate-400" />
             Monitored Platforms
@@ -361,7 +361,7 @@ function OverviewTab({
               <p className="text-sm text-slate-500">No platforms configured.</p>
             ) : (
               project.platforms.map((p) => (
-                <div key={p} className="flex items-center gap-3 p-2 bg-slate-800/40 rounded-lg">
+                <div key={p} className="flex items-center gap-3 p-2 bg-white/[0.04] rounded-lg">
                   <span
                     className={cn(
                       "h-7 w-7 rounded text-white text-[9px] font-bold inline-flex items-center justify-center shrink-0",
@@ -379,7 +379,7 @@ function OverviewTab({
           </div>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
           <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
             <Hash className="h-4 w-4 text-slate-400" />
             Keywords ({project.keywords.length})
@@ -389,7 +389,7 @@ function OverviewTab({
               <p className="text-sm text-slate-500">No keywords configured.</p>
             ) : (
               project.keywords.slice(0, 8).map((kw) => (
-                <div key={kw.id} className="flex items-center gap-3 p-2 bg-slate-800/40 rounded-lg">
+                <div key={kw.id} className="flex items-center gap-3 p-2 bg-white/[0.04] rounded-lg">
                   <span className="text-sm font-medium text-slate-300 flex-1">{kw.term}</span>
                   <span
                     className={cn(
@@ -445,8 +445,8 @@ function KeywordsTab({
   }
 
   return (
-    <div className="bg-slate-900/60 rounded-xl border border-slate-800">
-      <div className="flex items-center justify-between p-4 border-b border-slate-800">
+    <div className="bg-white/[0.03] rounded-xl border border-white/[0.06]">
+      <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
         <div>
           <h2 className="text-base font-semibold text-slate-100">Keywords</h2>
           <p className="text-sm text-slate-500">
@@ -471,13 +471,13 @@ function KeywordsTab({
             onChange={(e) => setNewTerm(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="Keyword term..."
-            className="flex-1 h-9 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 h-9 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             autoFocus
           />
           <select
             value={newType}
             onChange={(e) => setNewType(e.target.value)}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {KEYWORD_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -510,7 +510,7 @@ function KeywordsTab({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-800 bg-slate-800/30">
+            <tr className="border-b border-white/[0.06] bg-white/[0.03]">
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Term
               </th>
@@ -522,9 +522,9 @@ function KeywordsTab({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-white/[0.04]">
             {keywords.map((kw) => (
-              <tr key={kw.id} className="hover:bg-slate-800/30 transition-colors">
+              <tr key={kw.id} className="hover:bg-white/[0.03] transition-colors">
                 <td className="px-4 py-3">
                   <span className="text-sm font-medium text-slate-200">{kw.term}</span>
                 </td>
@@ -616,7 +616,7 @@ function SettingsTab({
   return (
     <div className="space-y-6">
       {/* Edit form */}
-      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
         <h2 className="text-base font-semibold text-slate-100 mb-4">Project Settings</h2>
 
         <div className="space-y-4 max-w-2xl">
@@ -626,7 +626,7 @@ function SettingsTab({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
@@ -636,7 +636,7 @@ function SettingsTab({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
             />
           </div>
 
@@ -645,7 +645,7 @@ function SettingsTab({
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as typeof status)}
-              className="h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="active">Active</option>
               <option value="paused">Paused</option>
@@ -667,7 +667,7 @@ function SettingsTab({
                       "flex items-center gap-2 p-2.5 rounded-lg border transition-all text-left text-sm",
                       selected
                         ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
-                        : "border-slate-700 text-slate-400 hover:border-slate-600"
+                        : "border-white/[0.08] text-slate-400 hover:border-slate-600"
                     )}
                   >
                     <span
@@ -705,7 +705,7 @@ function SettingsTab({
       </div>
 
       {/* Danger zone */}
-      <div className="bg-slate-900/60 rounded-xl border border-red-500/30 p-6">
+      <div className="bg-white/[0.03] rounded-xl border border-red-500/30 p-6">
         <h2 className="text-base font-semibold text-red-400 mb-2">Danger Zone</h2>
         <p className="text-sm text-slate-400 mb-4">
           Archiving a project will stop all monitoring and data collection. This action can be
@@ -726,7 +726,7 @@ function SettingsTab({
             </button>
             <button
               onClick={() => setShowArchiveConfirm(false)}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg hover:bg-slate-700"
+              className="px-3 py-1.5 bg-white/[0.06] border border-white/[0.08] text-slate-300 text-sm rounded-lg hover:bg-white/[0.04]"
             >
               Cancel
             </button>

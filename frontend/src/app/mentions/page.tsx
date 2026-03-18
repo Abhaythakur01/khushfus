@@ -100,6 +100,46 @@ function AuthorAvatar({ name }: { name: string }) {
   );
 }
 
+// ---------- CSV export ----------
+
+function escapeCSV(value: string): string {
+  if (!value) return "";
+  // If the value contains commas, quotes, or newlines, wrap in quotes and escape inner quotes
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function exportMentionsToCSV(mentions: Mention[]): void {
+  const headers = ["Platform", "Author", "Content", "Sentiment", "Likes", "Shares", "Comments", "Date"];
+  const rows = mentions.map((m) => [
+    escapeCSV(m.platform),
+    escapeCSV(m.author.name),
+    escapeCSV(m.text),
+    escapeCSV(m.sentiment),
+    String(m.likes),
+    String(m.shares),
+    String(m.comments),
+    escapeCSV(m.created_at),
+  ]);
+
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mentions-export-${dateStr}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  toast.success(`Exported ${mentions.length} mentions`);
+}
+
 // ---------- main page ----------
 
 interface Project {
@@ -200,7 +240,7 @@ export default function MentionsPage() {
   return (
     <AppShell title="Mentions">
       {/* Project selector + Filter bar */}
-      <div className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 rounded-t-xl -mx-4 -mt-4 lg:-mx-6 lg:-mt-6 px-4 lg:px-6 py-4 mb-4">
+      <div className="sticky top-0 z-30 bg-[#111827]/70 backdrop-blur-sm border-b border-white/[0.06] rounded-t-xl -mx-4 -mt-4 lg:-mx-6 lg:-mt-6 px-4 lg:px-6 py-4 mb-4">
         <div className="flex flex-wrap items-center gap-3 mb-3">
           <select
             value={selectedProject}
@@ -209,7 +249,7 @@ export default function MentionsPage() {
               setPage(1);
             }}
             disabled={projectsLoading}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {projectsLoading ? (
               <option>Loading projects...</option>
@@ -225,7 +265,7 @@ export default function MentionsPage() {
           <select
             value={platform}
             onChange={(e) => { setPlatform(e.target.value); applyFilters({ platform: e.target.value }); }}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>{p === "all" ? "All Platforms" : PLATFORM_LABELS[p] || p}</option>
@@ -235,7 +275,7 @@ export default function MentionsPage() {
           <select
             value={sentiment}
             onChange={(e) => { setSentiment(e.target.value); applyFilters({ sentiment: e.target.value }); }}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {SENTIMENTS.map((s) => (
               <option key={s} value={s}>{s === "all" ? "All Sentiment" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -249,19 +289,35 @@ export default function MentionsPage() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search mentions..."
-              className="w-full h-9 rounded-lg border border-slate-700 bg-slate-800 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+
+          <button
+            onClick={() => exportMentionsToCSV(mentions)}
+            disabled={mentions.length === 0}
+            title={mentions.length === 0 ? "No mentions to export" : `Export ${mentions.length} mentions as CSV`}
+            className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-lg border border-white/[0.08] bg-white/[0.06] text-slate-300 hover:bg-white/[0.1] hover:text-slate-100 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
         </div>
 
         {/* Bulk actions */}
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3 px-3 py-2 bg-indigo-600/10 rounded-lg border border-indigo-500/30">
             <span className="text-sm font-medium text-indigo-400">{selectedIds.size} selected</span>
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 border border-slate-700 rounded-md hover:bg-slate-700 text-slate-300">
+            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.06] border border-white/[0.08] rounded-md hover:bg-white/[0.04] text-slate-300">
               <Flag className="h-3.5 w-3.5" /> Flag
             </button>
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 border border-slate-700 rounded-md hover:bg-slate-700 text-slate-300">
+            <button
+              onClick={() => {
+                const selected = mentions.filter((m) => selectedIds.has(m.id));
+                if (selected.length > 0) exportMentionsToCSV(selected);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.06] border border-white/[0.08] rounded-md hover:bg-white/[0.04] text-slate-300"
+            >
               <Download className="h-3.5 w-3.5" /> Export
             </button>
             <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-slate-500 hover:text-slate-300">Clear</button>
@@ -283,21 +339,21 @@ export default function MentionsPage() {
       )}
 
       {/* Content: list + detail */}
-      <div className="flex rounded-xl border border-slate-800 overflow-hidden bg-slate-900/60 h-[calc(100vh-theme(spacing.16)-theme(spacing.8)-200px)] min-h-[400px]">
+      <div className="flex rounded-xl border border-white/[0.06] overflow-hidden bg-white/[0.03] h-[calc(100vh-theme(spacing.16)-theme(spacing.8)-200px)] min-h-[400px]">
         {/* Left panel */}
         <div
           className={cn(
-            "border-r border-slate-800 overflow-y-auto flex-1 min-h-0",
+            "border-r border-white/[0.06] overflow-y-auto flex-1 min-h-0",
             activeMention ? "w-full lg:w-[58%]" : "w-full"
           )}
         >
           {/* Select all header */}
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800 bg-slate-900/80">
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06] bg-[#111827]/70">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0"
+              className="h-4 w-4 rounded border-slate-600 bg-white/[0.06] text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0"
             />
             <span className="text-xs text-slate-500">Select all</span>
             <span className="text-xs text-slate-600 ml-auto">
@@ -307,7 +363,7 @@ export default function MentionsPage() {
 
           {/* Loading overlay when refetching with existing data */}
           {isLoading && mentions.length > 0 && (
-            <div className="flex items-center justify-center py-2 bg-indigo-600/5 border-b border-slate-800">
+            <div className="flex items-center justify-center py-2 bg-indigo-600/5 border-b border-white/[0.06]">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mr-2" />
               <span className="text-xs text-slate-400">Updating...</span>
             </div>
@@ -330,7 +386,7 @@ export default function MentionsPage() {
               <p className="text-sm mt-1">Create a project and add keywords to start collecting.</p>
             </div>
           ) : (
-            <ul className="divide-y divide-slate-800/60">
+            <ul className="divide-y divide-white/[0.04]">
               {mentions.map((mention) => (
                 <li
                   key={mention.id}
@@ -339,7 +395,7 @@ export default function MentionsPage() {
                     "flex gap-3 px-4 py-3 cursor-pointer transition-colors",
                     activeMention?.id === mention.id
                       ? "bg-indigo-600/10 border-l-2 border-indigo-500"
-                      : "hover:bg-slate-800/50"
+                      : "hover:bg-white/[0.04]"
                   )}
                 >
                   <div className="flex flex-col items-center gap-2 pt-0.5">
@@ -348,7 +404,7 @@ export default function MentionsPage() {
                       checked={selectedIds.has(mention.id)}
                       onChange={(e) => { e.stopPropagation(); toggleSelect(mention.id); }}
                       onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0"
+                      className="h-4 w-4 rounded border-slate-600 bg-white/[0.06] text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0"
                     />
                     <PlatformIcon platform={mention.platform} />
                   </div>
@@ -396,7 +452,7 @@ export default function MentionsPage() {
                         <MessageCircle className="h-3 w-3" /> {formatNumber(mention.comments)}
                       </span>
                       {mention.keywords.slice(0, 3).map((kw) => (
-                        <span key={kw} className="px-1.5 py-0.5 text-[10px] bg-slate-800 text-slate-400 rounded">{kw}</span>
+                        <span key={kw} className="px-1.5 py-0.5 text-[10px] bg-white/[0.06] text-slate-400 rounded">{kw}</span>
                       ))}
                     </div>
                   </div>
@@ -406,7 +462,7 @@ export default function MentionsPage() {
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleFlag(mention.id); }}
                       aria-label={mention.is_flagged ? "Unflag mention" : "Flag mention"}
-                      className={cn("p-1 rounded hover:bg-slate-700 transition-colors", mention.is_flagged ? "text-red-400" : "text-slate-600 hover:text-slate-400")}
+                      className={cn("p-1 rounded hover:bg-white/[0.04] transition-colors", mention.is_flagged ? "text-red-400" : "text-slate-600 hover:text-slate-400")}
                     >
                       <Flag className="h-4 w-4" fill={mention.is_flagged ? "currentColor" : "none"} />
                     </button>
@@ -419,7 +475,7 @@ export default function MentionsPage() {
 
           {/* Pagination */}
           {total > 0 && (
-            <div className="sticky bottom-0 bg-slate-900 border-t border-slate-800 px-4 py-3 flex items-center justify-between">
+            <div className="sticky bottom-0 bg-[#111827]/70 border-t border-white/[0.06] px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-500">
                   {startItem}-{endItem} of {total}
@@ -427,7 +483,7 @@ export default function MentionsPage() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-8 rounded border border-slate-700 bg-slate-800 px-2 text-xs text-slate-300"
+                  className="h-8 rounded border border-white/[0.08] bg-white/[0.06] px-2 text-xs text-slate-300"
                 >
                   {[25, 50, 100].map((s) => (
                     <option key={s} value={s}>{s} / page</option>
@@ -439,7 +495,7 @@ export default function MentionsPage() {
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page <= 1}
                   aria-label="Previous page"
-                  className="p-1.5 rounded hover:bg-slate-800 text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -460,7 +516,7 @@ export default function MentionsPage() {
                       onClick={() => setPage(p)}
                       className={cn(
                         "h-8 w-8 rounded text-sm font-medium",
-                        p === page ? "bg-indigo-600 text-white" : "text-slate-400 hover:bg-slate-800"
+                        p === page ? "bg-indigo-600 text-white" : "text-slate-400 hover:bg-white/[0.06]"
                       )}
                     >
                       {p}
@@ -471,7 +527,7 @@ export default function MentionsPage() {
                   onClick={() => setPage(Math.min(totalPages, page + 1))}
                   disabled={page >= totalPages}
                   aria-label="Next page"
-                  className="p-1.5 rounded hover:bg-slate-800 text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -483,7 +539,7 @@ export default function MentionsPage() {
         {/* Right panel - detail */}
         {activeMention && (
           <div
-            className="hidden lg:block w-[42%] overflow-y-auto bg-slate-950/50 min-h-0"
+            className="hidden lg:block w-[42%] overflow-y-auto bg-[#0a0f1a]/50 min-h-0"
           >
             <LazyMentionDetail
               mention={activeMention}
@@ -497,7 +553,7 @@ export default function MentionsPage() {
 
       {/* Mobile detail overlay */}
       {activeMention && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-slate-950 overflow-y-auto">
+        <div className="lg:hidden fixed inset-0 z-50 bg-[#0a0f1a] overflow-y-auto">
           <LazyMentionDetail
             mention={activeMention}
             onClose={() => setActiveMention(null)}

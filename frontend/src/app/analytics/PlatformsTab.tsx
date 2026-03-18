@@ -31,7 +31,7 @@ export default function PlatformsTab({ metrics }: { metrics: DashboardMetrics })
       ) : (
         <>
           {/* Bar chart */}
-          <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+          <div className="rounded-xl p-5">
             <h3 className="text-sm font-semibold text-slate-200 mb-4">Mentions by Platform</h3>
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={platformData} layout="vertical" margin={{ left: 20 }}>
@@ -54,7 +54,7 @@ export default function PlatformsTab({ metrics }: { metrics: DashboardMetrics })
               const totalMentions = metrics.total_mentions || 1;
               const pct = (p.count / totalMentions * 100).toFixed(1);
               return (
-                <div key={p.key} className="bg-slate-900/60 rounded-xl border border-slate-800 p-4">
+                <div key={p.key} className="rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <span
                       className="h-6 w-6 rounded-md text-white text-[10px] font-bold inline-flex items-center justify-center"

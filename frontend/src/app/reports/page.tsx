@@ -12,6 +12,7 @@ import {
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,11 +37,6 @@ import {
   DialogContent,
   DialogFooter,
 } from "@/components/ui/dialog";
-
-interface Project {
-  id: number;
-  name: string;
-}
 
 interface Report {
   id: number | string;
@@ -102,36 +98,22 @@ const FORMATS = [
 ];
 
 export default function ReportsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { projects, isLoading: projectsLoading } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
-  const [projectsLoading, setProjectsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [reportType, setReportType] = useState("summary");
   const [reportFormat, setReportFormat] = useState("pdf");
   const [scheduleFrequency, setScheduleFrequency] = useState("daily");
 
-  // Load projects
+  // Auto-select first project
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await api.getProjects();
-        if (cancelled) return;
-        setProjects(list ?? []);
-        if (list?.length > 0) {
-          setSelectedProjectId(list[0].id);
-        }
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    if (projects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
 
   // Load reports when project changes
   const fetchReports = useCallback(async (projectId: number) => {
@@ -189,7 +171,7 @@ export default function ReportsPage() {
               <Select
                 value={String(selectedProjectId ?? "")}
                 onValueChange={(v) => setSelectedProjectId(Number(v))}
-                className="bg-slate-900 border-slate-700 text-slate-100"
+                className="bg-[#111827]/70 border-white/[0.08] text-slate-100"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={String(p.id)}>
@@ -212,8 +194,8 @@ export default function ReportsPage() {
         </div>
 
         {/* Reports table */}
-        <Card className="bg-slate-900/60 border-slate-800">
-          <CardHeader className="border-slate-800">
+        <Card>
+          <CardHeader className="border-white/[0.06]">
             <CardTitle className="text-slate-100">Reports</CardTitle>
           </CardHeader>
           <CardContent>
@@ -232,8 +214,8 @@ export default function ReportsPage() {
             ) : (
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-slate-800/50 border-slate-700">
-                    <TableRow className="hover:bg-transparent border-slate-700">
+                  <TableHeader className="bg-white/[0.04] border-white/[0.08]">
+                    <TableRow className="hover:bg-transparent border-white/[0.08]">
                       <TableHead className="text-slate-400">Title</TableHead>
                       <TableHead className="text-slate-400">Type</TableHead>
                       <TableHead className="text-slate-400">Format</TableHead>
@@ -242,9 +224,9 @@ export default function ReportsPage() {
                       <TableHead className="text-slate-400 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="divide-slate-800">
+                  <TableBody className="divide-white/[0.06]">
                     {reports.map((report) => (
-                      <TableRow key={report.id} className="border-slate-800 hover:bg-slate-800/40">
+                      <TableRow key={report.id} className="border-white/[0.06] hover:bg-white/[0.04]">
                         <TableCell className="text-slate-200 font-medium">
                           <div className="flex items-center gap-2">
                             {getFormat(report) === "pptx" ? (
@@ -277,7 +259,7 @@ export default function ReportsPage() {
                             size="sm"
                             disabled={getStatus(report) !== "ready" && getStatus(report) !== "completed"}
                             title="Download"
-                            className="text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            className="text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
                             onClick={() => {
                               if (report.file_path) {
                                 window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${report.file_path}`, '_blank');
@@ -300,8 +282,8 @@ export default function ReportsPage() {
       </div>
 
       {/* Generate Report Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setDialogOpen(false)} className="border-slate-700">
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-[#111827]/70 border border-white/[0.08]">
+        <DialogHeader onClose={() => setDialogOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Generate Report</span>
         </DialogHeader>
         <DialogContent className="space-y-5">
@@ -311,7 +293,7 @@ export default function ReportsPage() {
             <Select
               value={reportType}
               onValueChange={(v) => setReportType(v)}
-              className="bg-slate-800 border-slate-700 text-slate-100"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100"
             >
               {REPORT_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -334,7 +316,7 @@ export default function ReportsPage() {
                     "rounded-lg px-3 py-2 text-sm font-medium transition-all border",
                     scheduleFrequency === freq.value
                       ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                      : "bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                      : "bg-white/[0.04] border-white/[0.08] text-slate-400 hover:border-slate-600 hover:text-slate-300"
                   )}
                 >
                   {freq.label}
@@ -360,7 +342,7 @@ export default function ReportsPage() {
                         ? fmt.value === "pptx"
                           ? "bg-orange-600/20 border-orange-500 text-orange-300"
                           : "bg-blue-600/20 border-blue-500 text-blue-300"
-                        : "bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                        : "bg-white/[0.04] border-white/[0.08] text-slate-400 hover:border-slate-600 hover:text-slate-300"
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -371,11 +353,11 @@ export default function ReportsPage() {
             </div>
           </div>
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-[#111827]/70">
           <Button
             variant="outline"
             onClick={() => setDialogOpen(false)}
-            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
           >
             Cancel
           </Button>

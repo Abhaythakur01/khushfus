@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 
 // ---------- constants ----------
@@ -68,11 +69,6 @@ interface SearchResult {
   comments: number;
   created_at: string;
   source_url: string;
-}
-
-interface Project {
-  id: number;
-  name: string;
 }
 
 // ---------- helpers ----------
@@ -139,7 +135,7 @@ export default function SearchPage() {
   const [sortBy, setSortBy] = useState<"relevance" | "date" | "engagement">("relevance");
 
   // Projects
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { projects } = useProjects();
   const [selectedProject, setSelectedProject] = useState<number>(0);
 
   // Pagination
@@ -148,23 +144,12 @@ export default function SearchPage() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load projects
+  // Auto-select first project
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const data = await api.getProjects();
-        if (cancelled) return;
-        const list = (data || []).map((p: any) => ({ id: p.id, name: p.name }));
-        setProjects(list);
-        if (list.length > 0) setSelectedProject(list[0].id);
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      }
+    if (projects.length > 0 && !selectedProject) {
+      setSelectedProject(projects[0].id);
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+  }, [projects, selectedProject]);
 
   const performSearch = useCallback(async (searchQuery?: string, pageNum?: number) => {
     const q = searchQuery ?? query;
@@ -237,7 +222,7 @@ export default function SearchPage() {
   return (
     <AppShell title="Search">
       {/* Search Bar */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 mb-6">
+      <div className="glass-card rounded-xl p-6 mb-6">
         <div className="relative max-w-3xl mx-auto mb-4">
           <div className="relative">
             <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
@@ -248,13 +233,13 @@ export default function SearchPage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") performSearch(); }}
               placeholder="Search mentions, authors, topics..."
-              className="w-full h-12 rounded-xl border border-slate-700 bg-slate-800 pl-12 pr-28 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full h-12 rounded-xl border border-white/[0.08] bg-white/[0.06] pl-12 pr-28 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {query && (
                 <button
                   onClick={() => { setQuery(""); searchInputRef.current?.focus(); }}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.08]"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -274,7 +259,7 @@ export default function SearchPage() {
           <select
             value={selectedProject}
             onChange={(e) => setSelectedProject(Number(e.target.value))}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value={0}>All Projects</option>
             {projects.map((p) => (
@@ -285,7 +270,7 @@ export default function SearchPage() {
           <select
             value={platformFilter}
             onChange={(e) => setPlatformFilter(e.target.value)}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {PLATFORMS_LIST.map((p) => (
               <option key={p} value={p}>{p === "all" ? "All Platforms" : PLATFORM_LABELS[p] || p}</option>
@@ -295,7 +280,7 @@ export default function SearchPage() {
           <select
             value={sentimentFilter}
             onChange={(e) => setSentimentFilter(e.target.value)}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {SENTIMENTS_LIST.map((s) => (
               <option key={s} value={s}>{s === "all" ? "All Sentiment" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -305,7 +290,7 @@ export default function SearchPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="relevance">Sort: Relevance</option>
             <option value="date">Sort: Date</option>
@@ -361,7 +346,7 @@ export default function SearchPage() {
               {sortedResults.map((result) => (
                 <div
                   key={result.id}
-                  className="bg-slate-900/60 rounded-xl border border-slate-800 p-4 hover:border-indigo-500/30 hover:bg-slate-900/80 transition-all"
+                  className="glass-card rounded-xl p-4 hover:border-indigo-500/30 hover:bg-white/[0.04] transition-all"
                 >
                   <div className="flex items-start gap-3">
                     {/* Platform icon */}
@@ -427,7 +412,7 @@ export default function SearchPage() {
 
           {/* Pagination */}
           {totalResults > 0 && (
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-800">
+            <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/[0.06]">
               <p className="text-sm text-slate-500">
                 Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalResults)} of {totalResults}
               </p>
@@ -435,7 +420,7 @@ export default function SearchPage() {
                 <button
                   onClick={() => { const p = Math.max(1, page - 1); setPage(p); performSearch(submittedQuery, p); }}
                   disabled={page <= 1}
-                  className="p-1.5 rounded hover:bg-slate-800 text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -451,7 +436,7 @@ export default function SearchPage() {
                       onClick={() => { setPage(p); performSearch(submittedQuery, p); }}
                       className={cn(
                         "h-8 w-8 rounded text-sm font-medium",
-                        p === page ? "bg-indigo-600 text-white" : "text-slate-400 hover:bg-slate-800"
+                        p === page ? "bg-indigo-600 text-white" : "text-slate-400 hover:bg-white/[0.06]"
                       )}
                     >
                       {p}
@@ -461,7 +446,7 @@ export default function SearchPage() {
                 <button
                   onClick={() => { const p = Math.min(totalPages, page + 1); setPage(p); performSearch(submittedQuery, p); }}
                   disabled={page >= totalPages}
-                  className="p-1.5 rounded hover:bg-slate-800 text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>

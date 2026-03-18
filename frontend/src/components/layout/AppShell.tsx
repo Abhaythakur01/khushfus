@@ -19,28 +19,30 @@ export function AppShell({ title, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
-  // 6.48 — Track page views on route changes
   useEffect(() => {
     trackPageView(pathname);
   }, [pathname]);
 
-  // While auth state is loading, show a centered spinner
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0f1a]">
+        <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-indigo-500/70 border-t-transparent" />
       </div>
     );
   }
 
-  // If not authenticated the AuthProvider will redirect to /login;
-  // render nothing in the meantime to prevent flashing protected content.
   if (!isAuthenticated) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-[#0a0f1a] text-slate-200">
+      {/* Subtle ambient gradient */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-500/[0.03] rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-purple-500/[0.02] rounded-full blur-[100px]" />
+      </div>
+
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -56,8 +58,8 @@ export function AppShell({ title, children }: AppShellProps) {
 
       <div
         className={cn(
-          "transition-all duration-200",
-          sidebarCollapsed ? "lg:ml-16" : "lg:ml-64",
+          "relative transition-all duration-300 ease-out",
+          sidebarCollapsed ? "lg:ml-[68px]" : "lg:ml-[260px]",
         )}
       >
         <Header
@@ -66,7 +68,7 @@ export function AppShell({ title, children }: AppShellProps) {
           sidebarCollapsed={sidebarCollapsed}
         />
 
-        <main id="main-content" className="p-4 lg:p-6">
+        <main id="main-content" role="main" className="p-4 lg:p-6 xl:p-8">
           {children}
         </main>
       </div>

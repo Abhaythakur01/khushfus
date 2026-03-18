@@ -33,6 +33,7 @@ import React, {
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "./api";
 import type { User, Organization } from "./api";
+import { canAccessRoute } from "./rbac";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -123,6 +124,20 @@ function clearStoredToken(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-tab auth sync via storage events
+// ---------------------------------------------------------------------------
+
+const AUTH_SYNC_KEY = "khushfus_auth_sync";
+
+/** Broadcast an auth event to other tabs */
+function broadcastAuthEvent(event: "logout" | "login"): void {
+  if (typeof window === "undefined") return;
+  // Write + immediately remove to trigger storage event in other tabs
+  localStorage.setItem(AUTH_SYNC_KEY, JSON.stringify({ event, ts: Date.now() }));
+  localStorage.removeItem(AUTH_SYNC_KEY);
+}
+
+// ---------------------------------------------------------------------------
 // Auth context
 // ---------------------------------------------------------------------------
 
@@ -209,11 +224,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Redirect unauthenticated users away from protected pages
   useEffect(() => {
-    const publicPaths = ["/login", "/register"];
-    if (!state.isLoading && !state.isAuthenticated && !publicPaths.includes(pathname)) {
+    const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
+    if (!state.isLoading && !state.isAuthenticated && !publicPaths.some(p => pathname.startsWith(p))) {
       router.push("/login");
     }
   }, [state.isLoading, state.isAuthenticated, pathname, router]);
+
+  // RBAC: redirect to /dashboard if user lacks permission for this route
+  useEffect(() => {
+    const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
+    if (state.isLoading || !state.isAuthenticated || publicPaths.some(p => pathname.startsWith(p))) return;
+    if (state.user && !canAccessRoute(state.user.role, pathname)) {
+      router.push("/dashboard");
+    }
+  }, [state.isLoading, state.isAuthenticated, state.user, pathname, router]);
 
   // ---------------------------------------------------------------------------
   // 6.1 + 6.40 — Token expiry check on route change
@@ -252,6 +276,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => clearInterval(interval);
   }, [state.token, clearAuth, router]);
+
+  // ---------------------------------------------------------------------------
+  // Multi-tab auth sync: listen for logout/login from other tabs
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Detect token removal (direct localStorage manipulation)
+      if (e.key === TOKEN_KEY && e.newValue === null && state.isAuthenticated) {
+        clearAuth();
+        router.push("/login");
+        return;
+      }
+      // Detect broadcast events
+      if (e.key === AUTH_SYNC_KEY && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data.event === "logout" && state.isAuthenticated) {
+            clearAuth();
+            router.push("/login");
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [state.isAuthenticated, clearAuth, router]);
 
   // ---------------------------------------------------------------------------
   // Validate existing token on mount & load refresh token
@@ -300,6 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    broadcastAuthEvent("logout");
     clearAuth();
   }, [clearAuth]);
 

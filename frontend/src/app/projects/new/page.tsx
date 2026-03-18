@@ -196,7 +196,7 @@ export default function NewProjectPage() {
               <button
                 type="button"
                 onClick={discardDraft}
-                className="px-3 py-1.5 text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 rounded-md hover:bg-slate-700 transition-colors"
+                className="px-3 py-1.5 text-xs font-medium bg-white/[0.06] text-slate-300 border border-white/[0.08] rounded-md hover:bg-white/[0.04] transition-colors"
               >
                 Discard
               </button>
@@ -212,7 +212,7 @@ export default function NewProjectPage() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Project Details */}
-          <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+          <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
             <h2 className="text-base font-semibold text-slate-100 mb-4">Project Details</h2>
 
             <div className="space-y-4">
@@ -227,8 +227,8 @@ export default function NewProjectPage() {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g., Brand Monitoring Q1 2026"
                   className={cn(
-                    "w-full h-10 rounded-lg border px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-800/60",
-                    errors.name ? "border-red-500/50" : "border-slate-700"
+                    "w-full h-10 rounded-lg border px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white/[0.04]",
+                    errors.name ? "border-red-500/50" : "border-white/[0.08]"
                   )}
                 />
                 {errors.name && <p className="text-xs text-red-400 mt-1">{errors.name}</p>}
@@ -245,8 +245,8 @@ export default function NewProjectPage() {
                   onChange={(e) => setClientName(e.target.value)}
                   placeholder="e.g., Acme Corp"
                   className={cn(
-                    "w-full h-10 rounded-lg border px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-800/60",
-                    errors.clientName ? "border-red-500/50" : "border-slate-700"
+                    "w-full h-10 rounded-lg border px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white/[0.04]",
+                    errors.clientName ? "border-red-500/50" : "border-white/[0.08]"
                   )}
                 />
                 {errors.clientName && (
@@ -264,14 +264,14 @@ export default function NewProjectPage() {
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                   placeholder="Describe the purpose and scope of this project..."
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
             </div>
           </div>
 
           {/* Platforms */}
-          <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+          <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
             <h2 className="text-base font-semibold text-slate-100 mb-1">Platforms</h2>
             <p className="text-sm text-slate-500 mb-4">
               Select the platforms you want to monitor
@@ -291,7 +291,7 @@ export default function NewProjectPage() {
                       "flex items-center gap-2.5 p-3 rounded-lg border-2 transition-all text-left",
                       selected
                         ? "border-indigo-500 bg-indigo-500/10"
-                        : "border-slate-700 bg-slate-800/40 hover:border-slate-600"
+                        : "border-white/[0.08] bg-white/[0.04] hover:border-slate-600"
                     )}
                   >
                     <span
@@ -313,7 +313,7 @@ export default function NewProjectPage() {
           </div>
 
           {/* Keywords */}
-          <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6">
+          <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
             <h2 className="text-base font-semibold text-slate-100 mb-1">Keywords</h2>
             <p className="text-sm text-slate-500 mb-4">
               Add keywords to track across selected platforms
@@ -326,12 +326,12 @@ export default function NewProjectPage() {
                 onChange={(e) => setKeywordInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addKeyword())}
                 placeholder="Enter keyword or phrase..."
-                className="flex-1 h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <select
                 value={keywordType}
                 onChange={(e) => setKeywordType(e.target.value as KeywordType)}
-                className="h-10 rounded-lg border border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {KEYWORD_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -353,7 +353,7 @@ export default function NewProjectPage() {
                 {keywords.map((kw) => (
                   <div
                     key={kw.id}
-                    className="flex items-center gap-3 p-2.5 bg-slate-800/60 rounded-lg border border-slate-700"
+                    className="flex items-center gap-3 p-2.5 bg-white/[0.04] rounded-lg border border-white/[0.08]"
                   >
                     <span className="text-sm font-medium text-slate-200 flex-1">{kw.term}</span>
                     <select
@@ -396,7 +396,7 @@ export default function NewProjectPage() {
           <div className="flex items-center justify-end gap-3 pb-8">
             <Link
               href="/projects"
-              className="px-5 py-2.5 text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition-colors"
+              className="px-5 py-2.5 text-sm font-medium text-slate-300 bg-white/[0.06] border border-white/[0.08] rounded-lg hover:bg-white/[0.04] transition-colors"
             >
               Cancel
             </Link>

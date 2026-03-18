@@ -4,31 +4,20 @@ interface SkeletonProps {
   className?: string;
 }
 
-/**
- * Animated skeleton placeholder for loading states.
- * Uses Tailwind's animate-pulse for shimmer effect.
- *
- * @example
- * <Skeleton className="h-4 w-48" />           // text line
- * <Skeleton className="h-10 w-full" />         // input field
- * <Skeleton className="h-32 w-full rounded-xl" /> // card
- * <SkeletonCard />                             // pre-built card skeleton
- */
 export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
       className={cn(
-        "animate-pulse rounded-md bg-slate-800/60",
+        "animate-pulse rounded-md bg-white/[0.06]",
         className,
       )}
     />
   );
 }
 
-/** A pre-built card skeleton with title, subtitle and content lines. */
 export function SkeletonCard({ className }: SkeletonProps) {
   return (
-    <div className={cn("rounded-xl border border-slate-800 bg-slate-900/60 p-6 space-y-4", className)}>
+    <div className={cn("rounded-xl border border-white/[0.06] bg-[#111827]/70 p-6 space-y-4", className)}>
       <div className="space-y-2">
         <Skeleton className="h-4 w-1/3" />
         <Skeleton className="h-3 w-1/2" />
@@ -42,7 +31,6 @@ export function SkeletonCard({ className }: SkeletonProps) {
   );
 }
 
-/** Skeleton for a table row. */
 export function SkeletonRow({ columns = 4, className }: SkeletonProps & { columns?: number }) {
   return (
     <div className={cn("flex items-center gap-4 py-3", className)}>
@@ -53,7 +41,6 @@ export function SkeletonRow({ columns = 4, className }: SkeletonProps & { column
   );
 }
 
-/** Skeleton for a list of items. */
 export function SkeletonList({ count = 5, className }: SkeletonProps & { count?: number }) {
   return (
     <div className={cn("space-y-3", className)}>

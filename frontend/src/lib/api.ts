@@ -5,8 +5,9 @@ import {
   PaginatedMentionsSchema,
   MeResponseSchema,
 } from "./schemas";
+import { env } from "./env";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = env.NEXT_PUBLIC_API_URL;
 
 // ---------------------------------------------------------------------------
 // 6.3 — CSRF defense-in-depth
@@ -311,6 +312,47 @@ interface ApiRequestOptions extends RequestInit {
 const MAX_RETRIES = 3;
 const BACKOFF_MS = [1000, 2000, 4000];
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const DEFAULT_TIMEOUT_MS = 30_000; // 30 seconds
+
+// ---------------------------------------------------------------------------
+// Circuit breaker (prevents hammering a down backend)
+// ---------------------------------------------------------------------------
+
+class CircuitBreaker {
+  private failures = 0;
+  private lastFailure = 0;
+  private readonly threshold = 5; // Open after 5 consecutive failures
+  private readonly resetMs = 30_000; // Try again after 30s
+
+  get isOpen(): boolean {
+    if (this.failures < this.threshold) return false;
+    // Allow a probe after resetMs
+    if (Date.now() - this.lastFailure > this.resetMs) return false;
+    return true;
+  }
+
+  recordSuccess(): void {
+    this.failures = 0;
+  }
+
+  recordFailure(): void {
+    this.failures++;
+    this.lastFailure = Date.now();
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
+// ---------------------------------------------------------------------------
+// Request correlation ID
+// ---------------------------------------------------------------------------
+
+function generateRequestId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function isRetryable(method: string, status: number, headers?: Headers): boolean {
   // Never retry 4xx (client errors)
@@ -447,6 +489,11 @@ class ApiClient {
     const method = (options?.method ?? "GET").toUpperCase();
     const canRetry = SAFE_METHODS.has(method) || !!(options?.headers && new Headers(options.headers).get("X-Idempotency-Key"));
 
+    // Circuit breaker: fail fast if backend is down
+    if (circuitBreaker.isOpen) {
+      throw new ApiError(503, "Service temporarily unavailable. Please try again shortly.");
+    }
+
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= (canRetry ? MAX_RETRIES : 0); attempt++) {
@@ -458,24 +505,31 @@ class ApiClient {
       try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
-          // 6.3 — Defense-in-depth CSRF headers.
-          // X-Requested-With prevents simple CORS requests from being forged
-          // via <form> or <img> tags — browsers won't add custom headers
-          // without a preflight, which the server's CORS policy will reject.
           "X-Requested-With": "XMLHttpRequest",
-          // Additional CSRF token. In a full BFF architecture this would be
-          // validated server-side against a session-bound value.
           "X-CSRF-Token": getCsrfToken(),
+          // Correlation ID for distributed tracing
+          "X-Request-ID": generateRequestId(),
         };
         if (this.token) {
           headers["Authorization"] = `Bearer ${this.token}`;
         }
 
+        // Timeout: abort if request takes longer than DEFAULT_TIMEOUT_MS
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let signal = options?.signal;
+        if (!signal) {
+          const controller = new AbortController();
+          signal = controller.signal;
+          timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+        }
+
         const res = await fetch(`${API_BASE}${path}`, {
           ...options,
           headers: { ...headers, ...options?.headers },
-          signal: options?.signal,
+          signal,
         });
+
+        if (timeoutId) clearTimeout(timeoutId);
 
         if (!res.ok) {
           const body = await res.text();
@@ -507,18 +561,25 @@ class ApiClient {
 
           // 6.7 — Retry on 5xx for safe / idempotent methods
           if (isRetryable(method, res.status, new Headers(options?.headers ?? {}))) {
+            circuitBreaker.recordFailure();
             lastError = new ApiError(res.status, body);
             continue;
           }
 
+          if (res.status >= 500) circuitBreaker.recordFailure();
           throw new ApiError(res.status, body);
         }
 
+        circuitBreaker.recordSuccess();
         return res.json();
       } catch (err) {
-        // Abort signals should not be retried
+        // Abort signals: distinguish user-initiated from timeout
         if (err instanceof DOMException && err.name === "AbortError") {
-          throw err;
+          // If the caller provided their own signal, it's user-initiated
+          if (options?.signal?.aborted) throw err;
+          // Otherwise it's our timeout
+          circuitBreaker.recordFailure();
+          throw new ApiError(408, "Request timed out. Please try again.");
         }
 
         // Already an ApiError (non-retryable) — rethrow
@@ -528,10 +589,12 @@ class ApiClient {
 
         // 6.7 — Retry on network errors for safe / idempotent methods
         if (isNetworkError(err) && canRetry && attempt < MAX_RETRIES) {
+          circuitBreaker.recordFailure();
           lastError = err;
           continue;
         }
 
+        circuitBreaker.recordFailure();
         throw err;
       }
     }
@@ -570,6 +633,22 @@ class ApiClient {
   async getMe(signal?: AbortSignal): Promise<MeResponse> {
     const data = await this.request<MeResponse>("/api/v1/auth/me", { signal });
     return parseResponse(MeResponseSchema, data) as MeResponse;
+  }
+
+  /** Request a password reset email. */
+  async requestPasswordReset(email: string): Promise<void> {
+    await this.request<void>("/api/v1/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  /** Reset password using a token from the email link. */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await this.request<void>("/api/v1/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
   }
 
   // ---------- Projects ----------

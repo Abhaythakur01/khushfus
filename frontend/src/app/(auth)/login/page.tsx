@@ -63,13 +63,13 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
+      <h2 className="text-2xl font-bold text-slate-100 mb-1 tracking-tight">Welcome back</h2>
       <p className="text-sm text-slate-500 mb-8">
         Sign in to your account to continue
       </p>
 
       {error && (
-        <div className="mb-6 p-3 rounded-lg bg-danger-50 border border-danger-200 text-sm text-danger-700">
+        <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
           {error}
         </div>
       )}
@@ -105,13 +105,13 @@ export default function LoginPage() {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500/20"
+              className="w-4 h-4 rounded border-slate-600 bg-white/[0.04] text-indigo-500 focus:ring-indigo-500/20 focus:ring-offset-0"
             />
-            <span className="text-sm text-slate-600">Remember me</span>
+            <span className="text-sm text-slate-400">Remember me</span>
           </label>
           <Link
-            href="/login"
-            className="text-sm font-medium text-primary-600 hover:text-primary-700"
+            href="/forgot-password"
+            className="text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
           >
             Forgot password?
           </Link>
@@ -126,7 +126,7 @@ export default function LoginPage() {
         Don&apos;t have an account?{" "}
         <Link
           href="/register"
-          className="font-medium text-primary-600 hover:text-primary-700"
+          className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
         >
           Sign up
         </Link>

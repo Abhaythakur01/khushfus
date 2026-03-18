@@ -15,7 +15,7 @@ function Table({ className, ...props }: React.HTMLAttributes<HTMLTableElement>) 
 function TableHeader({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <thead
-      className={cn("bg-slate-50/80 border-b border-slate-200", className)}
+      className={cn("border-b border-white/[0.06]", className)}
       {...props}
     />
   );
@@ -24,7 +24,7 @@ function TableHeader({ className, ...props }: React.HTMLAttributes<HTMLTableSect
 function TableBody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <tbody
-      className={cn("divide-y divide-slate-100", className)}
+      className={cn("divide-y divide-white/[0.04]", className)}
       {...props}
     />
   );
@@ -34,7 +34,7 @@ function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTableRowElem
   return (
     <tr
       className={cn(
-        "hover:bg-slate-50/50 transition-colors duration-100",
+        "hover:bg-white/[0.02] transition-colors duration-150",
         className,
       )}
       {...props}
@@ -46,7 +46,7 @@ function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTableCell
   return (
     <th
       className={cn(
-        "px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap",
+        "px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap",
         className,
       )}
       {...props}
@@ -57,7 +57,7 @@ function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTableCell
 function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn("px-4 py-3 text-slate-700 whitespace-nowrap", className)}
+      className={cn("px-4 py-3 text-slate-300 whitespace-nowrap", className)}
       {...props}
     />
   );

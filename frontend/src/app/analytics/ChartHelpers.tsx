@@ -7,7 +7,7 @@ import { Inbox } from "lucide-react";
 export function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-lg">
+    <div className="bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 shadow-lg">
       <p className="text-xs text-slate-400 mb-1">{label}</p>
       {payload.map((p: any, i: number) => (
         <p key={i} className="text-xs font-medium" style={{ color: p.color }}>

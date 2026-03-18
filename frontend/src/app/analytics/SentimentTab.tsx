@@ -31,7 +31,7 @@ export default function SentimentTab({ metrics }: { metrics: DashboardMetrics })
     <div className="space-y-6">
       {/* Sentiment summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="h-3 w-3 rounded-full bg-emerald-500" />
             <span className="text-sm text-slate-400">Positive</span>
@@ -39,7 +39,7 @@ export default function SentimentTab({ metrics }: { metrics: DashboardMetrics })
           <p className="text-2xl font-bold text-emerald-400">{formatNumber(metrics.sentiment_breakdown.positive || 0)}</p>
           <p className="text-xs text-slate-500">{((metrics.sentiment_breakdown.positive || 0) / total * 100).toFixed(1)}% of total</p>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="h-3 w-3 rounded-full bg-slate-500" />
             <span className="text-sm text-slate-400">Neutral</span>
@@ -47,7 +47,7 @@ export default function SentimentTab({ metrics }: { metrics: DashboardMetrics })
           <p className="text-2xl font-bold text-slate-300">{formatNumber(metrics.sentiment_breakdown.neutral || 0)}</p>
           <p className="text-xs text-slate-500">{((metrics.sentiment_breakdown.neutral || 0) / total * 100).toFixed(1)}% of total</p>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="h-3 w-3 rounded-full bg-red-500" />
             <span className="text-sm text-slate-400">Negative</span>
@@ -59,7 +59,7 @@ export default function SentimentTab({ metrics }: { metrics: DashboardMetrics })
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sentiment over time */}
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Sentiment Over Time</h3>
           {metrics.sentiment_over_time.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
@@ -90,7 +90,7 @@ export default function SentimentTab({ metrics }: { metrics: DashboardMetrics })
         </div>
 
         {/* Pie chart */}
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Sentiment Distribution</h3>
           {sentimentPieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>

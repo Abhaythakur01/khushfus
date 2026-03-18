@@ -67,27 +67,27 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
             <p className="text-sm text-slate-500">{mention.author.handle}</p>
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close detail panel" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300">
+        <button onClick={onClose} aria-label="Close detail panel" className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300">
           <X className="h-5 w-5" />
         </button>
       </div>
 
       {/* Full text -- rendered as text node, auto-escaped by React (6.4) */}
-      <div className="bg-slate-800/60 rounded-xl p-4 mb-6 border border-slate-700/50">
+      <div className="bg-white/[0.04] rounded-xl p-4 mb-6 border border-white/[0.06]">
         <p className="text-sm text-slate-200 leading-relaxed">{mention.text}</p>
       </div>
 
       {/* Author stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="text-center p-3 bg-slate-800/40 rounded-lg border border-slate-700/40">
+        <div className="text-center p-3 bg-white/[0.04] rounded-lg border border-white/[0.06]">
           <p className="text-lg font-bold text-slate-100">{formatNumber(mention.author.followers)}</p>
           <p className="text-xs text-slate-500">Followers</p>
         </div>
-        <div className="text-center p-3 bg-slate-800/40 rounded-lg border border-slate-700/40">
+        <div className="text-center p-3 bg-white/[0.04] rounded-lg border border-white/[0.06]">
           <p className="text-lg font-bold text-slate-100">{mention.author.influence_score}</p>
           <p className="text-xs text-slate-500">Influence</p>
         </div>
-        <div className="text-center p-3 bg-slate-800/40 rounded-lg border border-slate-700/40">
+        <div className="text-center p-3 bg-white/[0.04] rounded-lg border border-white/[0.06]">
           <p className="text-lg font-bold text-slate-100">{formatNumber(mention.reach)}</p>
           <p className="text-xs text-slate-500">Reach</p>
         </div>
@@ -135,7 +135,7 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
       {/* Sentiment */}
       <div className="mb-6">
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sentiment Analysis</h3>
-        <div className="flex items-center gap-3 p-3 bg-slate-800/40 rounded-lg border border-slate-700/40">
+        <div className="flex items-center gap-3 p-3 bg-white/[0.04] rounded-lg border border-white/[0.06]">
           <span className={cn("px-2.5 py-1 text-xs font-semibold rounded-full border", SENTIMENT_BADGE[mention.sentiment] || SENTIMENT_BADGE.neutral)}>
             {mention.sentiment.charAt(0).toUpperCase() + mention.sentiment.slice(1)}
           </span>
@@ -159,7 +159,7 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
                   ? s === "positive" ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
                     : s === "negative" ? "bg-red-500/20 border-red-500/40 text-red-400"
                     : "bg-slate-500/20 border-slate-500/40 text-slate-400"
-                  : "bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+                  : "bg-white/[0.06] border-white/[0.08] text-slate-500 hover:text-slate-300 hover:border-slate-600"
               )}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -186,7 +186,7 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
           <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Topics</h3>
           <div className="flex flex-wrap gap-1.5">
             {mention.topics.map((t) => (
-              <span key={t} className="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded-md border border-slate-700">{t}</span>
+              <span key={t} className="px-2 py-1 text-xs bg-white/[0.06] text-slate-400 rounded-md border border-white/[0.08]">{t}</span>
             ))}
           </div>
         </div>
@@ -203,7 +203,7 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 border-t border-slate-800 pt-4">
+      <div className="flex gap-2 border-t border-white/[0.06] pt-4">
         <button className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
           <MessageCircle className="h-4 w-4" /> Reply
         </button>
@@ -213,13 +213,13 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
             "inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border transition-colors",
             mention.is_flagged
               ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
-              : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+              : "bg-white/[0.06] border-white/[0.08] text-slate-300 hover:bg-white/[0.04]"
           )}
         >
           <Flag className="h-4 w-4" fill={mention.is_flagged ? "currentColor" : "none"} />
           {mention.is_flagged ? "Flagged" : "Flag"}
         </button>
-        <button className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 border border-slate-700 text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors">
+        <button className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white/[0.06] border border-white/[0.08] text-slate-300 text-sm font-medium rounded-lg hover:bg-white/[0.04] transition-colors">
           <Download className="h-4 w-4" /> Export
         </button>
       </div>

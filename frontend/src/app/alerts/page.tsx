@@ -13,6 +13,7 @@ import {
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,11 +40,6 @@ import {
   DialogContent,
   DialogFooter,
 } from "@/components/ui/dialog";
-
-interface Project {
-  id: number;
-  name: string;
-}
 
 interface AlertRule {
   id: number | string;
@@ -100,9 +96,8 @@ const channelIcons: Record<Channel, typeof Mail> = {
 };
 
 export default function AlertsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { projects, isLoading: projectsLoading } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-  const [projectsLoading, setProjectsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("rules");
 
   // Rules state
@@ -123,23 +118,12 @@ export default function AlertsPage() {
   const [formChannels, setFormChannels] = useState<Channel[]>([]);
   const [formWebhookUrl, setFormWebhookUrl] = useState("");
 
-  // Load projects
+  // Auto-select first project
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await api.getProjects();
-        if (cancelled) return;
-        setProjects(list ?? []);
-        if (list?.length > 0) setSelectedProjectId(list[0].id);
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    if (projects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
 
   // Load rules
   const fetchRules = useCallback(async (projectId: number) => {
@@ -229,7 +213,7 @@ export default function AlertsPage() {
             <Select
               value={String(selectedProjectId ?? "")}
               onValueChange={(v) => setSelectedProjectId(Number(v))}
-              className="bg-slate-900 border-slate-700 text-slate-100"
+              className="bg-[#111827]/70 border-white/[0.08] text-slate-100"
             >
               {projects.map((p) => (
                 <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -242,7 +226,7 @@ export default function AlertsPage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="border-slate-700">
+          <TabsList className="border-white/[0.08]">
             <TabsTrigger value="rules" className="data-[state=active]:text-indigo-400">
               Alert Rules
             </TabsTrigger>
@@ -253,8 +237,8 @@ export default function AlertsPage() {
 
           {/* Rules Tab */}
           <TabsContent value="rules">
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800 flex flex-row items-center justify-between">
+            <Card>
+              <CardHeader className="border-white/[0.06] flex flex-row items-center justify-between">
                 <CardTitle className="text-slate-100">Alert Rules</CardTitle>
                 <Button
                   onClick={openCreateDialog}
@@ -282,8 +266,8 @@ export default function AlertsPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-slate-800/50 border-slate-700">
-                        <TableRow className="hover:bg-transparent border-slate-700">
+                      <TableHeader className="bg-white/[0.04] border-white/[0.08]">
+                        <TableRow className="hover:bg-transparent border-white/[0.08]">
                           <TableHead className="text-slate-400">Name</TableHead>
                           <TableHead className="text-slate-400">Type</TableHead>
                           <TableHead className="text-slate-400">Threshold</TableHead>
@@ -291,9 +275,9 @@ export default function AlertsPage() {
                           <TableHead className="text-slate-400">Channels</TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody className="divide-slate-800">
+                      <TableBody className="divide-white/[0.06]">
                         {rules.map((rule) => (
-                          <TableRow key={rule.id} className="border-slate-800 hover:bg-slate-800/40">
+                          <TableRow key={rule.id} className="border-white/[0.06] hover:bg-white/[0.04]">
                             <TableCell className="text-slate-200 font-medium">{rule.name}</TableCell>
                             <TableCell>
                               <Badge className={cn("capitalize border", ruleTypeBadge[getRuleType(rule)] || "bg-slate-500/10 text-slate-400 border-slate-500/20")}>
@@ -307,7 +291,7 @@ export default function AlertsPage() {
                                 {(rule.channels || []).map((ch) => {
                                   const Icon = channelIcons[ch as Channel];
                                   return Icon ? (
-                                    <div key={ch} className="rounded-md bg-slate-800 p-1.5" title={ch}>
+                                    <div key={ch} className="rounded-md bg-white/[0.06] p-1.5" title={ch}>
                                       <Icon className="h-3.5 w-3.5 text-slate-400" />
                                     </div>
                                   ) : (
@@ -328,8 +312,8 @@ export default function AlertsPage() {
 
           {/* Log Tab */}
           <TabsContent value="log">
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800">
+            <Card>
+              <CardHeader className="border-white/[0.06]">
                 <CardTitle className="text-slate-100">Alert History</CardTitle>
               </CardHeader>
               <CardContent>
@@ -345,16 +329,16 @@ export default function AlertsPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-slate-800/50 border-slate-700">
-                        <TableRow className="hover:bg-transparent border-slate-700">
+                      <TableHeader className="bg-white/[0.04] border-white/[0.08]">
+                        <TableRow className="hover:bg-transparent border-white/[0.08]">
                           <TableHead className="text-slate-400">Severity</TableHead>
                           <TableHead className="text-slate-400">Message</TableHead>
                           <TableHead className="text-slate-400">Date</TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody className="divide-slate-800">
+                      <TableBody className="divide-white/[0.06]">
                         {logs.map((entry) => (
-                          <TableRow key={entry.id} className="border-slate-800 hover:bg-slate-800/40">
+                          <TableRow key={entry.id} className="border-white/[0.06] hover:bg-white/[0.04]">
                             <TableCell>
                               <Badge className={cn("capitalize border", severityColor[entry.severity || "low"] || severityColor.low)}>
                                 {entry.severity || "info"}
@@ -381,8 +365,8 @@ export default function AlertsPage() {
       </div>
 
       {/* Create Rule Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setDialogOpen(false)} className="border-slate-700">
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-[#111827]/70 border border-white/[0.08]">
+        <DialogHeader onClose={() => setDialogOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Create Alert Rule</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
@@ -392,7 +376,7 @@ export default function AlertsPage() {
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
               placeholder="Alert rule name"
-              className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
             />
           </div>
           <div>
@@ -400,7 +384,7 @@ export default function AlertsPage() {
             <Select
               value={formType}
               onValueChange={(v) => setFormType(v)}
-              className="bg-slate-800 border-slate-700 text-slate-100"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100"
             >
               <option value="volume_spike">Volume Spike</option>
               <option value="negative_surge">Negative Surge</option>
@@ -415,7 +399,7 @@ export default function AlertsPage() {
                 value={formThreshold}
                 onChange={(e) => setFormThreshold(e.target.value)}
                 placeholder="100"
-                className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
               />
             </div>
             <div>
@@ -425,7 +409,7 @@ export default function AlertsPage() {
                 value={formWindow}
                 onChange={(e) => setFormWindow(e.target.value)}
                 placeholder="30"
-                className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
               />
             </div>
           </div>
@@ -452,16 +436,16 @@ export default function AlertsPage() {
                 value={formWebhookUrl}
                 onChange={(e) => setFormWebhookUrl(e.target.value)}
                 placeholder="https://hooks.example.com/alert"
-                className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
               />
             </div>
           )}
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-[#111827]/70">
           <Button
             variant="outline"
             onClick={() => setDialogOpen(false)}
-            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
           >
             Cancel
           </Button>

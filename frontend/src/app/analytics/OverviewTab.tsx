@@ -41,10 +41,10 @@ function StatCard({ title, value, change, icon: Icon }: {
   const changeColor = isNeutral ? "text-slate-500" : isPositive ? "text-emerald-400" : "text-red-400";
 
   return (
-    <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+    <div className="rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm text-slate-400">{title}</span>
-        <div className="p-2 bg-slate-800/60 rounded-lg">
+        <div className="p-2 bg-white/[0.06] rounded-lg">
           <Icon className="h-4 w-4 text-indigo-400" />
         </div>
       </div>
@@ -122,7 +122,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
 
       {/* Mentions trend + Sentiment pie */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="lg:col-span-2 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Mentions Over Time</h3>
           {metrics.mentions_over_time.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
@@ -145,7 +145,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
           )}
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Sentiment Breakdown</h3>
           {sentimentPieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
@@ -179,7 +179,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
 
       {/* Top keywords + Top authors */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Top Keywords</h3>
           {metrics.top_keywords.length > 0 ? (
             <div className="space-y-2">
@@ -189,7 +189,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
                 return (
                   <div key={i} className="flex items-center gap-3">
                     <span className="text-sm text-slate-300 w-32 truncate">{kw.keyword}</span>
-                    <div className="flex-1 bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div className="flex-1 bg-white/[0.06] rounded-full h-2 overflow-hidden">
                       <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-xs text-slate-500 w-12 text-right">{formatNumber(kw.count)}</span>
@@ -202,7 +202,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
           )}
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Top Authors</h3>
           {metrics.top_authors.length > 0 ? (
             <div className="space-y-3">
@@ -230,7 +230,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
 
       {/* Geographic Distribution */}
       {geoData.length > 0 && (
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Geographic Distribution</h3>
           <div className="max-h-72 overflow-y-auto">
             <GeoMap data={geoData} />
@@ -239,7 +239,7 @@ export default function OverviewTab({ metrics }: { metrics: DashboardMetrics }) 
       )}
 
       {/* Keyword Cloud */}
-      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+      <div className="rounded-xl p-5">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">Keyword Cloud</h3>
         <WordCloud words={wordCloudData} />
       </div>

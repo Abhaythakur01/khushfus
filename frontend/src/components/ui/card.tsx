@@ -7,7 +7,7 @@ function Card({ className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "bg-white rounded-xl border border-slate-200/60 shadow-sm",
+        "glass-card",
         className,
       )}
       {...props}
@@ -18,7 +18,7 @@ function Card({ className, ...props }: CardProps) {
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("px-6 py-4 border-b border-slate-100", className)}
+      className={cn("px-6 py-4 border-b border-white/[0.06]", className)}
       {...props}
     />
   );
@@ -27,7 +27,7 @@ function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement
 function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h3
-      className={cn("text-base font-semibold text-slate-900", className)}
+      className={cn("text-sm font-semibold text-slate-200", className)}
       {...props}
     />
   );
@@ -41,7 +41,7 @@ function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement
   return (
     <div
       className={cn(
-        "px-6 py-3 border-t border-slate-100 bg-slate-50/50 rounded-b-xl",
+        "px-6 py-3 border-t border-white/[0.06] bg-white/[0.02] rounded-b-xl",
         className,
       )}
       {...props}

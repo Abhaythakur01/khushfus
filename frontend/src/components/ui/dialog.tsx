@@ -32,7 +32,6 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
     [handleClose],
   );
 
-  // Focus trap: keep focus inside the dialog
   const handleTab = useCallback(
     (e: KeyboardEvent) => {
       if (e.key !== "Tab" || !panelRef.current) return;
@@ -58,7 +57,6 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
     [],
   );
 
-  // Capture trigger element before dialog opens, manage focus
   useEffect(() => {
     if (open) {
       triggerRef.current = document.activeElement;
@@ -66,7 +64,6 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
       document.addEventListener("keydown", handleTab);
       document.body.style.overflow = "hidden";
 
-      // Focus first focusable element inside panel after render
       requestAnimationFrame(() => {
         if (panelRef.current) {
           const first = panelRef.current.querySelector(FOCUSABLE_SELECTOR) as HTMLElement | null;
@@ -81,7 +78,6 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
     };
   }, [open, handleEscape, handleTab]);
 
-  // Return focus to trigger on close
   useEffect(() => {
     if (!open && triggerRef.current && triggerRef.current instanceof HTMLElement) {
       triggerRef.current.focus();
@@ -95,7 +91,7 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={handleClose}
         aria-hidden="true"
       />
@@ -105,7 +101,7 @@ function Dialog({ open, onClose, onOpenChange, children, className }: DialogProp
         role="dialog"
         aria-modal="true"
         className={cn(
-          "relative z-10 w-full max-w-lg mx-4 bg-slate-900 rounded-xl shadow-xl animate-slide-up",
+          "relative z-10 w-full max-w-lg mx-4 bg-[#141925] rounded-2xl border border-white/[0.08] shadow-2xl animate-slide-up",
           className,
         )}
       >
@@ -128,18 +124,18 @@ function DialogHeader({
   return (
     <div
       className={cn(
-        "flex items-center justify-between px-6 py-4 border-b border-slate-700",
+        "flex items-center justify-between px-6 py-5 border-b border-white/[0.06]",
         className,
       )}
     >
-      <h2 className="text-lg font-semibold text-slate-100">{children}</h2>
+      <h2 className="text-base font-semibold text-slate-100">{children}</h2>
       {onClose && (
         <button
           onClick={onClose}
           aria-label="Close dialog"
-          className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-all duration-150"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
       )}
     </div>
@@ -150,7 +146,7 @@ function DialogContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-6 py-4 text-slate-200", className)} {...props} />;
+  return <div className={cn("px-6 py-5 text-slate-300", className)} {...props} />;
 }
 
 function DialogFooter({
@@ -160,7 +156,7 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        "flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-700 bg-slate-800/50 rounded-b-xl",
+        "flex items-center justify-end gap-3 px-6 py-4 border-t border-white/[0.06] bg-white/[0.02] rounded-b-2xl",
         className,
       )}
       {...props}

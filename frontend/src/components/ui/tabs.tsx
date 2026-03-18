@@ -107,7 +107,7 @@ function TabList({ children, className }: TabListProps) {
     <div
       ref={listRef}
       className={cn(
-        "flex items-center gap-1 border-b border-slate-200 pb-px",
+        "flex items-center gap-1 border-b border-white/[0.06] pb-px",
         className,
       )}
       role="tablist"
@@ -128,7 +128,6 @@ function TabTrigger({ value, children, className }: TabTriggerProps) {
   const { activeTab, setActiveTab, registerTab } = useTabsContext();
   const isActive = activeTab === value;
 
-  // Register this tab value with the context
   registerTab(value);
 
   return (
@@ -139,10 +138,10 @@ function TabTrigger({ value, children, className }: TabTriggerProps) {
       data-tab-value={value}
       onClick={() => setActiveTab(value)}
       className={cn(
-        "px-4 py-2.5 text-sm font-medium transition-colors duration-150 border-b-2 -mb-px",
+        "px-4 py-2.5 text-sm font-medium transition-all duration-200 border-b-2 -mb-px rounded-t-md",
         isActive
-          ? "text-primary-600 border-primary-600"
-          : "text-slate-500 border-transparent hover:text-slate-700 hover:border-slate-300",
+          ? "text-indigo-400 border-indigo-500"
+          : "text-slate-500 border-transparent hover:text-slate-300 hover:border-white/[0.1]",
         className,
       )}
     >
@@ -162,7 +161,7 @@ function TabPanel({ value, children, className }: TabPanelProps) {
   if (activeTab !== value) return null;
 
   return (
-    <div role="tabpanel" tabIndex={0} className={cn("animate-fade-in pt-4", className)}>
+    <div role="tabpanel" tabIndex={0} className={cn("animate-fade-in pt-5", className)}>
       {children}
     </div>
   );

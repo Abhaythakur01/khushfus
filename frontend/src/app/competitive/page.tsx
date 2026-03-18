@@ -1,19 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  Cell,
-} from "recharts";
+import dynamic from "next/dynamic";
 import {
   TrendingUp,
   Users,
@@ -24,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import { api, DashboardMetrics, Project } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import {
   Card,
@@ -31,6 +20,23 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
+
+// ---------------------------------------------------------------------------
+// Dynamic import — defers Recharts until needed
+// ---------------------------------------------------------------------------
+
+function ChartLoadingPlaceholder() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+    </div>
+  );
+}
+
+const CompetitiveCharts = dynamic(() => import("./CompetitiveCharts"), {
+  ssr: false,
+  loading: () => <ChartLoadingPlaceholder />,
+});
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -95,36 +101,6 @@ function getPlatformBreakdown(m: DashboardMetrics): Record<string, number> {
 }
 
 // ---------------------------------------------------------------------------
-// Custom Tooltip
-// ---------------------------------------------------------------------------
-
-function CustomTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-xs">
-      <p className="text-slate-400 mb-1">{label}</p>
-      {payload.map((p) => (
-        <p key={p.name} className="text-slate-200">
-          <span
-            className="inline-block w-2.5 h-2.5 rounded-full mr-1.5"
-            style={{ backgroundColor: p.color }}
-          />
-          {p.name}: {formatNumber(p.value)}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // KPI Card
 // ---------------------------------------------------------------------------
 
@@ -140,7 +116,7 @@ function KpiCard({
   subtitle?: string;
 }) {
   return (
-    <Card className="bg-slate-900/60 border-slate-800">
+    <Card>
       <CardContent className="flex items-center gap-4 py-5">
         <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-indigo-500/10 text-indigo-400 shrink-0">
           {icon}
@@ -175,42 +151,25 @@ function EmptyState({ message }: { message: string }) {
 // ---------------------------------------------------------------------------
 
 export default function CompetitiveIntelligencePage() {
-  // State
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
+  // Use cached projects
+  const { projects: allProjects, isLoading: projectsLoading } = useProjects();
+  const projects = useMemo(
+    () => allProjects.map((p) => ({ id: p.id, name: p.name })),
+    [allProjects]
+  );
+
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [days, setDays] = useState(30);
   const [competitorData, setCompetitorData] = useState<CompetitorData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load projects
+  // Auto-select first projects (up to 3) once loaded
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const data = await api.getProjects();
-        if (cancelled) return;
-        const list = (data || []).map((p: Project) => ({
-          id: p.id,
-          name: p.name,
-        }));
-        setProjects(list);
-        // Pre-select first project (up to 3)
-        if (list.length > 0) {
-          setSelectedIds(list.slice(0, Math.min(3, list.length)).map((p) => p.id));
-        }
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
+    if (projects.length > 0 && selectedIds.length === 0) {
+      setSelectedIds(projects.slice(0, Math.min(3, projects.length)).map((p) => p.id));
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [projects, selectedIds.length]);
 
   // Toggle project selection (max 5)
   const toggleProject = useCallback(
@@ -332,7 +291,6 @@ export default function CompetitiveIntelligencePage() {
   const trendData = useMemo(() => {
     if (competitorData.length === 0) return [];
 
-    // Collect all dates across projects
     const dateMap = new Map<string, Record<string, number>>();
 
     competitorData.forEach((d) => {
@@ -348,7 +306,6 @@ export default function CompetitiveIntelligencePage() {
       });
     });
 
-    // Sort by date and return
     return Array.from(dateMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, values]) => ({
@@ -361,7 +318,6 @@ export default function CompetitiveIntelligencePage() {
   const platformComparisonData = useMemo(() => {
     if (competitorData.length === 0) return [];
 
-    // Collect all platforms
     const allPlatforms = new Set<string>();
     competitorData.forEach((d) => {
       Object.keys(getPlatformBreakdown(d.metrics)).forEach((p) =>
@@ -401,9 +357,6 @@ export default function CompetitiveIntelligencePage() {
             ) : (
               projects.map((p, i) => {
                 const isSelected = selectedIds.includes(p.id);
-                const colorIdx = isSelected
-                  ? selectedIds.indexOf(p.id)
-                  : i;
                 return (
                   <button
                     key={p.id}
@@ -412,7 +365,7 @@ export default function CompetitiveIntelligencePage() {
                       "px-3 py-1.5 text-xs font-medium rounded-lg border transition-all",
                       isSelected
                         ? "text-white border-transparent"
-                        : "text-slate-400 border-slate-700 bg-slate-800/50 hover:text-slate-200 hover:border-slate-600"
+                        : "text-slate-400 border-white/[0.08] bg-white/[0.04] hover:text-slate-200 hover:border-slate-600"
                     )}
                     style={
                       isSelected
@@ -447,7 +400,7 @@ export default function CompetitiveIntelligencePage() {
         {/* Time range */}
         <div>
           <p className="text-xs text-slate-400 mb-2 font-medium">Time range</p>
-          <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5">
+          <div className="flex items-center bg-white/[0.06] rounded-lg border border-white/[0.08] p-0.5">
             {TIME_RANGES.map((r) => (
               <button
                 key={r.value}
@@ -512,256 +465,14 @@ export default function CompetitiveIntelligencePage() {
             />
           </div>
 
-          {/* Row 2: Share of Voice + Sentiment Comparison */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            {/* Share of Voice */}
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800">
-                <CardTitle className="text-slate-100 text-sm font-semibold">
-                  Share of Voice
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {sovData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart
-                      data={sovData}
-                      layout="vertical"
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#334155"
-                        horizontal={false}
-                      />
-                      <XAxis
-                        type="number"
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
-                        axisLine={{ stroke: "#475569" }}
-                        tickLine={{ stroke: "#475569" }}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
-                        axisLine={{ stroke: "#475569" }}
-                        tickLine={{ stroke: "#475569" }}
-                        width={100}
-                      />
-                      <Tooltip
-                        content={<CustomTooltip />}
-                        cursor={{ fill: "rgba(148, 163, 184, 0.05)" }}
-                      />
-                      <Bar dataKey="mentions" radius={[0, 4, 4, 0]} barSize={28}>
-                        {sovData.map((entry, idx) => (
-                          <Cell
-                            key={`sov-${idx}`}
-                            fill={
-                              PROJECT_COLORS[idx % PROJECT_COLORS.length]
-                            }
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState message="No mention data" />
-                )}
-                {/* Percentage labels */}
-                <div className="flex flex-wrap gap-3 mt-3">
-                  {sovData.map((entry, idx) => (
-                    <div
-                      key={entry.name}
-                      className="flex items-center gap-1.5 text-xs"
-                    >
-                      <span
-                        className="inline-block w-2.5 h-2.5 rounded-full"
-                        style={{
-                          backgroundColor:
-                            PROJECT_COLORS[idx % PROJECT_COLORS.length],
-                        }}
-                      />
-                      <span className="text-slate-300">{entry.name}</span>
-                      <span className="text-slate-500">{entry.percentage}%</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Sentiment Comparison */}
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800">
-                <CardTitle className="text-slate-100 text-sm font-semibold">
-                  Sentiment Comparison
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {sentimentComparisonData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart
-                      data={sentimentComparisonData}
-                      margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#334155"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
-                        axisLine={{ stroke: "#475569" }}
-                        tickLine={{ stroke: "#475569" }}
-                      />
-                      <YAxis
-                        tick={{ fill: "#94a3b8", fontSize: 11 }}
-                        axisLine={{ stroke: "#475569" }}
-                        tickLine={{ stroke: "#475569" }}
-                      />
-                      <Tooltip
-                        content={<CustomTooltip />}
-                        cursor={{ fill: "rgba(148, 163, 184, 0.05)" }}
-                      />
-                      <Legend
-                        wrapperStyle={{ fontSize: 11, color: "#94a3b8" }}
-                      />
-                      <Bar
-                        dataKey="positive"
-                        fill="#34d399"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                      <Bar
-                        dataKey="neutral"
-                        fill="#94a3b8"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                      <Bar
-                        dataKey="negative"
-                        fill="#f87171"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState message="No sentiment data" />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Row 3: Trend Comparison (full width) */}
-          <Card className="bg-slate-900/60 border-slate-800 mb-6">
-            <CardHeader className="border-slate-800">
-              <CardTitle className="text-slate-100 text-sm font-semibold">
-                Mention Trend Comparison
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {trendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart
-                    data={trendData}
-                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#334155"
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={{ stroke: "#475569" }}
-                      tickLine={{ stroke: "#475569" }}
-                    />
-                    <YAxis
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={{ stroke: "#475569" }}
-                      tickLine={{ stroke: "#475569" }}
-                    />
-                    <Tooltip
-                      content={<CustomTooltip />}
-                      cursor={{ stroke: "#475569" }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
-                    {competitorData.map((d, idx) => (
-                      <Line
-                        key={d.project.id}
-                        type="monotone"
-                        dataKey={d.project.name}
-                        stroke={
-                          PROJECT_COLORS[idx % PROJECT_COLORS.length]
-                        }
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState message="No trend data available" />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Row 4: Platform Comparison */}
-          <Card className="bg-slate-900/60 border-slate-800">
-            <CardHeader className="border-slate-800">
-              <CardTitle className="text-slate-100 text-sm font-semibold">
-                Platform Breakdown Comparison
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {platformComparisonData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <BarChart
-                    data={platformComparisonData}
-                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#334155"
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="platform"
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={{ stroke: "#475569" }}
-                      tickLine={{ stroke: "#475569" }}
-                    />
-                    <YAxis
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={{ stroke: "#475569" }}
-                      tickLine={{ stroke: "#475569" }}
-                    />
-                    <Tooltip
-                      content={<CustomTooltip />}
-                      cursor={{ fill: "rgba(148, 163, 184, 0.05)" }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
-                    {competitorData.map((d, idx) => (
-                      <Bar
-                        key={d.project.id}
-                        dataKey={d.project.name}
-                        fill={
-                          PROJECT_COLORS[idx % PROJECT_COLORS.length]
-                        }
-                        radius={[4, 4, 0, 0]}
-                        barSize={24}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState message="No platform data available" />
-              )}
-            </CardContent>
-          </Card>
+          {/* Charts (dynamically imported) */}
+          <CompetitiveCharts
+            sovData={sovData}
+            sentimentComparisonData={sentimentComparisonData}
+            trendData={trendData}
+            platformComparisonData={platformComparisonData}
+            competitorData={competitorData}
+          />
         </>
       )}
     </AppShell>

@@ -14,10 +14,33 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "KhushFus — Social Listening Platform",
+  title: {
+    default: "KhushFus — Social Listening Platform",
+    template: "%s | KhushFus",
+  },
   description:
     "Enterprise social listening and analytics platform. Monitor mentions, track sentiment, and manage your brand reputation across all channels.",
-  keywords: ["social listening", "brand monitoring", "sentiment analysis", "analytics"],
+  keywords: ["social listening", "brand monitoring", "sentiment analysis", "analytics", "social media monitoring", "competitive intelligence"],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://app.khushfus.com"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "KhushFus",
+    title: "KhushFus — Enterprise Social Listening Platform",
+    description: "Monitor mentions, track sentiment, and manage your brand reputation across all channels.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "KhushFus — Enterprise Social Listening Platform",
+    description: "Monitor mentions, track sentiment, and manage your brand reputation across all channels.",
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -39,16 +62,18 @@ export default function RootLayout({
             toastOptions={{
               duration: 4000,
               style: {
-                background: "#1e293b",
-                color: "#f8fafc",
-                borderRadius: "0.5rem",
+                background: "#141925",
+                color: "#e2e8f0",
+                borderRadius: "0.75rem",
                 fontSize: "0.875rem",
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
               },
               success: {
-                iconTheme: { primary: "#10b981", secondary: "#f8fafc" },
+                iconTheme: { primary: "#10b981", secondary: "#e2e8f0" },
               },
               error: {
-                iconTheme: { primary: "#ef4444", secondary: "#f8fafc" },
+                iconTheme: { primary: "#ef4444", secondary: "#e2e8f0" },
               },
             }}
           />

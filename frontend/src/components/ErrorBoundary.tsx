@@ -42,7 +42,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       }
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+        <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a] px-4">
           <div className="max-w-md w-full text-center space-y-6">
             <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
               <svg
@@ -75,7 +75,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400">
                   Error details
                 </summary>
-                <pre className="mt-2 p-3 bg-slate-900 rounded-lg text-xs text-slate-400 overflow-auto max-h-40 border border-slate-800">
+                <pre className="mt-2 p-3 bg-white/[0.04] rounded-lg text-xs text-slate-400 overflow-auto max-h-40 border border-white/[0.06]">
                   {this.state.error.message}
                 </pre>
               </details>

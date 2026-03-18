@@ -128,9 +128,9 @@ export function useMentions(projectId: number, filters?: MentionFilters) {
       if (seq !== requestSeqRef.current) return;
 
       // Handle both paginated { items, total } and plain array responses
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const items = (data as any)?.items || data || [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const totalCount = (data as any)?.total ?? items.length;
 
       setMentions(items.map(normalizeMention));

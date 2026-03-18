@@ -21,9 +21,11 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from shared.config import get_settings, reset_settings
 from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import EventBus
+from shared.idempotency import IdempotencyMiddleware
 from shared.request_size_limit import RequestSizeLimitMiddleware
 from shared.tracing import setup_tracing
 
@@ -79,15 +81,27 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    engine, session_factory = create_db(DATABASE_URL)
+    # --- Centralized config validation on startup ---
+    try:
+        settings = get_settings()
+        settings.validate_or_exit()
+        logger.info("Configuration summary: %s", settings.summary())
+        # Use validated settings for connections (fall back to module-level vars for compat)
+        db_url = settings.database.url
+        redis_url = settings.redis.url
+    except Exception as e:
+        logger.warning("Config validation unavailable (%s), falling back to env vars", e)
+        db_url = DATABASE_URL
+        redis_url = REDIS_URL
+
+    engine, session_factory = create_db(db_url)
     app.state.db_session = session_factory
-    app.state.event_bus = EventBus(REDIS_URL, max_reconnect_attempts=1, reconnect_delay=0.5)
+    app.state.event_bus = EventBus(redis_url, max_reconnect_attempts=1, reconnect_delay=0.5)
     await init_tables(engine)
     try:
         await app.state.event_bus.connect()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Redis unavailable — event bus disabled: {e}")
+        logger.warning(f"Redis unavailable — event bus disabled: {e}")
     yield
     await close_http_client()
     try:
@@ -95,6 +109,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     await engine.dispose()
+    reset_settings()
 
 
 tags_metadata = [
@@ -161,6 +176,9 @@ app.add_middleware(RequestSizeLimitMiddleware)
 
 # Rate limiting via centralized Rate Limiter service (fail-open if unreachable)
 app.add_middleware(RateLimitMiddleware)
+
+# Idempotency: deduplicate POST/PUT/PATCH requests with Idempotency-Key header (Redis-backed)
+app.add_middleware(IdempotencyMiddleware, redis_url=REDIS_URL)
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator

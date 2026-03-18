@@ -23,7 +23,7 @@ export default function EngagementTab({ metrics }: { metrics: DashboardMetrics }
     <div className="space-y-6">
       {/* Engagement KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <Heart className="h-4 w-4 text-pink-400" />
             <span className="text-sm text-slate-400">Total Likes</span>
@@ -32,7 +32,7 @@ export default function EngagementTab({ metrics }: { metrics: DashboardMetrics }
             {formatNumber(metrics.engagement_over_time.reduce((a, d) => a + (d.likes || 0), 0) || metrics.total_engagement)}
           </p>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <Share2 className="h-4 w-4 text-blue-400" />
             <span className="text-sm text-slate-400">Total Shares</span>
@@ -41,7 +41,7 @@ export default function EngagementTab({ metrics }: { metrics: DashboardMetrics }
             {formatNumber(metrics.engagement_over_time.reduce((a, d) => a + (d.shares || 0), 0))}
           </p>
         </div>
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <MessageCircle className="h-4 w-4 text-violet-400" />
             <span className="text-sm text-slate-400">Total Comments</span>
@@ -53,7 +53,7 @@ export default function EngagementTab({ metrics }: { metrics: DashboardMetrics }
       </div>
 
       {/* Engagement over time */}
-      <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+      <div className="rounded-xl p-5">
         <h3 className="text-sm font-semibold text-slate-200 mb-4">Engagement Over Time</h3>
         {metrics.engagement_over_time.length > 0 ? (
           <ResponsiveContainer width="100%" height={350}>
@@ -75,7 +75,7 @@ export default function EngagementTab({ metrics }: { metrics: DashboardMetrics }
 
       {/* Engagement by mentions (stacked bar) */}
       {metrics.engagement_over_time.length > 0 && (
-        <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-5">
+        <div className="rounded-xl p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-4">Engagement Breakdown</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={metrics.engagement_over_time}>

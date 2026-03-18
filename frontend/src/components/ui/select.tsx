@@ -20,17 +20,16 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       onValueChange?.(e.target.value);
       if (onChange) {
-        // Support both (value: string) => void and ChangeEvent handler signatures
         (onChange as (value: string) => void)(e.target.value);
       }
     };
 
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-slate-300"
           >
             {label}
           </label>
@@ -40,10 +39,11 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={cn(
-              "w-full h-10 rounded-lg border border-slate-300 bg-white pl-3 pr-10 text-sm text-slate-900",
-              "input-focus transition-colors duration-150 appearance-none",
-              "disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed",
-              error && "border-danger-500 focus:ring-danger-500/20 focus:border-danger-500",
+              "w-full h-10 rounded-lg border border-white/[0.08] bg-white/[0.04] pl-3 pr-10 text-sm text-slate-200",
+              "input-focus transition-all duration-200 appearance-none",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              "hover:border-white/[0.12] hover:bg-white/[0.06]",
+              error && "border-red-500/50 focus:ring-red-500/20 focus:border-red-500/50",
               className,
             )}
             onChange={handleChange}
@@ -62,10 +62,10 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
                 ))
               : children}
           </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
         </div>
         {error && (
-          <p className="text-xs text-danger-600 mt-1">{error}</p>
+          <p className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     );

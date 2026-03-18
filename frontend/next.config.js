@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 
+const { withSentryConfig } = require("@sentry/nextjs");
+
 // ---------------------------------------------------------------------------
 // 6.37 — Bundle analysis (run with ANALYZE=true npm run build)
 // ---------------------------------------------------------------------------
@@ -22,26 +24,23 @@ const API_DOMAIN = process.env.NEXT_PUBLIC_API_URL
   ? new URL(process.env.NEXT_PUBLIC_API_URL).origin
   : "http://localhost:8000";
 
+const SENTRY_DOMAIN = process.env.NEXT_PUBLIC_SENTRY_DSN
+  ? (() => { try { return new URL(process.env.NEXT_PUBLIC_SENTRY_DSN).origin; } catch { return ""; } })()
+  : "";
+
 /**
  * Content Security Policy directives.
- * - 'self' allows same-origin resources
- * - API_DOMAIN allows XHR/fetch to the backend
- * - 'unsafe-inline' for styles is required by Tailwind's runtime + Next.js
- *   style injection. In production, consider switching to nonce-based CSP.
- * - No 'unsafe-eval' — keeps the JS eval surface locked down.
  */
 const isDev = process.env.NODE_ENV !== "production";
 
 const cspDirectives = [
   "default-src 'self'",
-  // Dev mode needs 'unsafe-eval' + 'unsafe-inline' for Next.js hot reload / React Refresh
   isDev
     ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
     : "script-src 'self'",
-  // Tailwind and Next.js inject <style> tags at runtime
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
-  `connect-src 'self' ${API_DOMAIN} wss: ws:`,
+  `connect-src 'self' ${API_DOMAIN} ${SENTRY_DOMAIN} wss: ws:`.trim(),
   "font-src 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
@@ -100,7 +99,6 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Apply security headers to all routes
         source: "/(.*)",
         headers: securityHeaders,
       },
@@ -108,4 +106,22 @@ const nextConfig = {
   },
 };
 
-module.exports = withBundleAnalyzer(nextConfig);
+// Apply bundle analyzer
+const configWithAnalyzer = withBundleAnalyzer(nextConfig);
+
+// Apply Sentry (only uploads sourcemaps in production builds with DSN set)
+module.exports = withSentryConfig(configWithAnalyzer, {
+  // Sentry webpack plugin options
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent: !process.env.CI, // Suppress logs in local dev
+  widenClientFileUpload: true,
+  disableLogger: true,
+  // Automatically tree-shake Sentry logger statements
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludePerformanceMonitoring: false,
+    excludeReplayIframe: true,
+    excludeReplayShadowDom: true,
+  },
+});

@@ -3,14 +3,14 @@
 import React from "react";
 
 function Pulse({ className }: { className?: string }) {
-  return <div className={`animate-pulse rounded-md bg-slate-800 ${className ?? ""}`} />;
+  return <div className={`animate-pulse rounded-md bg-white/[0.06] ${className ?? ""}`} />;
 }
 
 export default function AnalyticsLoading() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-[#0a0f1a] text-slate-200">
       {/* Header skeleton */}
-      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm">
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#0a0f1a]/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-4">
           <Pulse className="h-6 w-32" />
           <div className="flex items-center gap-3">
@@ -33,7 +33,7 @@ export default function AnalyticsLoading() {
           {Array.from({ length: 2 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl border border-slate-800 bg-slate-900/60 p-5"
+              className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-5"
             >
               <Pulse className="mb-4 h-4 w-40" />
               <Pulse className="h-64 w-full" />
@@ -42,7 +42,7 @@ export default function AnalyticsLoading() {
         </div>
 
         {/* Heatmap / large chart placeholder */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
           <Pulse className="mb-4 h-4 w-36" />
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: 7 * 12 }).map((_, i) => (
@@ -56,7 +56,7 @@ export default function AnalyticsLoading() {
           {Array.from({ length: 2 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl border border-slate-800 bg-slate-900/60 p-5"
+              className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-5"
             >
               <Pulse className="mb-4 h-4 w-32" />
               <div className="space-y-3">

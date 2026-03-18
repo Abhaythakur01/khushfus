@@ -60,7 +60,7 @@ export function useProjects() {
   } = useFetch<any[]>(
     "projects:list",
     () => api.getProjects(),
-    { ttl: 60_000, revalidateOnFocus: true },
+    { ttl: 300_000, revalidateOnFocus: true },
   );
 
   const projects = (rawProjects || []).map(normalizeProject);

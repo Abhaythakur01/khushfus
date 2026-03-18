@@ -1,519 +1,591 @@
-# KhushFus Enterprise Audit: Gap Analysis vs Industry Leaders
+# KhushFus Enterprise Audit — Consolidated (March 2026)
 
 ## Executive Summary
 
-This audit compares KhushFus against Sprinklr, Brandwatch, Meltwater, Talkwalker, and YouScan
-across architecture, features, data coverage, AI/NLP, compliance, and integrations. It identifies
-what we're doing right, what's missing, and what needs upgrading to be enterprise-competitive.
+**Overall Enterprise Readiness: 55/100** — Strong MVP foundation, critical hardening required for enterprise scale.
+
+| Layer | Status | Score | Biggest Risk |
+|-------|--------|-------|-------------|
+| Backend Services (19) | MVP-ready | 65/100 | Unbounded memory, no backpressure |
+| Shared / Data Layer | Solid foundation | 60/100 | Pool exhaustion, RLS overhead, missing indexes |
+| Infrastructure & DevOps | Good skeleton | 55/100 | Single-node everything, no DR |
+| NLP & Collectors | Functional | 60/100 | Single-threaded inference, no batching |
+| Frontend | Feature-complete | 65/100 | Monolith components, waterfall requests |
+| Security & Compliance | Partial | 50/100 | Secrets in env vars, no mTLS, JWT in localStorage |
+| Integrations | Stubs only | 30/100 | No production CRM/helpdesk integrations |
+
+### Gap Count Summary
+
+| Severity | Previously Found | Fixed | New (Scale Audit) | Total Open |
+|----------|-----------------|-------|--------------------|------------|
+| Critical | 43 | 35 | 22 | 30 |
+| High | 109 | 89 | 31 | 51 |
+| Medium | 104 | 78 | 28 | 54 |
+| Low | 65 | 40 | 12 | 37 |
+| **Total** | **321** | **242** | **93** | **172** |
 
 ---
 
-## 1. ARCHITECTURE ASSESSMENT
-
-### What We Have (Current)
-- 18 microservices with Redis Streams event bus
-- Async Python (FastAPI + asyncio)
-- PostgreSQL + Elasticsearch + Redis
-- Consumer groups for horizontal scaling
-- Shared models/schemas/events layer
-
-### Industry Best Practice
-- Event-driven microservices with **Apache Kafka** (not Redis Streams) for production
-- **CQRS** (Command Query Responsibility Segregation) pattern
-- **Event Sourcing** for auditability and time-travel debugging
-- **Dead Letter Queues (DLQ)** for failed event processing
-- **Idempotent event processing** to avoid duplicate executions
-- **Distributed tracing** (OpenTelemetry / Jaeger)
-- **API Gateway** with proper service mesh (Istio/Envoy)
-- Domain-Driven Design (DDD) for service boundaries
-
-### GAP ANALYSIS
-
-| Area | Current State | Enterprise Standard | Priority |
-|------|--------------|-------------------|----------|
-| Event Bus | Redis Streams | Apache Kafka | CRITICAL |
-| Dead Letter Queues | None | Required for reliability | CRITICAL |
-| Idempotency | Dedup by source_id only | Full idempotency keys on all events | HIGH |
-| Event Sourcing | Not implemented | Needed for audit trail completeness | MEDIUM |
-| CQRS | Partial (Query service separates reads) | Full CQRS pattern | MEDIUM |
-| Distributed Tracing | None | OpenTelemetry + Jaeger/Zipkin | HIGH |
-| Service Mesh | None | Istio/Envoy for mTLS, retries, circuit breaking | MEDIUM |
-| API Gateway | Custom FastAPI gateway | Kong/Envoy/AWS API Gateway | MEDIUM |
-| Circuit Breakers | None | Required for resilience | HIGH |
-| Health Checks | Docker-level only | Liveness + Readiness probes + metrics | HIGH |
-| Database Migrations | None (no Alembic) | Alembic with version-controlled migrations | CRITICAL |
-
-### RECOMMENDATION
-**Redis Streams is acceptable for MVP/startup phase** but Kafka is the industry standard for
-social listening at scale. Sprinklr processes petabytes — Kafka handles millions of msgs/sec
-vs Redis Streams' lower throughput ceiling. Plan a migration path. However, Redis Streams
-with consumer groups is a valid choice for <100K mentions/day.
-
----
-
-## 2. DATA SOURCES & COVERAGE
-
-### Industry Benchmarks
-| Platform | Sources | Data Volume |
-|----------|---------|-------------|
-| Sprinklr | 30+ channels, 1B+ websites, 400K+ media sources | Petabytes |
-| Brandwatch | 100M unique sites, 1.7T historical conversations | 501M new/day |
-| Talkwalker | 30+ social networks, 150M+ web sources | 5yr historical |
-| Meltwater | 200B+ social conversations, 300M+ social profiles | Real-time |
-
-### What We Have (11 Collectors)
-Twitter, Facebook, Instagram, LinkedIn, YouTube, Reddit, News/RSS, GDELT, Telegram, Quora, WebScraper
-
-### MISSING PLATFORMS (Critical Gaps)
-
-| Missing Platform | Why It Matters | Priority |
-|-----------------|----------------|----------|
-| **TikTok** | Fastest growing platform, critical for brand monitoring | CRITICAL |
-| **Pinterest** | Major visual discovery platform | HIGH |
-| **Threads** | Meta's Twitter competitor, growing rapidly | HIGH |
-| **Bluesky** | Decentralized social, tech-savvy audience | MEDIUM |
-| **Snapchat** | Youth demographic, brand campaigns | MEDIUM |
-| **WhatsApp Business** | Enterprise messaging, customer feedback | MEDIUM |
-| **Discord** | Community monitoring, gaming/tech brands | HIGH |
-| **Mastodon/Fediverse** | Decentralized social networks | LOW |
-| **App Store Reviews** | Google Play + Apple App Store | HIGH |
-| **Review Sites** | Trustpilot, G2, Capterra, Yelp, TripAdvisor | CRITICAL |
-| **Podcast Transcripts** | Meltwater added this in 2025 | MEDIUM |
-| **Print/Broadcast** | TV/Radio mentions via transcription services | LOW |
-| **WeChat/Weibo** | Essential for China market | MEDIUM |
-| **Little Red Book (Xiaohongshu)** | Chinese social commerce platform | LOW |
-
-### MISSING CAPABILITIES
-- **Firehose access** to major platforms (Twitter/X, Reddit) — requires enterprise API agreements
-- **Historical data backfill** — Brandwatch offers data back to 2010
-- **Web crawling at scale** — Current WebScraper is basic BeautifulSoup; need Scrapy/Playwright
-- **RSS/Atom feed aggregation** — Current news collector is basic
-
-### TARGET: 25+ platforms to match Sprinklr/Talkwalker's "30+ channels" claim
-
----
-
-## 3. AI/NLP CAPABILITIES
-
-### Industry State of the Art (2025-2026)
-- **LLM-powered analysis** replacing traditional NLP (GPT-4, Claude for nuanced understanding)
-- **Aspect-based sentiment** (not just positive/negative, but sentiment PER topic/aspect)
-- **Sarcasm and irony detection** (major differentiator)
-- **Multilingual support** (50+ languages out of the box)
-- **Predictive analytics** — crisis prediction, trend forecasting (IDC: 55% YoY growth)
-- **Visual AI** — Logo detection in images/video (YouScan, Talkwalker lead here)
-- **GenAI summaries** — Auto-generated insight narratives (Meltwater's "Mira" AI)
-
-### What We Have
-- VADER sentiment (fast, English-only, basic)
-- Optional HuggingFace RoBERTa (better accuracy, still limited)
-- Basic language detection (langdetect)
-- Keyword-based topic extraction (very basic)
-- @mention and #hashtag entity extraction only (no NER)
-- EasyOCR for image text extraction
-- CLIP for logo detection (good choice)
-- Whisper for audio transcription (good choice)
-
-### GAP ANALYSIS
-
-| NLP Capability | Current | Enterprise Standard | Priority |
-|---------------|---------|-------------------|----------|
-| Sentiment Model | VADER + RoBERTa | LLM-powered (Claude/GPT) + fine-tuned models | CRITICAL |
-| Aspect-Based Sentiment | None | Required for enterprise reports | CRITICAL |
-| Sarcasm Detection | None | Key differentiator (Brandwatch, Talkwalker) | HIGH |
-| Named Entity Recognition | None (only @/# extraction) | spaCy/Flair NER for people, orgs, locations | CRITICAL |
-| Multilingual | langdetect only | 50+ languages with per-language models | HIGH |
-| Topic Modeling | Keyword matching | LDA/BERTopic for auto-discovered topics | HIGH |
-| Intent Classification | None | Purchase intent, complaint, praise, question | HIGH |
-| Emotion Detection | None | Beyond pos/neg: anger, joy, fear, surprise | MEDIUM |
-| Trend Prediction | None | Time-series anomaly detection, forecasting | HIGH |
-| AI Summaries | None | LLM-generated insight narratives per report | HIGH |
-| Image Logo Detection | CLIP (good) | Production-grade, 1000+ brand logos | MEDIUM |
-| Video Analysis | Whisper + keyframes | Real-time video monitoring | LOW |
-
-### RECOMMENDATION
-The biggest competitive gap is **LLM integration**. Meltwater has "Mira", Sprinklr has AI-powered
-insights, Brand24 has AI summaries. We need an LLM layer (Claude API) that can:
-1. Generate natural-language insight summaries
-2. Perform aspect-based sentiment on complex text
-3. Detect sarcasm, irony, cultural context
-4. Auto-classify intent and emotion
-5. Answer ad-hoc questions about mention data ("What are customers saying about our pricing?")
-
----
-
-## 4. MULTI-TENANCY & DATA ISOLATION
-
-### Industry Best Practice
-- **Row-Level Security (RLS)** in PostgreSQL for bulletproof tenant isolation
-- **Schema-per-tenant** for enterprise clients with compliance needs (GDPR, HIPAA)
-- **Hybrid model** — shared pool for small tenants, dedicated schema for enterprise
-- **Tenant-aware connection pooling**
-- **Per-tenant encryption keys** for sensitive data
-- **Data residency options** (EU, US, APAC regions)
-
-### What We Have
-- `organization_id` foreign key on Project model
-- OrgMember with role-based access (5 roles)
-- API key scoped per org
-- Plan tiers with quotas (free/starter/professional/enterprise)
-
-### GAPS
-
-| Area | Current | Enterprise Standard | Priority |
-|------|---------|-------------------|----------|
-| Row-Level Security | None (app-level filtering only) | PostgreSQL RLS policies | CRITICAL |
-| Data Residency | Single region | Multi-region deployment options | HIGH |
-| Per-Tenant Encryption | None | Customer-managed encryption keys (CMEK) | MEDIUM |
-| Tenant Isolation Testing | None | Automated tests verifying cross-tenant leaks | CRITICAL |
-| Connection Pooling | Shared pool | PgBouncer with tenant-aware routing | MEDIUM |
-| Resource Quotas | Plan-level quotas in code | Database-enforced + rate limiting | HIGH |
-
----
-
-## 5. COMPLIANCE & SECURITY
-
-### Industry Requirements
-- **SOC 2 Type II** certification (table stakes for enterprise sales)
-- **GDPR** compliance with right-to-be-forgotten, data portability, consent management
-- **CCPA** compliance for California residents
-- **ISO 27001** information security management
-- **HIPAA** for healthcare clients
-- **Penetration testing** reports
-- **Data Processing Agreements (DPA)** templates
-
-### What We Have
-- Audit log storage and querying (audit service)
-- GDPR export and right-to-be-forgotten (audit service)
-- Data retention policies
-- JWT authentication
-- SSO (SAML + OIDC)
-
-### GAPS
-
-| Area | Current | Required | Priority |
-|------|---------|----------|----------|
-| Secrets Management | Hardcoded defaults, env vars | HashiCorp Vault / AWS Secrets Manager | CRITICAL |
-| Input Validation | Pydantic schemas | + WAF, SQL injection protection, XSS prevention | HIGH |
-| Rate Limiting at Gateway | Not integrated | Gateway-level rate limiting per API key | CRITICAL |
-| Encryption at Rest | None | AES-256 for PII fields | HIGH |
-| Encryption in Transit | None (http between services) | mTLS between all services | HIGH |
-| CORS Configuration | Not configured | Strict CORS policies | HIGH |
-| Security Headers | None | HSTS, CSP, X-Frame-Options | MEDIUM |
-| Vulnerability Scanning | None | Snyk/Trivy in CI pipeline | HIGH |
-| Consent Management | None | Cookie consent, data processing consent | MEDIUM |
-| DPA Templates | None | Required for enterprise sales | MEDIUM |
-
----
-
-## 6. INTEGRATIONS ECOSYSTEM
-
-### Industry Standard (What Sprinklr/Brandwatch Offer)
-- **CRM**: Salesforce, HubSpot, Microsoft Dynamics, Zoho
-- **BI/Analytics**: Tableau, Power BI, Google Data Studio, Looker
-- **Communication**: Slack, Microsoft Teams, Discord
-- **Helpdesk**: Zendesk, Freshdesk, ServiceNow, Intercom
-- **Marketing**: Hootsuite, Buffer, Marketo, Mailchimp
-- **Storage**: Google Drive, Dropbox, OneDrive, S3
-- **Automation**: Zapier, Make (Integromat), n8n
-- **API**: REST API with webhooks, GraphQL API
-- **SSO/Identity**: Okta, Auth0, Azure AD, OneLogin
-
-### What We Have
-- Export: Salesforce, HubSpot, Slack, Tableau, Webhook (stubs only)
-- Notification: Slack webhook, custom webhook, email (stub)
-- SSO: SAML, OIDC
-
-### GAPS
-
-| Integration | Current | Required | Priority |
-|------------|---------|----------|----------|
-| Salesforce | Stub | Full bi-directional sync | HIGH |
-| HubSpot | Stub | Full bi-directional sync | HIGH |
-| Slack | Webhook only | Full Slack app (slash commands, interactive) | HIGH |
-| Microsoft Teams | None | Bot + connector | HIGH |
-| Zendesk/Freshdesk | None | Ticket creation from mentions | HIGH |
-| Zapier/Make | None | Generic webhook + Zapier app | CRITICAL |
-| Power BI | None | Connector/embed | MEDIUM |
-| Google Data Studio | None | Connector | MEDIUM |
-| Webhooks (outbound) | Basic | Signed webhooks with retry + DLQ | HIGH |
-| REST API Documentation | None | OpenAPI spec + developer portal | CRITICAL |
-| GraphQL API | None | Increasingly expected by enterprise clients | MEDIUM |
-| SDK/Client Libraries | None | Python, JS, Java SDKs | LOW |
-
----
-
-## 7. FRONTEND & UX (Currently Missing)
-
-### Industry Standard
-- **Real-time dashboards** with customizable widgets
-- **Interactive charts** (time series, word clouds, geo maps, network graphs)
-- **Mention inbox** with triage/assign/respond workflow
-- **Report builder** with drag-and-drop
-- **White-labeling** for agency clients
-- **Mobile app** (iOS + Android)
-- **Embeddable widgets** for client websites
-- **Dark mode**, accessibility (WCAG 2.1 AA)
-
-### What We Have
-- No frontend at all (empty `/frontend` directory)
-
-### Priority: CRITICAL — A platform without a UI is not a product.
-
----
-
-## 8. DEVOPS & OPERATIONS (Currently Missing)
-
-### Industry Standard
-- **Kubernetes** with auto-scaling (HPA/VPA)
-- **CI/CD pipeline** (GitHub Actions / GitLab CI)
-- **Infrastructure as Code** (Terraform / Pulumi)
-- **Monitoring**: Prometheus + Grafana
-- **Logging**: ELK stack or Loki
-- **APM**: Datadog, New Relic, or open-source alternatives
-- **Alerting**: PagerDuty, OpsGenie
-- **Blue/green or canary deployments**
-- **Database backup and disaster recovery**
-- **Load testing** (k6, Locust)
-
-### What We Have
-- docker-compose.yml only (development)
-- No CI/CD, no K8s, no monitoring, no alerting
-
-### Priority: HIGH for production readiness
-
----
-
-## 9. TESTING (Currently Minimal)
-
-### Industry Standard
-- **Unit tests**: 80%+ coverage on business logic
-- **Integration tests**: Service-to-service communication
-- **Contract tests**: Pact for API contracts between services
-- **E2E tests**: Full pipeline from collection to notification
-- **Load tests**: k6/Locust simulating peak traffic
-- **Security tests**: OWASP ZAP, dependency scanning
-- **Chaos engineering**: Service failure resilience
-
-### What We Have
-- 1 test file (test_nlp.py) with 6 tests
-- No integration, contract, E2E, load, or security tests
-
-### Priority: CRITICAL
-
----
-
-## 10. INCOMPLETE IMPLEMENTATIONS
-
-### Services with Stub/Pass Statements
-| Service | Issue |
-|---------|-------|
-| Media Service | Multiple `pass` statements in handlers |
-| Publishing Service | Platform API integration incomplete |
-| Realtime Service | WebSocket handlers are stubs |
-| Competitive Service | Benchmark logic is placeholder |
-| Scheduler Service | Email and auto-reply are stubs |
-| Notification Service | Email sending logs instead of sending |
-| Export Service | Integration sync handlers incomplete |
-| Project Service | Completely empty directory |
-
-### Missing Files
-- `services/report_service/templates/report.html` — Referenced but not created
-- No `.env.example` documenting required variables
-- No `alembic.ini` or migration scripts
-
----
-
-## 11. WHAT WE'RE DOING RIGHT
-
-| Area | Assessment |
-|------|-----------|
-| Microservices decomposition | Good — 18 services with clear boundaries |
-| Event-driven architecture | Correct pattern for social listening |
-| Redis Streams consumer groups | Good for horizontal scaling |
-| Async Python (FastAPI) | Excellent choice for I/O-heavy workloads |
-| Multi-tenant data model | Solid foundation with org/project hierarchy |
-| RBAC (5 roles) | Matches enterprise needs |
-| SSO (SAML + OIDC) | Enterprise requirement, correctly included |
-| Elasticsearch for search | Industry standard, good choice |
-| Platform collector abstraction | Clean BaseCollector pattern for extensibility |
-| Audit logging | Required for compliance, correctly included |
-| GDPR right-to-be-forgotten | Forward-thinking compliance feature |
-| Whisper for audio | Best-in-class open-source speech-to-text |
-| CLIP for logo detection | Good model choice |
-| Shared schema layer | Prevents drift between services |
-| Plan tiers with quotas | Correct monetization foundation |
-
----
-
-## 12. PRIORITY ROADMAP
-
-### P0 — Blockers for Any Enterprise Sale
-1. Database migrations (Alembic) — cannot deploy without schema management
-2. Row-Level Security in PostgreSQL — data isolation is non-negotiable
-3. Frontend dashboard (React/Next.js) — no UI = no product
-4. LLM integration for AI insights — table stakes in 2026
-5. Complete stub implementations (publishing, realtime, media, etc.)
-6. REST API documentation (OpenAPI) — required for developer onboarding
-7. Secrets management — no hardcoded defaults in production
-8. CI/CD pipeline — cannot deploy reliably without it
-9. Testing infrastructure — at least integration tests for the data pipeline
-10. Rate limiting integrated into gateway
-
-### P1 — Required for Enterprise Competitiveness
-1. Kafka migration (or prove Redis Streams handles your scale)
-2. Add 10+ more data sources (TikTok, Discord, Reviews, App Stores, Threads)
-3. Aspect-based sentiment + NER + emotion detection
-4. Full Salesforce/HubSpot integration
-5. Slack app + Microsoft Teams bot
-6. Kubernetes deployment manifests
-7. Monitoring (Prometheus + Grafana)
-8. Distributed tracing (OpenTelemetry)
-9. Multi-language NLP (50+ languages)
-10. Zapier/webhook ecosystem
-
-### P2 — Differentiation
-1. Predictive analytics (crisis prediction, trend forecasting)
-2. AI assistant (like Meltwater's "Mira") — conversational insights
-3. Visual listening at scale (logo detection across millions of images)
-4. Mobile app
-5. White-label/agency mode
-6. GraphQL API
-7. Embeddable dashboard widgets
-8. Advanced report builder (drag-and-drop)
-
----
-
-## Sources
-
-- [Meltwater: Brandwatch Alternatives 2026](https://www.meltwater.com/en/blog/best-brandwatch-alternatives)
-- [Meltwater: Top Social Listening Tools 2026](https://www.meltwater.com/en/blog/top-social-listening-tools)
-- [Sprinklr: Meltwater Alternatives](https://www.sprinklr.com/blog/meltwater-alternatives/)
-- [Sprout Social: Sprinklr Alternatives 2026](https://sproutsocial.com/insights/sprinklr-alternatives/)
-- [Brandwatch: Social Media Monitoring Tools](https://www.brandwatch.com/blog/social-media-monitoring-tools/)
-- [Gartner: Meltwater vs Sprinklr](https://www.gartner.com/reviews/market/social-monitoring-and-analytics/compare/meltwater--vs-sprinklr)
-- [Growin: Event Driven Architecture 2025](https://www.growin.com/blog/event-driven-architecture-scale-systems-2025/)
-- [Confluent: Microservices Need Event-Driven](https://www.confluent.io/blog/do-microservices-need-event-driven-architectures/)
-- [Better Stack: Redis vs Kafka 2026](https://betterstack.com/community/comparisons/redis-vs-kafka/)
-- [AutoMQ: Kafka vs Redis Streams](https://www.automq.com/blog/apache-kafka-vs-redis-streams-differences-and-comparison)
-- [Crunchy Data: PostgreSQL Multi-tenancy](https://www.crunchydata.com/blog/designing-your-postgres-database-for-multi-tenancy)
-- [AWS: Multi-tenant RLS](https://aws.amazon.com/blogs/database/multi-tenant-data-isolation-with-postgresql-row-level-security/)
-- [YouScan: Visual Insights](https://youscan.io/visual-insights/)
-- [Talkwalker: Image Recognition](https://www.talkwalker.com/image-recognition)
-- [Pulsar: Top Social Listening 2026](https://www.pulsarplatform.com/blog/2025/best-social-listening-tools-2026)
-- [Chattermill: Sentiment Analysis Tools 2026](https://chattermill.com/blog/ai-sentiment-analysis-tools)
-
----
-
-## APPENDIX A: COMPETITOR DEEP-DIVE
+## Competitor Benchmarks
 
 ### AI Engine Comparison
 
 | Platform | AI Engine | Scale | Unique Capability |
 |----------|-----------|-------|-------------------|
-| Sprinklr | AI+ (9 layers of ML) | 10B predictions/day, 750+ models across 60 verticals | ASR, NLP, CV, network graph, anomaly, trends, predictive, NLG, similarity |
-| Brandwatch | Iris AI | 501M new conversations/day | Emotion clustering beyond pos/neg (frustration, excitement) |
-| Meltwater | Mira AI | 1B+ content pieces/day, 15B AI inferences/day | GenAI Lens — monitors brand perception INSIDE LLM responses (ChatGPT, etc.) |
-| Talkwalker | Blue Silk AI | Trained on 3T+ data points | Custom LLMs for consumer intelligence; 187 language support |
-| Synthesio | Signals GenAI | 800M+ sources, 195 countries | Ipsos research methodology + AI; auto-discovers statistically significant trends |
-| **KhushFus** | **VADER + RoBERTa** | **Not benchmarked** | **None yet** |
-
-### Compliance Certifications Comparison
-
-| Cert | Sprinklr | Meltwater | KhushFus |
-|------|----------|-----------|----------|
-| SOC 1 Type II | Yes | - | No |
-| SOC 2 Type II | Yes | - | No |
-| ISO 27001 | Yes | Yes | No |
-| ISO 42001 (AI) | - | Yes (industry first) | No |
-| FedRAMP | Yes | - | No |
-| PCI-DSS | Yes | - | No |
-| GDPR | Yes | Yes | Partial (audit service) |
+| Sprinklr | AI+ (9 layers of ML) | 10B predictions/day, 750+ models | ASR, NLP, CV, network graph, anomaly, trends, predictive |
+| Brandwatch | Iris AI | 501M new conversations/day | Emotion clustering beyond pos/neg |
+| Meltwater | Mira AI | 1B+ content pieces/day, 15B AI inferences/day | GenAI Lens — monitors brand perception inside LLM responses |
+| Talkwalker | Blue Silk AI | Trained on 3T+ data points | Custom LLMs, 187 language support |
+| **KhushFus** | **3-tier (VADER→DeBERTa→Claude)** | **Not benchmarked** | **Sarcasm detection, aspect sentiment, BERTopic** |
 
 ### Data Coverage Comparison
 
 | Metric | Sprinklr | Brandwatch | Meltwater | KhushFus |
 |--------|----------|------------|-----------|----------|
-| Channels | 30+ | 100M sites | 6M+ sources | 11 collectors |
+| Channels | 30+ | 100M sites | 6M+ sources | 20 collectors |
 | Historical | Available | Back to 2010 | Available | None |
 | Languages | Not disclosed | 27 | Multiple | 1 (English) |
 | Real-time firehose | 10+ channels | X, Reddit, Tumblr | Yes | No |
 
-### Integration Count Comparison
+### Integration Count
 
-| Platform | Integrations |
-|----------|-------------|
-| Sprinklr | 70+ out-of-the-box connectors |
-| Brandwatch | Cision ecosystem + APIs |
-| Meltwater | API-first, BI/CRM integrations |
-| Sprout Social | X, FB, IG, YT, LI, Bluesky, Yelp, Slack, Teams, Salesforce, Zendesk, Tableau |
-| **KhushFus** | **5 stubs (Salesforce, HubSpot, Slack, Tableau, webhook)** |
+| Platform | Integrations | KhushFus |
+|----------|-------------|----------|
+| Sprinklr | 70+ connectors | 5 stubs (Salesforce, HubSpot, Slack, Tableau, webhook) |
+| Sprout Social | X, FB, IG, YT, LI, Bluesky, Yelp, Slack, Teams, Salesforce, Zendesk, Tableau | Same 5 stubs |
+
+### Compliance Certifications
+
+| Cert | Sprinklr | Meltwater | KhushFus |
+|------|----------|-----------|----------|
+| SOC 2 Type II | Yes | - | No |
+| ISO 27001 | Yes | Yes | No |
+| ISO 42001 (AI) | - | Yes | No |
+| FedRAMP | Yes | - | No |
+| GDPR | Yes | Yes | Partial (audit service) |
 
 ---
 
-## APPENDIX B: TECHNOLOGY BEST PRACTICES (2025-2026)
+## TIER 0 — System Will Break At Scale
 
-### Recommended Technology Stack (Industry Consensus)
+### S.1 All Data Stores Are Single-Node (CRITICAL)
 
-| Component | Primary Recommendation | Our Current Choice | Gap? |
-|-----------|----------------------|-------------------|------|
-| Architecture | Event-driven microservices + CQRS | Event-driven microservices | Partial (no CQRS) |
-| Event bus | Apache Kafka | Redis Streams | YES — migrate for scale |
-| Stream processing | Apache Flink | None | YES |
-| Search | OpenSearch (Apache 2.0 license) | Elasticsearch (AGPL) | LICENSING RISK for SaaS |
-| Database | PostgreSQL with RLS | PostgreSQL (no RLS) | YES |
-| Bulk NLP | Fine-tuned transformers (DeBERTa, GLiNER) | VADER + optional RoBERTa | YES |
-| Advanced NLP | Claude/GPT-4 via API | None | YES — critical gap |
-| Topic modeling | BERTopic | Keyword matching | YES |
-| Data lake | Apache Iceberg on S3 | None | YES (for historical data) |
-| Public API | REST with OpenAPI 3.1 spec | REST (no spec) | YES |
-| Internal comms | gRPC | HTTP between services | MEDIUM priority |
-| Frontend API | GraphQL | None (no frontend) | YES |
-| Multi-tenancy | Shared schema + RLS + DB-per-tenant option | Shared schema (app-level only) | YES |
+| Store | Current | Failure = | Fix |
+|-------|---------|-----------|-----|
+| PostgreSQL | 1 StatefulSet | Total data loss, full outage | CloudNativePG 3-node + S3 WAL archiving |
+| Redis | 1 Deployment | Event bus dies, all pipelines stop, mentions lost | Redis Sentinel (3 nodes) or Cluster (6 nodes) |
+| OpenSearch | 1 StatefulSet, security disabled | Search/analytics gone | 3 data nodes + 3 masters, enable TLS |
 
-### NLP Model Benchmarks (2025)
+A single Redis crash loses entire `mentions:raw` and `mentions:analyzed` streams. This is the #1 blocker.
 
-| Model | Sentiment Accuracy | Cost per 100K mentions | Latency |
-|-------|-------------------|----------------------|---------|
-| VADER | ~65% (English only) | Free | <1ms |
-| RoBERTa fine-tuned | ~85% | Free (self-hosted GPU) | ~50ms |
-| Claude 3.7 | ~79% (best overall) | ~$50-100 | ~500ms |
-| GPT-4 | ~83% F1 | ~$80-150 | ~800ms |
-| DeBERTa fine-tuned | ~87% | Free (self-hosted GPU) | ~60ms |
+### S.2 No Backpressure — Pipeline Will Deadlock (CRITICAL)
 
-**Recommended hybrid**: DeBERTa for bulk classification + Claude API for summaries/insights/complex cases.
+```
+Collector (~100/sec) → mentions:raw (100K cap) → Analyzer (~6/sec CPU) → mentions:analyzed (100K cap) → Query (~5/sec)
+```
+
+- Collector is 20x faster than Analyzer
+- Stream fills to 100K → oldest unprocessed messages silently trimmed via `maxlen`
+- No feedback from slow services to fast services
+- At sustained 100K mentions/day, pipeline backs up within hours
+
+### S.3 NLP Single-Threaded, No Real Batching (CRITICAL)
+
+```python
+# Current: serial loop disguised as batch
+def analyze_batch(self, texts):
+    return [self.analyze(text) for text in texts]
+```
+
+- CPU inference: ~150ms/mention → 6.7 mentions/sec per instance
+- Models never unloaded: ~1.6GB RAM per instance (VADER + RoBERTa + spaCy + emotion + BERTopic)
+- Need 6-10 analyzer instances on CPU, or GPU with real batching (10x speedup)
+
+### S.4 Unbounded Memory in Multiple Services (CRITICAL)
+
+| Service | Leak Source | Growth |
+|---------|------------|--------|
+| Analyzer | `_MODEL_CACHE` never evicted | OOM after days of continuous processing |
+| Notification | `mention_counts` / `negative_counts` dicts | Proportional to number of projects |
+| Realtime | No `max_connections` on WebSockets | File descriptor exhaustion |
+| Scheduler | `_report_schedules` in-memory only | Lost on every restart |
+| Media | `_clip_model`, `_ocr_reader`, `_whisper_model` cached forever | 3GB+ VRAM unmanaged |
+
+### S.5 Secret Management is Insecure (CRITICAL)
+
+- Secrets passed as environment variables (visible in `kubectl describe pod`)
+- etcd encryption not enabled by default
+- No secret rotation enforcement
+- JWT stored in localStorage (XSS-vulnerable)
+- No per-tenant encryption keys
+
+---
+
+## TIER 1 — Will Cause Problems at 5K+ Users
+
+### Database & Connection Pooling
+
+| Issue | Current | Impact | Fix |
+|-------|---------|--------|-----|
+| Pool too small | `pool_size=20` shared across 19 services | Exhaustion at ~500 req/s | `DB_POOL_SIZE=50, DB_MAX_OVERFLOW=50` |
+| RLS subquery overhead | Every mention query triggers `SELECT id FROM projects` | 3-5x slower queries | App-layer tenant filtering or cached project IDs |
+| Missing composite indexes | Sentiment+date, author influence, audit by user | Full table scans at 10M+ rows | New Alembic migration |
+| Query Service serial writes | Individual INSERT + individual `es.index()` | Bottleneck at scale | Bulk UPSERT + ES bulk API |
+| No read replica failover | Silent degradation if replica unavailable | Queries fall to primary under load | Circuit breaker between primary/replica |
+| Pool recycle too aggressive | `pool_recycle=300` (5 min) | Unnecessary reconnections | Increase to 500s |
+
+#### Missing Indexes (Add via Alembic Migration)
+
+```sql
+-- Composite sentiment + date for dashboard filters
+CREATE INDEX ix_mention_project_sentiment_date ON mentions(project_id, sentiment, published_at);
+
+-- Author influence filtering
+CREATE INDEX ix_mention_author_influence ON mentions(project_id, author_influence_score);
+
+-- Active projects per org (partial index)
+CREATE INDEX ix_project_active ON projects(organization_id) WHERE is_deleted = FALSE;
+
+-- Audit trail by user
+CREATE INDEX ix_audit_log_user_created ON audit_log(user_id, created_at);
+
+-- Export job cleanup
+CREATE INDEX ix_export_job_status_created ON export_jobs(status, created_at);
+```
+
+### Event Bus (Redis Streams)
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| `maxlen=100_000` trims unprocessed messages | Silent data loss if consumer lags >100K | Increase to 500K or use MINID-based trimming |
+| DLQ reprocessing has no rate limit | Can re-flood pipeline | Add `rate_per_sec=10` throttle |
+| No consumer lag alerting | Blind spot — can't tell if pipeline is falling behind | Alert if lag > 10K messages |
+| Retry policies inconsistent | Media gets 3 retries, Analyzer gets 5 | Standardize per-stream based on expected latency |
+| No ordering guarantee | Concurrent consumers may process out-of-order | Acceptable for mentions, problematic for workflows |
+
+### Collector Issues
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| 22 platforms processed sequentially per project | One slow API blocks all others | Async per-platform with `MAX_CONCURRENT=5` semaphore |
+| Shared HTTP client pool | Twitter rate limits starve LinkedIn | Per-platform client pools |
+| No credential refresh loop | Tokens expire mid-run, silent failure | Validate before each run, refresh expired tokens |
+| No per-org rate limiting | One org can exhaust global Twitter quota | Org-scoped rate limits: `khushfus:ratelimit:{org_id}:{platform}` |
+| Dedup is Redis-only | Redis crash = dedup clears, duplicates re-published | Acceptable (Query Service deduplicates too) |
+
+### Claude API Cost Control
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| Quota only in `llm_insights.py`, not `analyzer.py` | Direct API calls bypass quota tracking | Unify quota tracking in shared module |
+| Per-project quotas, not per-org | One org with 50 projects gets 50x budget | Add org-level cap |
+| No spending alerts | Runaway project undetected | Alert at 80% of hourly quota |
+
+**Cost projection at 100K mentions/day (10% hitting Claude):**
+- ~12M tokens/day → ~$25/day → **$750/month** with no org-level cap
+
+---
+
+## TIER 2 — Per-Service Findings
+
+### Gateway (Port 8000) — Risk: Medium
+
+- No timeout on upstream service calls (httpx calls can hang indefinitely)
+- Health check only validates Postgres + Redis, not downstream services
+- Rate limiter dependency is fail-open (if rate-limiter service down, all requests pass)
+
+### Analyzer Service — Risk: Medium-High
+
+- No timeout on Claude API calls in `analyzer.py` (only in `llm_insights.py`)
+- `run_in_executor(None, ...)` uses default thread pool → can starve other tasks
+- Needs dedicated executor: `Executor(max_workers=2)` with bounded queue
+
+### Query Service — Risk: Medium
+
+- OpenSearch index mapping not optimized: default 1s refresh causes lag
+- No ES index lifecycle policy (ILM): indices grow unbounded
+- Should: `refresh_interval: 30s` for throughput, auto-rollover at 5GB
+
+### Notification Service — Risk: Medium
+
+- SMTP connection not pooled: new connection per alert
+- No circuit breaker on SMTP: flaky server = resource exhaustion
+- 2-hour hardcoded window: alert rules referencing >2h rolling averages reset on deploy
+
+### Realtime Service — Risk: High
+
+- No `max_connections` per pod → unbounded WebSocket connections
+- SSE queue overflow drops messages silently (queue full → oldest dropped)
+- Every mention triggers broadcast to ALL active project connections
+
+### Identity Service — Risk: Medium
+
+- Session revocation tracked in-memory → lost on restart (should use Redis)
+- Token refresh accepts expired tokens if refresh token valid → indefinite sessions
+- SSO metadata URL not SSRF-validated during setup
+
+### Tenant Service — Risk: Medium
+
+- `mentions_used` increment not atomic → concurrent increments can overflow quota
+- API keys never auto-expire (old keys valid indefinitely unless manually revoked)
+- Plan downgrade doesn't revalidate existing usage
+
+### Media Service — Risk: High
+
+- Multiple models loaded simultaneously (CLIP + OCR + Whisper) → 3GB+ VRAM unmanaged
+- No timeout on ffmpeg subprocess → can hang indefinitely on corrupted video
+- Video keyframe extraction creates unbounded temp files (not cleaned on failure)
+
+### Scheduler Service — Risk: Medium
+
+- In-memory report schedules lost on restart
+- No concurrent workflow action limit: high-volume triggers spawn unbounded async HTTP calls
+- No cron expression validation before saving
+
+### Audit Service — Risk: Medium
+
+- Retention cleanup not partitioned: single DELETE on 10M+ rows locks table for minutes
+- GDPR purge doesn't anonymize mention `author_handle` → incomplete compliance
+- Retention enforcement itself not logged
+
+### Report Service — Risk: Medium
+
+- Template rendering unbounded: large projects generate multi-MB reports
+- PDF generation single-threaded (WeasyPrint is CPU-bound)
+- Report files accumulate on disk indefinitely
+
+### Export Service — Risk: Medium
+
+- No file size limit: large projects can generate 1GB+ CSV
+- No background cleanup: completed exports never deleted
+- No compression on stored exports (10x disk bloat)
+
+### Search Service — Risk: Medium
+
+- Postgres ILIKE fallback: full table scans with OR conditions
+- No ES timeout: slow queries can hang indefinitely
+- No query caching: identical searches re-execute every time
+
+### Publishing Service — Risk: Medium
+
+- Rate limiter failure defaults to DENY: all publishes blocked
+- No deduplication of publish requests (same post published twice)
+- Schedule precision: checks every 15s → up to 15s publish delay
+
+---
+
+## TIER 3 — Infrastructure Gaps
+
+### Availability & DR
+
+| Gap | Current | Required | Priority |
+|-----|---------|----------|----------|
+| Database HA | Single StatefulSet | CloudNativePG 3-node + WAL archiving | CRITICAL |
+| Redis HA | Single Deployment | Sentinel (3 nodes) or Cluster (6 nodes) | CRITICAL |
+| OpenSearch HA | Single node, security off | 3 data + 3 master, TLS enabled | CRITICAL |
+| Backups | Daily pg_dump to same-node PVC | S3 backups + PITR via WAL archiving | CRITICAL |
+| Multi-region | Not implemented | Primary + standby in separate region | HIGH |
+| Backup verification | None | `pg_restore --list` verification job | HIGH |
+
+### Networking & Service Communication
+
+| Gap | Current | Required | Priority |
+|-----|---------|----------|----------|
+| mTLS between services | Not enforced | Istio service mesh or manual cert management | HIGH |
+| Egress policies | Services can connect anywhere | Restrict outbound to specific API domains | HIGH |
+| Service mesh | None | Istio for mTLS, circuit breaking, canary | MEDIUM |
+| Session affinity | Not configured | `sessionAffinity: ClientIP` for stateful services | LOW |
+
+### Deployment & CI/CD
+
+| Gap | Current | Required | Priority |
+|-----|---------|----------|----------|
+| Canary/blue-green | Rolling update only | Flagger + Istio for canary with traffic splitting | HIGH |
+| Image signing | Not implemented | Cosign for container image signatures | MEDIUM |
+| Smoke tests post-deploy | None | `make smoke-test` after each deployment | HIGH |
+| Database migration in deploy | Manual | Init container running `alembic upgrade head` | HIGH |
+| CIS K8s benchmark | Not run | kube-bench in CI pipeline | MEDIUM |
+| Policy enforcement | None | OPA/Kyverno for image registry restrictions | MEDIUM |
+
+### Secret Management Path
+
+| Phase | Action | Effort |
+|-------|--------|--------|
+| Immediate | Enable etcd encryption at rest | 1 day |
+| Week 1 | Deploy Sealed Secrets for GitOps-safe secrets | 2 days |
+| Month 1 | Deploy HashiCorp Vault with K8s auth method | 1 week |
+| Ongoing | 90-day secret rotation policy | Policy |
+
+### Monitoring & Observability
+
+| Feature | Status | Fix |
+|---------|--------|-----|
+| Prometheus + basic alerts | Deployed | Add custom business metrics |
+| Distributed tracing | Jaeger configured, not instrumented | Add OpenTelemetry spans to all services |
+| Log aggregation | None (docker logs only) | Deploy Loki or ELK stack |
+| Custom business metrics | Missing | Collection rate, NLP latency, LLM cost per org |
+| APM | None | Add slow query tracking, bottleneck identification |
+| Alert routing | Not configured | Slack/PagerDuty integration for alert delivery |
+
+---
+
+## TIER 4 — Frontend Issues
+
+### Performance (Latency)
+
+| Issue | Location | Impact | Fix |
+|-------|----------|--------|-----|
+| 1100-line monolith dashboard | `dashboard/page.tsx` | Full re-render on any state change | Split into composable components |
+| Waterfall requests | Dashboard fetches projects → then metrics | 200ms+ added latency | Parallelize fetches |
+| Recharts not code-split | Dashboard imports directly | 47KB+ unnecessary initial bundle | Use `next/dynamic` |
+| No skeleton loaders on pages | All pages | Spinners block progressive rendering | Replace with skeleton components |
+| Helper functions recreated per render | Mentions: `relativeTime()`, `PlatformIcon()` | Unnecessary re-renders in lists | Extract to memoized components |
+| Filter bar in same component | Mentions page | Re-renders entire page on filter change | Extract `<FilterBar>` component |
+| NavItems array recreated per render | Sidebar | Should be module-level constant | Move to file scope |
+| `useFetch` cache never invalidates | After create/delete mutations | Stale data for 60s | Invalidate on mutation |
+| No link prefetch on hover | All page transitions | Slower perceived navigation | Add `prefetch` to Link components |
+
+### Auth & Security
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| JWT in localStorage | XSS-vulnerable | BFF pattern with httpOnly cookies |
+| Token in WebSocket URL | Visible in logs/history/referrers | Bearer token in WS headers or cookie |
+| CSRF token generated but never validated server-side | Defense incomplete | Implement BFF validation |
+| No multi-tab auth sync | Logout in one tab, others still active | `storage` event listener |
+| Race condition on initial load | Protected content briefly visible | Server-side auth check or loading gate |
+| Token refresh not proactive | Fails on first request after expiry | Refresh 5min before expiry |
+
+### Missing Capabilities
+
+- No error boundaries at page level
+- No Sentry/error tracking (TODO stub exists)
+- No web-vitals reporting (imported but unused)
+- Bulk actions (Flag/Export) are UI-only, non-functional
+- Notification bell is static (not connected to real notifications)
+- No feature flags for A/B testing
+- No mobile-first responsive testing
+
+---
+
+## TIER 5 — Feature Gaps vs Competitors
+
+### Missing Platforms (Already have 20, target 25+)
+
+| Platform | Priority | Notes |
+|----------|----------|-------|
+| Snapchat | MEDIUM | Youth demographic |
+| WhatsApp Business | MEDIUM | Enterprise messaging |
+| WeChat/Weibo | MEDIUM | China market |
+| Print/Broadcast | LOW | TV/Radio via transcription |
+
+### Missing Capabilities
+
+| Capability | Competitor Reference | Priority |
+|------------|---------------------|----------|
+| Historical data backfill | Brandwatch offers data back to 2010 | HIGH |
+| Firehose access | Twitter/Reddit enterprise API agreements | HIGH |
+| Predictive analytics | Crisis prediction, trend forecasting (55% YoY growth per IDC) | HIGH |
+| AI assistant (conversational) | Meltwater's "Mira" | MEDIUM |
+| Multi-language NLP (50+) | Talkwalker: 187 languages | HIGH |
+| White-labeling for agencies | Sprinklr, Brandwatch offer this | MEDIUM |
+| Mobile app (iOS/Android) | All competitors have this | MEDIUM |
+| Embeddable dashboard widgets | Customer-facing embeds | LOW |
+| GraphQL API | Increasingly expected by enterprise | MEDIUM |
+| Advanced report builder | Drag-and-drop customization | LOW |
+
+### Missing Integrations
+
+| Integration | Current | Required | Priority |
+|------------|---------|----------|----------|
+| Salesforce | Stub | Full bi-directional sync | HIGH |
+| HubSpot | Stub | Full bi-directional sync | HIGH |
+| Slack | Webhook only | Full app (slash commands, interactive) | HIGH |
+| Microsoft Teams | None | Bot + connector | HIGH |
+| Zendesk/Freshdesk | None | Ticket creation from mentions | HIGH |
+| Zapier/Make | None | Generic webhook + Zapier app | CRITICAL |
+| Power BI | None | Connector/embed | MEDIUM |
+| SDK/Client Libraries | None | Python, JS, Java | LOW |
+
+---
+
+## Enterprise Scaling Roadmap
+
+### Phase 1 — Stability (Weeks 1-2)
+
+*Priority: Don't lose data, don't crash under load*
+
+| # | Task | Effort | Impact |
+|---|------|--------|--------|
+| 1 | Deploy Postgres HA (CloudNativePG, 3 nodes) + S3 WAL archiving | 1 week | Eliminates DB SPOF |
+| 2 | Deploy Redis Sentinel (3 nodes) + increase stream maxlen to 500K | 5 days | Event bus reliability |
+| 3 | Enable etcd encryption + deploy Sealed Secrets | 3 days | Compliance requirement |
+| 4 | Increase DB pool: `DB_POOL_SIZE=50, DB_MAX_OVERFLOW=50` | 1 hour | Prevents connection exhaustion |
+| 5 | Add S3 backups for Postgres, Redis snapshots, OpenSearch snapshots | 2 days | DR capability |
+| 6 | Add backpressure monitoring: alert if stream lag > 10K | 1 day | Early warning system |
+
+### Phase 2 — Performance (Weeks 3-4)
+
+*Priority: Handle 100K mentions/day without falling behind*
+
+| # | Task | Effort | Impact |
+|---|------|--------|--------|
+| 7 | Implement real transformer batch inference (`batch_size=32`) | 2 days | 10x NLP throughput |
+| 8 | Switch Query Service to bulk UPSERT + ES bulk API | 2 days | 100x write throughput |
+| 9 | Add composite indexes (sentiment+date, author influence, audit) | 1 day | 5-10x query speedup |
+| 10 | Make collectors async per-platform (semaphore, `MAX_CONCURRENT=5`) | 2 days | No more slow-platform blocking |
+| 11 | Add per-org rate limiting in rate limiter service | 1 day | Fair resource sharing |
+| 12 | Cap WebSocket connections (1000/pod) with backpressure | 1 day | Prevents FD exhaustion |
+| 13 | Fix notification in-memory counters → Redis sorted sets | 1 day | No memory leak |
+| 14 | Persist scheduler report schedules to database | 1 day | Survives restarts |
+
+### Phase 3 — Observability (Weeks 5-6)
+
+*Priority: Know when things break before users notice*
+
+| # | Task | Effort | Impact |
+|---|------|--------|--------|
+| 15 | Instrument all services with OpenTelemetry spans | 1 week | End-to-end tracing |
+| 16 | Add business metrics: collection rate, NLP latency, LLM cost/org | 3 days | Visibility |
+| 17 | Deploy Loki/ELK for centralized logging | 3 days | Searchable logs |
+| 18 | Create Grafana dashboards: pipeline health, consumer lag, pool util | 2 days | Operational awareness |
+| 19 | Configure PagerDuty/Slack alerts for SLO violations | 1 day | Incident response |
+
+### Phase 4 — Enterprise Hardening (Weeks 7-10)
+
+*Priority: Multi-tenant isolation, compliance, cost control*
+
+| # | Task | Effort | Impact |
+|---|------|--------|--------|
+| 20 | Replace RLS subqueries with app-layer tenant filtering | 3 days | 3-5x query speedup |
+| 21 | Add org-level Claude API spend caps | 1 day | Cost control |
+| 22 | Deploy Istio service mesh (mTLS, circuit breaking, canary) | 1 week | Security + resilience |
+| 23 | Implement credential refresh loop for OAuth collectors | 2 days | Uninterrupted collection |
+| 24 | Fix GDPR mention anonymization (author_handle) | 1 day | Compliance |
+| 25 | Split frontend dashboard into composable components | 3 days | Performance |
+| 26 | Add multi-tab auth sync + proactive token refresh | 1 day | UX |
+
+### Phase 5 — Scale (Months 3-6)
+
+| # | Task | Effort | Impact |
+|---|------|--------|--------|
+| 27 | Evaluate Kafka migration (if >100K mentions/hour) | 2 weeks | 10x+ event throughput |
+| 28 | Multi-region deployment (primary + standby) | 3 weeks | Geographic resilience |
+| 29 | GPU inference server (vLLM/TGI) for transformer batching | 1 week | 10x NLP throughput |
+| 30 | OpenSearch ILM (hot/warm/cold tiers) | 3 days | Storage cost reduction |
+| 31 | Read replicas with connection routing | 1 week | Query throughput |
+| 32 | Multi-language NLP (top 10 languages) | 2 weeks | Market expansion |
+
+---
+
+## Cost Projection at Enterprise Scale (100K mentions/day)
+
+| Resource | Monthly Estimate |
+|----------|-----------------|
+| Kubernetes cluster (3 nodes, 16CPU/64GB each) | $800-1,200 |
+| Postgres HA (3-node, 500GB) | $300-500 |
+| Redis Sentinel (3-node, 16GB) | $150-250 |
+| OpenSearch (3 data + 3 master) | $400-600 |
+| Claude API (10% escalation rate) | $500-750 |
+| S3 backups + storage | $50-100 |
+| Monitoring stack (Prometheus/Grafana/Loki) | $100-200 |
+| **Total** | **$2,300-3,600/mo** |
+
+---
+
+## What We're Doing Right
+
+| Area | Assessment |
+|------|-----------|
+| 19 microservices with clear boundaries | Correct decomposition for social listening |
+| Redis Streams with consumer groups | Valid for <100K/day, migration path documented |
+| Async Python (FastAPI + asyncio) | Excellent for I/O-heavy workloads |
+| 3-tier NLP (VADER→DeBERTa→Claude) | Cost-effective tiering with auto-escalation |
+| 20 platform collectors | Good coverage, extensible BaseCollector pattern |
+| PostgreSQL RLS on 14 tables | Database-enforced tenant isolation |
+| Alembic migrations (4 versions) | Schema management in place |
+| Full frontend (42 files, 10 pages) | Feature-complete dark-theme UI |
+| Kubernetes manifests + HPAs | Ready for K8s deployment |
+| GitLab CI/CD (6-stage pipeline) | Lint, test, security scan, build, deploy gates |
+| 272+ tests across all layers | Solid test foundation |
+| GDPR right-to-be-forgotten | Compliance feature in audit service |
+| SSO (SAML + OIDC) | Enterprise auth requirement met |
+| Circuit breakers on external calls | Resilience pattern in place |
+| Graceful shutdown in all services | Clean container lifecycle |
+| Non-root containers with PSA restricted | Security best practice |
+
+---
+
+## Technology Recommendations
 
 ### Event Bus Decision Matrix
 
-| Factor | Redis Streams | Kafka | Pulsar |
-|--------|--------------|-------|--------|
-| Throughput | ~100K msg/s | Millions msg/s | ~500K msg/s |
-| Durability | Memory (risk of loss) | Disk (persistent) | BookKeeper (persistent) |
-| Partitioning | No native partitions | Topic partitions | Built-in |
-| Multi-tenancy | Not designed for it | Requires config | Native support |
-| Ops complexity | Low | High | Moderate |
-| Ecosystem | Redis only | Massive (Connect, Streams, ksqlDB) | Growing |
-| **Verdict** | OK for MVP (<100K/day) | **Production standard** | Alternative to Kafka |
+| Factor | Redis Streams (Current) | Kafka (Recommended at Scale) |
+|--------|------------------------|------------------------------|
+| Throughput | ~100K msg/s | Millions msg/s |
+| Durability | Memory (risk of loss) | Disk (persistent) |
+| Partitioning | No native partitions | Topic partitions |
+| Ops complexity | Low | High |
+| **Verdict** | OK for MVP (<100K/day) | Required for enterprise (>100K/day) |
+
+### NLP Model Benchmarks
+
+| Model | Accuracy | Cost per 100K | Latency | Our Usage |
+|-------|----------|---------------|---------|-----------|
+| VADER | ~65% | Free | <1ms | Tier 1 (fast screen) |
+| DeBERTa fine-tuned | ~87% | Free (self-hosted) | ~60ms | Tier 2 (default) |
+| Claude Sonnet | ~79% | ~$50-100 | ~500ms | Tier 3 (complex/high-engagement) |
 
 ### Elasticsearch AGPL License Warning
 
-Elasticsearch switched to AGPL in 2024. For a SaaS product like KhushFus:
-- AGPL requires source code disclosure if users interact with the software over a network
-- This could force open-sourcing our platform code, OR require purchasing an Elastic license
-- **OpenSearch (Apache 2.0)** is the safer choice for SaaS — functionally equivalent, no license risk
-- Amazon OpenSearch Service provides managed hosting
+Elasticsearch switched to AGPL in 2024. For SaaS:
+- AGPL may require source disclosure for network-accessed software
+- **OpenSearch (Apache 2.0)** is the safer choice — already in use via docker-compose
+- Ensure all references use OpenSearch, not Elasticsearch
 
-### Multi-Tenancy: PostgreSQL RLS Implementation Pattern
+---
 
-```sql
--- Example: Row-Level Security for tenant isolation
-ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON projects
-  USING (organization_id = current_setting('app.current_org_id')::int);
+## Previously Fixed Gaps (242/321)
 
--- Set per-request in application:
-SET LOCAL app.current_org_id = '42';
-SELECT * FROM projects; -- Only sees org 42's projects
-```
+The following areas were addressed in prior hardening phases:
 
-This is database-enforced isolation — even if application code has bugs, data cannot leak across tenants.
+- **Shared Layer (34/34 fixed):** `updated_at` fields, audit trail columns, soft-delete, JWT key rotation, event schema versioning, composite indexes, retry policies, slow query logging, read replica support, pagination schemas, CORS hardening, webhook HMAC signing, DLQ structured format, field validations, cascade deletes, connection pool config
+- **Consumer Services (29/32 fixed):** Graceful shutdown, NLP timeouts, error classification, OpenSearch connection config, enrichment idempotency, media backpressure/GPU locking, collector retry config, Prometheus metrics, JSON structured logging, env validation, liveness probes, consumer lag monitoring, circuit breakers on external calls
+- **HTTP Services (35/38 fixed):** Project-level authorization, SAML signature verification, DSL injection prevention, inter-service auth, auth rate limiting, CORS fix, request size limits, RBAC, WebSocket auth, pagination, request dedup, error masking, audit events, request logging
+- **NLP & Collectors (30/37 fixed):** PII masking, content moderation, collector pagination, model versioning, confidence thresholds, batch processing, CUDA checks, BERTopic persistence, rate limiting, quota tracking, error classification, proxy support, data validation
+- **Frontend (55/63 fixed):** CSP headers, CSRF protection, refresh token flow, API retry logic, error boundaries, form validation, SWR-like fetching, i18n foundation, WebSocket hooks, TypeScript types, Zod validation, AbortController, skeleton loaders, accessibility (ARIA, keyboard nav, skip links), theme toggle, code splitting, optimistic updates, undo/redo, auto-save, web vitals, bundle analysis
+- **Infrastructure (32/69 fixed):** Secrets env var substitution, restart policies, PDBs, health endpoints, container scanning, rollback automation, logging drivers, network segmentation, multi-stage builds, resource quotas, pod security, rolling updates, node anti-affinity, ingress rate limiting, Redis persistence/auth, Prometheus alerts, SLO definitions, Grafana dashboards, SBOM generation
+
+### Still Open (Deferred)
+
+- [ ] OpenSearch security plugin (requires cluster TLS setup)
+- [ ] Internal mTLS (requires service mesh)
+- [ ] OIDC implementation (declared but not coded)
+- [ ] DLQ dashboards (requires observability tooling)
+- [ ] Consumer group rebalancing metrics
+- [ ] Per-project NLP config
+- [ ] Language-specific NLP models
+- [ ] Data residency support
+- [ ] Log aggregation (Loki/ELK)
+- [ ] Canary/blue-green deployments
+- [ ] GitOps (ArgoCD/Flux)
+- [ ] Signed container images (Cosign)
+- [ ] Encryption at rest (StorageClass + KMS)
+- [ ] DAST scanning (ZAP/Burp)
+- [ ] Secrets rotation schedule (Vault/KMS)
+
+---
+
+## Sources
+
+- [Meltwater: Top Social Listening Tools 2026](https://www.meltwater.com/en/blog/top-social-listening-tools)
+- [Sprinklr: Meltwater Alternatives](https://www.sprinklr.com/blog/meltwater-alternatives/)
+- [Confluent: Microservices Need Event-Driven](https://www.confluent.io/blog/do-microservices-need-event-driven-architectures/)
+- [Better Stack: Redis vs Kafka 2026](https://betterstack.com/community/comparisons/redis-vs-kafka/)
+- [Crunchy Data: PostgreSQL Multi-tenancy](https://www.crunchydata.com/blog/designing-your-postgres-database-for-multi-tenancy)
+- [AWS: Multi-tenant RLS](https://aws.amazon.com/blogs/database/multi-tenant-data-isolation-with-postgresql-row-level-security/)
+
+---
+
+*Generated: March 2026 | Audited by: Claude Code (Opus 4.6)*
+*Total gaps: 172 open (30 critical, 51 high, 54 medium, 37 low) | 242 previously fixed*

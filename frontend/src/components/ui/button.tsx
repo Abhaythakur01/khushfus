@@ -16,23 +16,23 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 shadow-sm",
+    "bg-indigo-600 text-white hover:bg-indigo-500 active:bg-indigo-700 shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/25",
   secondary:
-    "bg-slate-100 text-slate-700 hover:bg-slate-200 active:bg-slate-300",
+    "bg-white/[0.06] text-slate-300 hover:bg-white/[0.1] active:bg-white/[0.12] border border-white/[0.06]",
   outline:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+    "border border-white/[0.1] bg-transparent text-slate-300 hover:bg-white/[0.04] active:bg-white/[0.08]",
   ghost:
-    "text-slate-600 hover:bg-slate-100 active:bg-slate-200",
+    "text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] active:bg-white/[0.1]",
   danger:
-    "bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-800 shadow-sm",
+    "bg-red-600/90 text-white hover:bg-red-500 active:bg-red-700 shadow-md shadow-red-500/15",
   destructive:
-    "bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-800 shadow-sm",
+    "bg-red-600/90 text-white hover:bg-red-500 active:bg-red-700 shadow-md shadow-red-500/15",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-xs gap-1.5 rounded-md",
+  sm: "h-8 px-3 text-xs gap-1.5 rounded-lg",
   md: "h-10 px-4 text-sm gap-2 rounded-lg",
-  lg: "h-12 px-6 text-base gap-2.5 rounded-lg",
+  lg: "h-12 px-6 text-base gap-2.5 rounded-xl",
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -53,14 +53,15 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center font-medium transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2",
-          "disabled:opacity-50 disabled:pointer-events-none",
+          "inline-flex items-center justify-center font-medium transition-all duration-200",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0f1a]",
+          "disabled:opacity-40 disabled:pointer-events-none",
           variantStyles[variant],
           sizeStyles[size],
           className,
         )}
         disabled={disabled || loading}
+        aria-busy={loading || undefined}
         {...props}
       >
         {loading ? (

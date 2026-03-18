@@ -128,7 +128,20 @@
       "Bash(tasklist //FI \"PID eq 27952\" 2>/dev/null; wmic process where \"ProcessId=27952\" get Name,CommandLine 2>/dev/null | head -5)",
       "Bash(taskkill //F //PID 30552 2>/dev/null; netstat -ano | grep \":8001.*LISTENING\")",
       "Bash(curl -s \"http://localhost:8001/health\" 2>&1 | head -1)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001 2>&1)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001 2>&1)",
+      "Bash(cd D:/Downloads/AIML/KhushFus/frontend && NEXT_LINT_IGNORE=1 npx next build --no-lint 2>&1 | tail -50)",
+      "Bash(find /d/Downloads/AIML/KhushFus/frontend -name \"README*\" -o -name \"CONTRIBUTING*\" -o -name \".storybook\" 2>/dev/null | head -10)",
+      "Bash(find /d/Downloads/AIML/KhushFus -maxdepth 2 -type f -name \".github\" -o -name \"*.yml\" 2>/dev/null | head -10)",
+      "Bash(npx tsc:*)",
+      "Bash(pytest tests/ --cov=src --cov=services --cov=shared --cov-report=term-missing)",
+      "Bash(find /d/Downloads/AIML/KhushFus -name *.md -path */docs/* -o -name API* -o -name api*)",
+      "Bash(DATABASE_URL=\"sqlite+aiosqlite:///./khushfus_dev.db\" JWT_SECRET_KEY=\"dev-secret\" uvicorn services.gateway.app.main:app --port 8000 --reload)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)"
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-code-plugins": true,
+    "code-review@claude-code-plugins": true
   }
 }

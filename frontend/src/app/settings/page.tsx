@@ -17,6 +17,8 @@ import {
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/rbac";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,6 +85,10 @@ interface ApiKeyData {
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
+  const { user } = useAuth();
+  const canManageTeam = user ? hasPermission(user.role, "settings.team") : false;
+  const canManageKeys = user ? hasPermission(user.role, "settings.apikeys") : false;
+
   const [activeTab, setActiveTab] = useState("general");
 
   // General tab state
@@ -110,50 +116,45 @@ export default function SettingsPage() {
   const [showKeyDialog, setShowKeyDialog] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Load org
+  // Load org, members, and API keys in parallel
   useEffect(() => {
     (async () => {
-      try {
-        const data = await api.getOrg();
+      const [orgResult, membersResult, keysResult] = await Promise.allSettled([
+        api.getOrg(),
+        api.getMembers(),
+        api.getApiKeys(),
+      ]);
+
+      // Org
+      if (orgResult.status === "fulfilled") {
+        const data = orgResult.value;
         setOrgName(data?.name || "");
         setOrgDescription(data?.description || "");
         setOrgNotFound(false);
-      } catch (err: any) {
+      } else {
+        const err = orgResult.reason;
         if (err?.status === 404) {
           setOrgNotFound(true);
         }
         console.error("Failed to load org:", err);
-      } finally {
-        setOrgLoading(false);
       }
-    })();
-  }, []);
+      setOrgLoading(false);
 
-  // Load members
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await api.getMembers();
-        setMembers(data ?? []);
-      } catch {
+      // Members
+      if (membersResult.status === "fulfilled") {
+        setMembers(membersResult.value ?? []);
+      } else {
         setMembers([]);
-      } finally {
-        setMembersLoading(false);
       }
-    })();
-  }, []);
+      setMembersLoading(false);
 
-  // Load API keys
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await api.getApiKeys();
-        setApiKeys(data ?? []);
-      } catch {
+      // API Keys
+      if (keysResult.status === "fulfilled") {
+        setApiKeys(keysResult.value ?? []);
+      } else {
         setApiKeys([]);
-      } finally {
-        setKeysLoading(false);
       }
+      setKeysLoading(false);
     })();
   }, []);
 
@@ -240,18 +241,18 @@ export default function SettingsPage() {
     <AppShell title="Settings">
       <div className="space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="border-slate-700">
+          <TabsList className="border-white/[0.08]">
             <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="team">Team</TabsTrigger>
-            <TabsTrigger value="apikeys">API Keys</TabsTrigger>
+            {canManageTeam && <TabsTrigger value="team">Team</TabsTrigger>}
+            {canManageKeys && <TabsTrigger value="apikeys">API Keys</TabsTrigger>}
           </TabsList>
 
           {/* ---------------------------------------------------------------- */}
           {/* General Tab                                                       */}
           {/* ---------------------------------------------------------------- */}
           <TabsContent value="general">
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800">
+            <Card>
+              <CardHeader>
                 <CardTitle className="text-slate-100 flex items-center gap-2">
                   <Building2 className="h-5 w-5 text-slate-400" />
                   Organization
@@ -279,7 +280,7 @@ export default function SettingsPage() {
                       <Input
                         value={orgName}
                         onChange={(e) => setOrgName(e.target.value)}
-                        className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                        className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
                       />
                     </div>
                     <div>
@@ -290,7 +291,7 @@ export default function SettingsPage() {
                         value={orgDescription}
                         onChange={(e) => setOrgDescription(e.target.value)}
                         placeholder="Brief description of your organization"
-                        className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                        className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
                       />
                     </div>
                     <div className="flex justify-end pt-2">
@@ -317,8 +318,8 @@ export default function SettingsPage() {
           {/* Team Tab                                                          */}
           {/* ---------------------------------------------------------------- */}
           <TabsContent value="team">
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800 flex flex-row items-center justify-between">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-slate-100 flex items-center gap-2">
                   <Users className="h-5 w-5 text-slate-400" />
                   Team Members
@@ -348,19 +349,19 @@ export default function SettingsPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-slate-800/50 border-slate-700">
-                        <TableRow className="hover:bg-transparent border-slate-700">
+                      <TableHeader className="bg-white/[0.04] border-white/[0.08]">
+                        <TableRow className="hover:bg-transparent border-white/[0.08]">
                           <TableHead className="text-slate-400">User</TableHead>
                           <TableHead className="text-slate-400">Role</TableHead>
                           <TableHead className="text-slate-400">Joined</TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody className="divide-slate-800">
+                      <TableBody className="divide-white/[0.06]">
                         {members.map((m) => (
-                          <TableRow key={m.id} className="border-slate-800 hover:bg-slate-800/40">
+                          <TableRow key={m.id} className="border-white/[0.06] hover:bg-white/[0.04]">
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center">
+                                <div className="h-8 w-8 rounded-full bg-white/[0.06] flex items-center justify-center">
                                   <UserCircle className="h-5 w-5 text-slate-500" />
                                 </div>
                                 <div>
@@ -397,8 +398,8 @@ export default function SettingsPage() {
           {/* API Keys Tab                                                      */}
           {/* ---------------------------------------------------------------- */}
           <TabsContent value="apikeys">
-            <Card className="bg-slate-900/60 border-slate-800">
-              <CardHeader className="border-slate-800 flex flex-row items-center justify-between">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-slate-100 flex items-center gap-2">
                   <Key className="h-5 w-5 text-slate-400" />
                   API Keys
@@ -428,15 +429,15 @@ export default function SettingsPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-slate-800/50 border-slate-700">
-                        <TableRow className="hover:bg-transparent border-slate-700">
+                      <TableHeader className="bg-white/[0.04] border-white/[0.08]">
+                        <TableRow className="hover:bg-transparent border-white/[0.08]">
                           <TableHead className="text-slate-400">Name</TableHead>
                           <TableHead className="text-slate-400">Key</TableHead>
                           <TableHead className="text-slate-400">Status</TableHead>
                           <TableHead className="text-slate-400">Created</TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody className="divide-slate-800">
+                      <TableBody className="divide-white/[0.06]">
                         {apiKeys.map((k) => {
                           // 6.19 — Mask API keys: show only first 8 chars of the prefix
                           const prefix = k.key_prefix || k.prefix || "";
@@ -446,13 +447,13 @@ export default function SettingsPage() {
                               ? prefix + "..."
                               : "********...";
                           return (
-                            <TableRow key={k.id} className="border-slate-800 hover:bg-slate-800/40">
+                            <TableRow key={k.id} className="border-white/[0.06] hover:bg-white/[0.04]">
                               <TableCell className="text-slate-200 font-medium">
                                 {k.name || "Unnamed Key"}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
-                                  <code className="text-sm bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
+                                  <code className="text-sm bg-white/[0.06] text-slate-400 px-1.5 py-0.5 rounded">
                                     {masked}
                                   </code>
                                   {prefix && (
@@ -465,7 +466,7 @@ export default function SettingsPage() {
                                           toast.error("Failed to copy");
                                         }
                                       }}
-                                      className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
+                                      className="p-1 rounded hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors"
                                       title="Copy key prefix"
                                     >
                                       <Copy className="h-3.5 w-3.5" />
@@ -500,8 +501,8 @@ export default function SettingsPage() {
       </div>
 
       {/* Invite Member Dialog */}
-      <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setInviteOpen(false)} className="border-slate-700">
+      <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} className="bg-white/[0.03] border border-white/[0.08]">
+        <DialogHeader onClose={() => setInviteOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Invite Team Member</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
@@ -512,7 +513,7 @@ export default function SettingsPage() {
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
               placeholder="colleague@company.com"
-              className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
             />
           </div>
           <div>
@@ -520,7 +521,7 @@ export default function SettingsPage() {
             <Select
               value={inviteRole}
               onValueChange={(v) => setInviteRole(v)}
-              className="bg-slate-800 border-slate-700 text-slate-100"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100"
             >
               <option value="viewer">Viewer</option>
               <option value="analyst">Analyst</option>
@@ -529,11 +530,11 @@ export default function SettingsPage() {
             </Select>
           </div>
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-white/[0.03]">
           <Button
             variant="outline"
             onClick={() => setInviteOpen(false)}
-            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
           >
             Cancel
           </Button>
@@ -549,8 +550,8 @@ export default function SettingsPage() {
       </Dialog>
 
       {/* Create API Key Dialog */}
-      <Dialog open={createKeyOpen} onClose={() => setCreateKeyOpen(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setCreateKeyOpen(false)} className="border-slate-700">
+      <Dialog open={createKeyOpen} onClose={() => setCreateKeyOpen(false)} className="bg-white/[0.03] border border-white/[0.08]">
+        <DialogHeader onClose={() => setCreateKeyOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Create API Key</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
@@ -560,15 +561,15 @@ export default function SettingsPage() {
               value={keyName}
               onChange={(e) => setKeyName(e.target.value)}
               placeholder="Production API Key"
-              className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500"
+              className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
             />
           </div>
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-white/[0.03]">
           <Button
             variant="outline"
             onClick={() => setCreateKeyOpen(false)}
-            className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
           >
             Cancel
           </Button>
@@ -584,8 +585,8 @@ export default function SettingsPage() {
       </Dialog>
 
       {/* Key Created - Show Value Dialog */}
-      <Dialog open={showKeyDialog} onClose={() => setShowKeyDialog(false)} className="bg-slate-900 border border-slate-700">
-        <DialogHeader onClose={() => setShowKeyDialog(false)} className="border-slate-700">
+      <Dialog open={showKeyDialog} onClose={() => setShowKeyDialog(false)} className="bg-white/[0.03] border border-white/[0.08]">
+        <DialogHeader onClose={() => setShowKeyDialog(false)} className="border-white/[0.08]">
           <span className="text-slate-100">API Key Created</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
@@ -596,14 +597,14 @@ export default function SettingsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm bg-slate-800 text-slate-300 p-3 rounded-lg break-all">
+            <code className="flex-1 text-sm bg-white/[0.06] text-slate-300 p-3 rounded-lg break-all">
               {newKeyValue}
             </code>
             <Button
               variant="outline"
               size="sm"
               onClick={handleCopy}
-              className="border-slate-600 text-slate-300 hover:bg-slate-800"
+              className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
             >
               {copied ? (
                 <Check className="h-4 w-4 text-emerald-400" />
@@ -613,7 +614,7 @@ export default function SettingsPage() {
             </Button>
           </div>
         </DialogContent>
-        <DialogFooter className="border-slate-700 bg-slate-900/50">
+        <DialogFooter className="border-white/[0.08] bg-white/[0.03]">
           <Button
             onClick={() => setShowKeyDialog(false)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white"

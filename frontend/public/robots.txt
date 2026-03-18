@@ -1,0 +1,20 @@
+# KhushFus Social Listening Platform
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /mentions
+Disallow: /projects
+Disallow: /analytics
+Disallow: /competitive
+Disallow: /search
+Disallow: /reports
+Disallow: /alerts
+Disallow: /publishing
+Disallow: /settings
+
+# Only allow public marketing pages and auth pages to be indexed
+Allow: /login
+Allow: /register
+
+Sitemap: https://app.khushfus.com/sitemap.xml

@@ -82,7 +82,7 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/projects/${project.id}`}
-                className="group bg-slate-900/60 rounded-xl border border-slate-800 p-6 hover:border-indigo-500/50 hover:bg-slate-900/80 transition-all duration-200"
+                className="group bg-white/[0.03] rounded-xl border border-white/[0.06] p-6 hover:border-indigo-500/50 hover:bg-white/[0.05] transition-all duration-200"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="min-w-0 flex-1">
@@ -121,7 +121,7 @@ export default function ProjectsPage() {
 
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/60 rounded-lg">
+                  <div className="flex items-center gap-2 p-2 bg-white/[0.04] rounded-lg">
                     <MessageSquare className="h-4 w-4 text-indigo-400" />
                     <div>
                       <p className="text-sm font-semibold text-slate-200">
@@ -130,7 +130,7 @@ export default function ProjectsPage() {
                       <p className="text-[10px] text-slate-500">Mentions</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/60 rounded-lg">
+                  <div className="flex items-center gap-2 p-2 bg-white/[0.04] rounded-lg">
                     <Hash className="h-4 w-4 text-indigo-400" />
                     <div>
                       <p className="text-sm font-semibold text-slate-200">
@@ -142,7 +142,7 @@ export default function ProjectsPage() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
                   <span className="text-xs text-slate-500 flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     {project.created_at ? formatDate(project.created_at) : "---"}

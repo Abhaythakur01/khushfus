@@ -1,11 +1,11 @@
 /**
  * Error tracking utility for KhushFus.
  *
- * Currently logs structured error data to the console.
- * TODO: Replace with Sentry integration for production error tracking.
- *       Install @sentry/nextjs, call Sentry.init() in instrumentation.ts,
- *       and replace the console.error call below with Sentry.captureException().
+ * In production, errors are reported to Sentry. In development, they are
+ * logged to the console with structured context.
  */
+
+import * as Sentry from "@sentry/nextjs";
 
 export interface ErrorContext {
   /** The page/route where the error occurred */
@@ -33,17 +33,58 @@ export function reportError(error: unknown, context?: ErrorContext): void {
   try {
     const err = error instanceof Error ? error : new Error(String(error));
 
-    const structured: StructuredError = {
-      message: err.message,
-      stack: err.stack,
-      timestamp: new Date().toISOString(),
-      context,
-    };
+    // Set user context for Sentry
+    if (context?.userEmail) {
+      Sentry.setUser({ email: context.userEmail });
+    }
 
-    // TODO: Replace with Sentry.captureException(err, { extra: context })
-    console.error("[KhushFus Error]", structured);
+    // Report to Sentry in production
+    Sentry.captureException(err, {
+      extra: {
+        page: context?.page,
+        component: context?.component,
+        ...context?.metadata,
+      },
+      tags: {
+        component: context?.component,
+        page: context?.page,
+      },
+    });
+
+    // Always log locally for dev visibility
+    if (process.env.NODE_ENV !== "production") {
+      const structured: StructuredError = {
+        message: err.message,
+        stack: err.stack,
+        timestamp: new Date().toISOString(),
+        context,
+      };
+      console.error("[KhushFus Error]", structured);
+    }
   } catch {
     // reportError must never throw
     console.error("[KhushFus Error] Failed to report error:", error);
   }
+}
+
+/**
+ * Set the current user context for all future error reports.
+ */
+export function setErrorUser(email: string | null): void {
+  if (email) {
+    Sentry.setUser({ email });
+  } else {
+    Sentry.setUser(null);
+  }
+}
+
+/**
+ * Add a breadcrumb for debugging error context.
+ */
+export function addBreadcrumb(message: string, data?: Record<string, unknown>): void {
+  Sentry.addBreadcrumb({
+    message,
+    data,
+    level: "info",
+  });
 }

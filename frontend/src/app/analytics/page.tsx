@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import { DashboardMetrics } from "./analyticsTypes";
 
@@ -43,13 +44,6 @@ const TIME_RANGES = [
   { label: "90 days", value: 90 },
 ];
 
-// ---------- types ----------
-
-interface Project {
-  id: number;
-  name: string;
-}
-
 // ---------- empty state ----------
 
 function EmptyState({ message }: { message: string }) {
@@ -86,9 +80,8 @@ function normalizeMetrics(data: any): DashboardMetrics {
 // ---------- main page ----------
 
 export default function AnalyticsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { projects, isLoading: projectsLoading } = useProjects();
   const [selectedProject, setSelectedProject] = useState<number>(0);
-  const [projectsLoading, setProjectsLoading] = useState(true);
   const [days, setDays] = useState(30);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -96,25 +89,12 @@ export default function AnalyticsPage() {
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
 
-  // Load projects
+  // Auto-select first project
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const data = await api.getProjects();
-        if (cancelled) return;
-        const list = (data || []).map((p: any) => ({ id: p.id, name: p.name }));
-        setProjects(list);
-        if (list.length > 0) setSelectedProject(list[0].id);
-      } catch (err) {
-        console.error("Failed to load projects:", err);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
+    if (projects.length > 0 && !selectedProject) {
+      setSelectedProject(projects[0].id);
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+  }, [projects, selectedProject]);
 
   // Load dashboard metrics
   const fetchMetrics = useCallback(async () => {
@@ -155,7 +135,7 @@ export default function AnalyticsPage() {
           value={selectedProject}
           onChange={(e) => setSelectedProject(Number(e.target.value))}
           disabled={projectsLoading}
-          className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           {projectsLoading ? (
             <option>Loading projects...</option>
@@ -168,7 +148,7 @@ export default function AnalyticsPage() {
           )}
         </select>
 
-        <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5">
+        <div className="flex items-center bg-white/[0.06] rounded-lg border border-white/[0.08] p-0.5">
           {TIME_RANGES.map((r) => (
             <button
               key={r.value}
@@ -187,7 +167,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-800 mb-6">
+      <div className="flex items-center gap-1 border-b border-white/[0.06] mb-6">
         {tabs.map((tab) => (
           <button
             key={tab.id}

@@ -18,31 +18,31 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  positive: "bg-success-50 text-success-700 ring-success-600/20",
-  negative: "bg-danger-50 text-danger-700 ring-danger-600/20",
-  neutral: "bg-slate-100 text-slate-600 ring-slate-500/10",
-  twitter: "bg-sky-50 text-sky-700 ring-sky-600/20",
-  facebook: "bg-indigo-50 text-indigo-700 ring-indigo-600/20",
-  instagram: "bg-pink-50 text-pink-700 ring-pink-600/20",
-  reddit: "bg-orange-50 text-orange-700 ring-orange-600/20",
-  news: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  blog: "bg-violet-50 text-violet-700 ring-violet-600/20",
-  youtube: "bg-red-50 text-red-700 ring-red-600/20",
-  default: "bg-slate-100 text-slate-600 ring-slate-500/10",
-  destructive: "bg-danger-50 text-danger-700 ring-danger-600/20",
-  outline: "bg-transparent text-slate-700 ring-slate-300",
+  positive: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
+  negative: "bg-red-500/10 text-red-400 ring-red-500/20",
+  neutral: "bg-slate-500/10 text-slate-400 ring-slate-500/20",
+  twitter: "bg-sky-500/10 text-sky-400 ring-sky-500/20",
+  facebook: "bg-indigo-500/10 text-indigo-400 ring-indigo-500/20",
+  instagram: "bg-pink-500/10 text-pink-400 ring-pink-500/20",
+  reddit: "bg-orange-500/10 text-orange-400 ring-orange-500/20",
+  news: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
+  blog: "bg-violet-500/10 text-violet-400 ring-violet-500/20",
+  youtube: "bg-red-500/10 text-red-400 ring-red-500/20",
+  default: "bg-slate-500/10 text-slate-400 ring-slate-500/20",
+  destructive: "bg-red-500/10 text-red-400 ring-red-500/20",
+  outline: "bg-transparent text-slate-400 ring-white/[0.1]",
 };
 
 const sizeStyles = {
   sm: "px-1.5 py-0.5 text-[10px]",
-  md: "px-2 py-0.5 text-xs",
+  md: "px-2.5 py-0.5 text-xs",
 };
 
 function Badge({ variant = "default", size = "md", className, ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center font-medium rounded-full ring-1 ring-inset capitalize",
+        "inline-flex items-center font-medium rounded-full ring-1 ring-inset capitalize tracking-wide",
         variantStyles[variant],
         sizeStyles[size],
         className,
