@@ -55,10 +55,22 @@ async def check_idempotency(
 
     full_key = f"{_PREFIX}{idempotency_key}"
     try:
-        existing = await redis.get(full_key)
-        if existing is not None:
-            logger.debug("Duplicate request detected: key=%s status=%s", idempotency_key, existing)
-            return int(existing)
+        # Use SET NX (set-if-not-exists) atomically to eliminate the race window
+        # between a GET and a separate SET.  A sentinel value ("pending") is stored
+        # so that concurrent callers immediately see the key as taken.
+        # store_response_status will overwrite it with the real status code later.
+        was_set = await redis.set(full_key, "pending", ex=ttl, nx=True)
+        if not was_set:
+            # Key already existed — fetch the current value (may be "pending" or a
+            # real status code from a previously completed request).
+            existing = await redis.get(full_key)
+            if existing is not None and existing != b"pending" and existing != "pending":
+                logger.debug("Duplicate request detected: key=%s status=%s", idempotency_key, existing)
+                return int(existing)
+            # Key is present but still "pending" (another request is in-flight).
+            # Treat as duplicate to avoid double-processing.
+            logger.debug("Duplicate request in-flight detected: key=%s", idempotency_key)
+            return 409
     except Exception:
         logger.warning("Redis error during idempotency check for key=%s", idempotency_key, exc_info=True)
     return None

@@ -9,6 +9,7 @@ import { canAccessRoute } from "@/lib/rbac";
 import { getInitials } from "@/lib/utils";
 import {
   LayoutDashboard,
+  LayoutGrid,
   MessageSquare,
   FolderKanban,
   BarChart3,
@@ -16,9 +17,12 @@ import {
   Search,
   FileText,
   Bell,
+  AlertTriangle,
   Send,
+  Workflow,
   ClipboardList,
   Settings,
+  Plug,
   LogOut,
   ChevronDown,
   ChevronLeft,
@@ -34,6 +38,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+  { label: "Dashboards", href: "/dashboards", icon: <LayoutGrid className="h-[18px] w-[18px]" /> },
   { label: "Mentions", href: "/mentions", icon: <MessageSquare className="h-[18px] w-[18px]" /> },
   { label: "Projects", href: "/projects", icon: <FolderKanban className="h-[18px] w-[18px]" /> },
   { label: "Analytics", href: "/analytics", icon: <BarChart3 className="h-[18px] w-[18px]" /> },
@@ -41,9 +46,12 @@ const navItems: NavItem[] = [
   { label: "Search", href: "/search", icon: <Search className="h-[18px] w-[18px]" /> },
   { label: "Reports", href: "/reports", icon: <FileText className="h-[18px] w-[18px]" /> },
   { label: "Alerts", href: "/alerts", icon: <Bell className="h-[18px] w-[18px]" /> },
+  { label: "Crisis", href: "/crisis", icon: <AlertTriangle className="h-[18px] w-[18px]" /> },
   { label: "Publishing", href: "/publishing", icon: <Send className="h-[18px] w-[18px]" /> },
+  { label: "Workflows", href: "/workflows", icon: <Workflow className="h-[18px] w-[18px]" /> },
   { label: "Audit", href: "/audit", icon: <ClipboardList className="h-[18px] w-[18px]" /> },
   { label: "Settings", href: "/settings", icon: <Settings className="h-[18px] w-[18px]" /> },
+  { label: "Integrations", href: "/integrations", icon: <Plug className="h-[18px] w-[18px]" /> },
 ];
 
 interface SidebarProps {

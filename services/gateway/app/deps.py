@@ -48,12 +48,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 async def get_db(request: Request) -> AsyncSession:
     async with request.app.state.db_session() as session:
-        # Set RLS tenant context if user is authenticated
-        user = getattr(request.state, "_current_user", None)
-        if user:
-            org_id = getattr(request.state, "_org_id", None)
-            if org_id:
-                await set_tenant_context(session, org_id)
+        # RLS tenant context is set by get_current_user after JWT validation,
+        # so there is no need to repeat it here.
         yield session
 
 

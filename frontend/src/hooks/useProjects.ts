@@ -183,6 +183,11 @@ export function useProject(id: number) {
     return kw;
   };
 
+  const deleteKeyword = async (keywordId: number) => {
+    await api.deleteKeyword(id, keywordId);
+    await fetchProject();
+  };
+
   const triggerCollection = async (hoursBack: number = 24) => {
     return api.triggerCollection(id, hoursBack);
   };
@@ -193,6 +198,7 @@ export function useProject(id: number) {
     error,
     updateProject,
     addKeyword,
+    deleteKeyword,
     triggerCollection,
     refetch: fetchProject,
   };

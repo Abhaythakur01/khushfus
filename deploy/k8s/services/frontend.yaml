@@ -20,6 +20,13 @@ spec:
       containers:
         - name: frontend
           image: registry.gitlab.com/khushfus/khushfus/frontend:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 3000
           resources:

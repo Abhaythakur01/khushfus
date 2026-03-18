@@ -59,6 +59,9 @@ class Platform(str, enum.Enum):
     REVIEWS = "reviews"
     MASTODON = "mastodon"
     PODCAST = "podcast"
+    TRUSTPILOT = "trustpilot"
+    YELP = "yelp"
+    G2 = "g2"
     OTHER = "other"
 
 

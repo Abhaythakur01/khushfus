@@ -37,6 +37,13 @@ if not WEBHOOK_SECRET and os.getenv("TESTING") != "1":
 if not WEBHOOK_SECRET:
     WEBHOOK_SECRET = "test-only-webhook-secret"
 
+if os.getenv("ENVIRONMENT") == "production":
+    import sys
+
+    if not os.getenv("WEBHOOK_SIGNING_SECRET") or WEBHOOK_SECRET == "unsigned":
+        print("FATAL: WEBHOOK_SIGNING_SECRET must be set to a strong secret in production!", file=sys.stderr)
+        sys.exit(1)
+
 SIGNATURE_ALGORITHM = "sha256"
 
 

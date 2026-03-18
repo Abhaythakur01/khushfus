@@ -159,6 +159,7 @@ export default function OnboardingPage() {
         keywords: keywords.map((k) => ({ term: k, keyword_type: "brand" })),
       });
       setIsSuccess(true);
+      setStep(3);
     } catch (err: any) {
       setSubmitError(
         err?.safeMessage || err?.message || "Failed to create project. Please try again."
@@ -171,7 +172,6 @@ export default function OnboardingPage() {
   function goToNext() {
     if (step === 2) {
       handleSubmit();
-      setStep(3);
     } else {
       setStep((s) => Math.min(s + 1, 3));
     }

@@ -476,7 +476,9 @@ class EventBus:
                 "min_id": info.get("min", None) if isinstance(info, dict) else (info[1] if len(info) > 1 else None),
                 "max_id": info.get("max", None) if isinstance(info, dict) else (info[2] if len(info) > 2 else None),
                 "consumers": (
-                    info.get("consumers", []) if isinstance(info, dict) else (info[3] if len(info) > 3 else [])
+                    info.get("consumers", []) if isinstance(info, dict) else (
+                        (info[3] if info[3] is not None else []) if len(info) > 3 else []
+                    )
                 ),
             }
         except Exception as e:
@@ -532,19 +534,21 @@ class EventBus:
                         retry_count=retries + 1,
                     )
                 else:
-                    # Re-publish with incremented retry count for retry
-                    data["_retry_count"] = str(retries + 1)
-                    await self.publish_raw(stream, data)
-                    await self.ack(stream, group, msg_id)
+                    # Move to DLQ after max retries instead of re-publishing
+                    # (re-publishing causes exponential message amplification
+                    # since any consumer in the group can pick up the new message)
                     backoff = min(
                         policy.backoff_base * (2 ** retries),
                         policy.backoff_max,
                     )
                     logger.info(
-                        "Retrying %s (attempt %d/%d), backoff %.1fs",
-                        msg_id, retries + 1, policy.max_retries, backoff,
+                        "Retry %d/%d for %s failed, backoff %.1fs before next attempt",
+                        retries + 1, policy.max_retries, msg_id, backoff,
                     )
                     await asyncio.sleep(backoff)
+                    # Do not ack — leave the message in the PEL so the same
+                    # consumer can reclaim it on next read via XAUTOCLAIM/XPENDING.
+                    # The incremented retry count is tracked via delivery count.
 
     async def get_dlq_messages(self, stream: str, count: int = 100) -> list[tuple[str, dict]]:
         """Read messages from a DLQ stream.

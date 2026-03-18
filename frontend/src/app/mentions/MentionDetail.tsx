@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Flag,
   Heart,
@@ -12,10 +12,248 @@ import {
   Bot,
   Globe,
   Clock,
+  Loader2,
+  Tag,
+  Plus,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn, formatNumber } from "@/lib/utils";
 import { PLATFORM_COLORS, PLATFORM_LABELS, SENTIMENT_BADGE } from "@/lib/constants";
+import { api } from "@/lib/api";
 import type { Mention } from "@/hooks/useMentions";
+
+// ---------------------------------------------------------------------------
+// Tag system — localStorage-backed
+// ---------------------------------------------------------------------------
+
+const LS_KEY = "khushfus_mention_tags";
+
+// Predefined tag categories and their colours
+export const TAG_CATEGORIES: Record<string, { bg: string; text: string; border: string }> = {
+  product:    { bg: "bg-indigo-500/15",  text: "text-indigo-300",  border: "border-indigo-500/30"  },
+  support:    { bg: "bg-amber-500/15",   text: "text-amber-300",   border: "border-amber-500/30"   },
+  feedback:   { bg: "bg-cyan-500/15",    text: "text-cyan-300",    border: "border-cyan-500/30"    },
+  complaint:  { bg: "bg-red-500/15",     text: "text-red-300",     border: "border-red-500/30"     },
+  praise:     { bg: "bg-emerald-500/15", text: "text-emerald-300", border: "border-emerald-500/30" },
+  question:   { bg: "bg-violet-500/15",  text: "text-violet-300",  border: "border-violet-500/30"  },
+  bug:        { bg: "bg-rose-500/15",    text: "text-rose-300",    border: "border-rose-500/30"    },
+  feature:    { bg: "bg-teal-500/15",    text: "text-teal-300",    border: "border-teal-500/30"    },
+  urgent:     { bg: "bg-orange-500/15",  text: "text-orange-300",  border: "border-orange-500/30"  },
+  review:     { bg: "bg-pink-500/15",    text: "text-pink-300",    border: "border-pink-500/30"    },
+};
+
+const PREDEFINED_TAGS = Object.keys(TAG_CATEGORIES);
+
+function getTagStyle(tag: string) {
+  const lower = tag.toLowerCase();
+  // Direct match
+  if (TAG_CATEGORIES[lower]) return TAG_CATEGORIES[lower];
+  // Partial match
+  const match = PREDEFINED_TAGS.find((k) => lower.includes(k) || k.includes(lower));
+  if (match) return TAG_CATEGORIES[match];
+  // Default
+  return { bg: "bg-slate-500/15", text: "text-slate-300", border: "border-slate-500/30" };
+}
+
+export function loadAllTags(): Record<number, string[]> {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAllTags(all: Record<number, string[]>) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(all));
+  } catch {
+    // storage full — silently ignore
+  }
+}
+
+function loadMentionTags(mentionId: number): string[] {
+  return loadAllTags()[mentionId] ?? [];
+}
+
+function saveMentionTags(mentionId: number, tags: string[]) {
+  const all = loadAllTags();
+  if (tags.length === 0) {
+    delete all[mentionId];
+  } else {
+    all[mentionId] = tags;
+  }
+  saveAllTags(all);
+}
+
+/** Collect all tags currently used across all mentions */
+export function collectAllUsedTags(): string[] {
+  const all = loadAllTags();
+  const set = new Set<string>();
+  Object.values(all).forEach((tags) => tags.forEach((t) => set.add(t)));
+  return Array.from(set).sort();
+}
+
+// ---------------------------------------------------------------------------
+// TagBadge
+// ---------------------------------------------------------------------------
+
+function TagBadge({ tag, onRemove }: { tag: string; onRemove?: () => void }) {
+  const style = getTagStyle(tag);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full border",
+        style.bg, style.text, style.border,
+      )}
+    >
+      {tag}
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          aria-label={`Remove tag ${tag}`}
+          className="ml-0.5 rounded-full hover:opacity-70 transition-opacity leading-none"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TagsSection — inline tag management within the detail panel
+// ---------------------------------------------------------------------------
+
+function TagsSection({ mentionId }: { mentionId: number }) {
+  const [tags, setTags] = useState<string[]>(() => loadMentionTags(mentionId));
+  const [addOpen, setAddOpen] = useState(false);
+  const [inputValue, setInputValue] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Re-sync when mentionId changes
+  useEffect(() => {
+    setTags(loadMentionTags(mentionId));
+    setAddOpen(false);
+    setInputValue("");
+  }, [mentionId]);
+
+  // Build autocomplete list from predefined + already used, minus already applied
+  useEffect(() => {
+    if (!addOpen) return;
+    const query = inputValue.trim().toLowerCase();
+    const pool = Array.from(new Set([...PREDEFINED_TAGS, ...collectAllUsedTags()])).filter(
+      (t) => !tags.includes(t),
+    );
+    if (!query) {
+      setSuggestions(pool.slice(0, 8));
+    } else {
+      setSuggestions(pool.filter((t) => t.toLowerCase().includes(query)).slice(0, 8));
+    }
+  }, [inputValue, addOpen, tags]);
+
+  useEffect(() => {
+    if (addOpen) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [addOpen]);
+
+  function addTag(tag: string) {
+    const trimmed = tag.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!trimmed || tags.includes(trimmed)) return;
+    const next = [...tags, trimmed];
+    setTags(next);
+    saveMentionTags(mentionId, next);
+    setInputValue("");
+    setAddOpen(false);
+  }
+
+  function removeTag(tag: string) {
+    const next = tags.filter((t) => t !== tag);
+    setTags(next);
+    saveMentionTags(mentionId, next);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (inputValue.trim()) addTag(inputValue);
+    } else if (e.key === "Escape") {
+      setAddOpen(false);
+      setInputValue("");
+    }
+  }
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <Tag className="h-3.5 w-3.5" /> Tags
+      </h3>
+
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {tags.map((tag) => (
+          <TagBadge key={tag} tag={tag} onRemove={() => removeTag(tag)} />
+        ))}
+
+        {!addOpen && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full border border-dashed border-slate-600 text-slate-500 hover:border-slate-400 hover:text-slate-300 transition-colors"
+          >
+            <Plus className="h-3 w-3" /> Add Tag
+          </button>
+        )}
+      </div>
+
+      {addOpen && (
+        <div className="relative">
+          <input
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a tag and press Enter…"
+            className="w-full h-8 rounded-lg border border-indigo-500/40 bg-white/[0.06] px-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/60"
+          />
+          <button
+            onClick={() => { setAddOpen(false); setInputValue(""); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+
+          {suggestions.length > 0 && (
+            <div className="absolute z-10 top-full mt-1 w-full bg-[#141925] border border-white/[0.08] rounded-lg shadow-xl overflow-hidden">
+              {suggestions.map((s) => {
+                const style = getTagStyle(s);
+                return (
+                  <button
+                    key={s}
+                    onMouseDown={(e) => { e.preventDefault(); addTag(s); }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/[0.06] transition-colors text-left"
+                  >
+                    <span
+                      className={cn(
+                        "inline-block w-2 h-2 rounded-full",
+                        style.bg.replace("/15", "/60"),
+                      )}
+                    />
+                    <span className={style.text}>{s}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helper components
+// ---------------------------------------------------------------------------
 
 function AuthorAvatar({ name }: { name: string }) {
   const colors = [
@@ -43,12 +281,40 @@ function PlatformIcon({ platform, size = "sm" }: { platform: string; size?: "sm"
   );
 }
 
+// ---------------------------------------------------------------------------
+// MentionDetail — main export
+// ---------------------------------------------------------------------------
+
 export default function MentionDetail({ mention, onClose, onFlag, onSentimentOverride }: {
   mention: Mention;
   onClose: () => void;
   onFlag: () => void;
   onSentimentOverride?: (sentiment: string) => void;
 }) {
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replySending, setReplySending] = useState(false);
+
+  const handleReply = async () => {
+    if (!replyText.trim()) return;
+    setReplySending(true);
+    try {
+      await api.createPost({
+        platform: mention.platform,
+        content: replyText.trim(),
+        reply_to_mention_id: mention.id,
+        status: "published",
+      });
+      toast.success("Reply sent");
+      setReplyText("");
+      setReplyOpen(false);
+    } catch {
+      toast.error("Failed to send reply");
+    } finally {
+      setReplySending(false);
+    }
+  };
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -168,6 +434,9 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
         </div>
       </div>
 
+      {/* Tags */}
+      <TagsSection mentionId={mention.id} />
+
       {/* Keywords */}
       {mention.keywords.length > 0 && (
         <div className="mb-6">
@@ -204,7 +473,10 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
 
       {/* Actions */}
       <div className="flex gap-2 border-t border-white/[0.06] pt-4">
-        <button className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+        <button
+          onClick={() => setReplyOpen((o) => !o)}
+          className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+        >
           <MessageCircle className="h-4 w-4" /> Reply
         </button>
         <button
@@ -223,6 +495,35 @@ export default function MentionDetail({ mention, onClose, onFlag, onSentimentOve
           <Download className="h-4 w-4" /> Export
         </button>
       </div>
+
+      {/* Inline reply area */}
+      {replyOpen && (
+        <div className="mt-4 space-y-2">
+          <textarea
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            placeholder="Write your reply..."
+            rows={3}
+            className="w-full rounded-lg bg-white/[0.06] border border-white/[0.08] text-slate-100 placeholder:text-slate-500 text-sm px-3 py-2 resize-none focus:outline-none focus:border-indigo-500"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setReplyOpen(false); setReplyText(""); }}
+              className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleReply}
+              disabled={replySending || !replyText.trim()}
+              className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {replySending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Send
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

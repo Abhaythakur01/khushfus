@@ -24,6 +24,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   owner: ["*"],
   admin: [
     "dashboard",
+    "dashboards",
+    "dashboards.manage",
     "mentions",
     "projects",
     "projects.manage",
@@ -34,15 +36,22 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "reports.generate",
     "alerts",
     "alerts.manage",
+    "crisis",
     "publishing",
     "publishing.manage",
+    "workflows",
+    "workflows.manage",
     "settings",
     "settings.team",
     "settings.apikeys",
+    "settings.sso",
     "audit",
+    "integrations",
   ],
   manager: [
     "dashboard",
+    "dashboards",
+    "dashboards.manage",
     "mentions",
     "projects",
     "projects.manage",
@@ -53,19 +62,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "reports.generate",
     "alerts",
     "alerts.manage",
+    "crisis",
     "publishing",
     "publishing.manage",
+    "workflows",
+    "workflows.manage",
   ],
   analyst: [
     "dashboard",
+    "dashboards",
+    "dashboards.manage",
     "mentions",
     "projects",
     "analytics",
     "competitive",
     "search",
     "reports",
+    "crisis",
   ],
-  viewer: ["dashboard", "mentions", "projects"],
+  viewer: ["dashboard", "dashboards", "mentions", "projects"],
 };
 
 // ---------------------------------------------------------------------------
@@ -76,7 +91,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
  * Check whether a role has a specific permission.
  * The `owner` role has wildcard access ("*").
  */
-export function hasPermission(role: string, permission: string): boolean {
+export function hasPermission(role: string | undefined | null, permission: string): boolean {
+  if (!role) return hasPermission("viewer", permission);
   const perms = ROLE_PERMISSIONS[role.toLowerCase()];
   if (!perms) return false;
   if (perms.includes("*")) return true;
@@ -110,14 +126,18 @@ const ROUTE_MAPPINGS: RouteMapping[] = [
   { path: "/settings", permission: "settings" },
   // Other routes
   { path: "/dashboard", permission: "dashboard" },
+  { path: "/dashboards", permission: "dashboards" },
   { path: "/mentions", permission: "mentions" },
   { path: "/analytics", permission: "analytics" },
   { path: "/competitive", permission: "competitive" },
   { path: "/search", permission: "search" },
   { path: "/reports", permission: "reports" },
   { path: "/alerts", permission: "alerts" },
+  { path: "/crisis", permission: "crisis" },
   { path: "/publishing", permission: "publishing" },
+  { path: "/workflows", permission: "workflows" },
   { path: "/audit", permission: "audit" },
+  { path: "/integrations", permission: "integrations" },
 ];
 
 /**
@@ -125,7 +145,8 @@ const ROUTE_MAPPINGS: RouteMapping[] = [
  * Returns true for unknown routes (e.g. root "/") to avoid blocking
  * redirects or 404 pages.
  */
-export function canAccessRoute(role: string, pathname: string): boolean {
+export function canAccessRoute(role: string | undefined | null, pathname: string): boolean {
+  if (!role) role = "viewer";
   for (const mapping of ROUTE_MAPPINGS) {
     if (mapping.exact) {
       if (pathname === mapping.path) {

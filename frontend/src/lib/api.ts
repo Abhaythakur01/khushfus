@@ -155,14 +155,32 @@ export interface AlertLog {
   acknowledged: boolean;
 }
 
+export interface Notification {
+  id: number;
+  type: "alert" | "mention" | "report" | "system" | "info";
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  link?: string;
+}
+
+export interface PaginatedNotifications {
+  items: Notification[];
+  total: number;
+}
+
 export interface ScheduledPost {
   id: number;
   project_id?: number | null;
-  platform: string;
+  platform?: string;
+  platforms?: string[];
   content: string;
-  scheduled_at: string;
-  status: "draft" | "scheduled" | "published" | "failed";
+  scheduled_at?: string;
+  status: "draft" | "pending_review" | "approved" | "scheduled" | "published" | "failed";
+  rejection_reason?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface OrgMember {
@@ -183,6 +201,42 @@ export interface ApiKey {
   scopes: string[];
   created_at: string;
   expires_at?: string;
+}
+
+export interface WorkflowTrigger {
+  type:
+    | "negative_influencer"
+    | "keyword_match"
+    | "sentiment_below"
+    | "sentiment_above"
+    | "platform_match"
+    | "high_engagement";
+  config: Record<string, string | number>;
+}
+
+export interface WorkflowAction {
+  type: "notify_slack" | "notify_email" | "flag_mention" | "escalate";
+  config: Record<string, string>;
+}
+
+export interface Workflow {
+  id: number | string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  triggers: WorkflowTrigger[];
+  actions: WorkflowAction[];
+  last_triggered_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface WorkflowPayload {
+  name: string;
+  description?: string;
+  is_active?: boolean;
+  triggers: WorkflowTrigger[];
+  actions: WorkflowAction[];
 }
 
 export interface DashboardMetrics {
@@ -690,6 +744,12 @@ class ApiClient {
     });
   }
 
+  async deleteKeyword(projectId: number, keywordId: number): Promise<void> {
+    return this.request<void>(`/api/v1/projects/${projectId}/keywords/${keywordId}`, {
+      method: "DELETE",
+    });
+  }
+
   async triggerCollection(projectId: number, hoursBack: number = 24): Promise<{ status: string }> {
     return this.request<{ status: string }>(`/api/v1/projects/${projectId}/collect`, {
       method: "POST",
@@ -723,6 +783,13 @@ class ApiClient {
     return this.request<any>(`/api/v1/mentions/${id}/flag`, {
       method: "POST",
       body: JSON.stringify({ is_flagged: flagged }),
+    });
+  }
+
+  async bulkFlagMentions(mentionIds: number[], isFlagged: boolean): Promise<any> {
+    return this.request<any>("/api/v1/mentions/bulk/flag", {
+      method: "POST",
+      body: JSON.stringify({ mention_ids: mentionIds, is_flagged: isFlagged }),
     });
   }
 
@@ -789,9 +856,17 @@ class ApiClient {
     return this.request<Report[]>(`/api/v1/reports?project_id=${projectId}`, { signal });
   }
 
-  async generateReport(projectId: number, type: string, format: string = "pdf"): Promise<Report> {
+  async generateReport(projectId: number, type: string, format: string = "pdf", schedule?: string): Promise<Report> {
+    const params = new URLSearchParams({
+      project_id: String(projectId),
+      report_type: type,
+      format,
+    });
+    if (schedule) {
+      params.set("schedule", schedule);
+    }
     return this.request<Report>(
-      `/api/v1/reports/generate?project_id=${projectId}&report_type=${encodeURIComponent(type)}&format=${encodeURIComponent(format)}`,
+      `/api/v1/reports/generate?${params.toString()}`,
       { method: "POST" },
     );
   }
@@ -809,6 +884,19 @@ class ApiClient {
     });
   }
 
+  async updateAlertRule(projectId: number, ruleId: number | string, data: Partial<AlertRule>): Promise<AlertRule> {
+    return this.request<AlertRule>(`/api/v1/alerts/${projectId}/rules/${ruleId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAlertRule(projectId: number, ruleId: number | string): Promise<void> {
+    return this.request<void>(`/api/v1/alerts/${projectId}/rules/${ruleId}`, {
+      method: "DELETE",
+    });
+  }
+
   async getAlertLogs(projectId: number, signal?: AbortSignal): Promise<AlertLog[]> {
     return this.request<AlertLog[]>(`/api/v1/alerts/${projectId}/logs`, { signal });
   }
@@ -823,6 +911,19 @@ class ApiClient {
     return this.request<ScheduledPost>("/api/v1/posts", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async updatePost(postId: number, data: Partial<ScheduledPost>): Promise<ScheduledPost> {
+    return this.request<ScheduledPost>(`/api/v1/posts/${postId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deletePost(postId: number): Promise<void> {
+    return this.request<void>(`/api/v1/posts/${postId}`, {
+      method: "DELETE",
     });
   }
 
@@ -858,6 +959,109 @@ class ApiClient {
     return this.request<ApiKey & { key?: string }>("/api/v1/org/api-keys", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateMemberRole(memberId: number, role: string): Promise<OrgMember> {
+    return this.request<OrgMember>(`/api/v1/org/members/${memberId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async removeMember(memberId: number): Promise<void> {
+    return this.request<void>(`/api/v1/org/members/${memberId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async deleteApiKey(keyId: number): Promise<void> {
+    return this.request<void>(`/api/v1/org/api-keys/${keyId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // ---------- Audit ----------
+
+  async getAuditLogs(params?: {
+    user_id?: string;
+    action?: string;
+    start_date?: string;
+    end_date?: string;
+    page?: number;
+    limit?: number;
+  }, signal?: AbortSignal): Promise<{ items: Record<string, unknown>[]; total: number }> {
+    const qs = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)])
+    ).toString();
+    return this.request<{ items: Record<string, unknown>[]; total: number }>(
+      `/api/v1/audit/logs${qs ? `?${qs}` : ""}`,
+      { signal },
+    );
+  }
+
+  // ---------- Notifications ----------
+
+  async getNotifications(page: number = 1, limit: number = 20, signal?: AbortSignal): Promise<PaginatedNotifications> {
+    return this.request<PaginatedNotifications>(
+      `/api/v1/notifications?page=${page}&limit=${limit}`,
+      { signal },
+    );
+  }
+
+  async markNotificationRead(id: number): Promise<void> {
+    return this.request<void>(`/api/v1/notifications/${id}/read`, {
+      method: "PATCH",
+    });
+  }
+
+  async markAllRead(): Promise<void> {
+    return this.request<void>("/api/v1/notifications/mark-all-read", {
+      method: "POST",
+    });
+  }
+
+  // ---------- Profile ----------
+
+  async updateProfile(data: { full_name?: string; avatar_url?: string }): Promise<User> {
+    return this.request<User>("/api/v1/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async changePassword(data: { current_password: string; new_password: string }): Promise<void> {
+    return this.request<void>("/api/v1/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ---------- Workflows ----------
+
+  async getWorkflows(signal?: AbortSignal): Promise<Workflow[]> {
+    return this.request<Workflow[]>("/api/v1/workflows", { signal });
+  }
+
+  async createWorkflow(data: WorkflowPayload): Promise<Workflow> {
+    return this.request<Workflow>("/api/v1/workflows", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWorkflow(id: number | string, data: Partial<WorkflowPayload>): Promise<Workflow> {
+    return this.request<Workflow>(`/api/v1/workflows/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteWorkflow(id: number | string): Promise<void> {
+    return this.request<void>(`/api/v1/workflows/${id}`, {
+      method: "DELETE",
     });
   }
 }

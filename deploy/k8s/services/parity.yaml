@@ -21,6 +21,13 @@ spec:
       containers:
         - name: publishing
           image: registry.gitlab.com/khushfus/khushfus/publishing:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8013
           envFrom:
@@ -87,6 +94,13 @@ spec:
       containers:
         - name: rate-limiter
           image: registry.gitlab.com/khushfus/khushfus/rate-limiter:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8014
           envFrom:
@@ -153,6 +167,13 @@ spec:
       containers:
         - name: enrichment
           image: registry.gitlab.com/khushfus/khushfus/enrichment:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           envFrom:
             - configMapRef:
                 name: khushfus-config
@@ -189,6 +210,13 @@ spec:
       containers:
         - name: export
           image: registry.gitlab.com/khushfus/khushfus/export:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8015
           envFrom:

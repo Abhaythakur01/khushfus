@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
-from shared.jwt_config import JWT_ALGORITHM, JWT_SECRET_KEY
+from shared.jwt_config import JWT_ALGORITHM, JWT_SECRET_KEY, get_signing_keys
 
 _security = HTTPBearer(auto_error=False)
 
@@ -15,11 +15,16 @@ async def get_token_payload(
     """Decode and return JWT payload, or None if no credentials provided."""
     if not credentials:
         return None
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # Try current key first, then previous key (for key rotation)
+    last_error = None
+    for _key_id, secret in get_signing_keys():
+        try:
+            payload = jwt.decode(credentials.credentials, secret, algorithms=[JWT_ALGORITHM])
+            return payload
+        except JWTError as e:
+            last_error = e
+            continue
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 async def require_token(payload: dict | None = Depends(get_token_payload)) -> dict:

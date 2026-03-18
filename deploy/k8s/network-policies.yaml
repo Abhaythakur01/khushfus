@@ -20,6 +20,20 @@ spec:
 
 ---
 # -----------------------------------------------------------------------------
+# Default: Deny all egress traffic in the namespace
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: khushfus
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+---
+# -----------------------------------------------------------------------------
 # Allow external traffic to gateway (from ingress controller)
 # -----------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
@@ -216,8 +230,6 @@ spec:
             matchLabels:
               app: prometheus
       ports:
-        - protocol: TCP
-          port: 9090
         - protocol: TCP
           port: 8000
         - protocol: TCP

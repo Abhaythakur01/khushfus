@@ -55,7 +55,13 @@ DATABASE_URL = os.getenv(
 # ---------------------------------------------------------------------------
 
 _security = HTTPBearer(auto_error=False)
-_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
+
+# Enforce a real secret in production
+if os.getenv("ENVIRONMENT") == "production" and _JWT_SECRET in ("", "dev-secret-change-in-production"):
+    import sys
+    print("FATAL: JWT_SECRET_KEY must be set to a secure value in production", file=sys.stderr)
+    sys.exit(1)
 _JWT_ALGO = "HS256"
 
 
@@ -570,6 +576,17 @@ async def health():
 @v1_router.websocket("/ws/mentions/{project_id}")
 async def ws_mentions(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time mention feed. Pushes new mentions as they arrive for the project."""
+    await websocket.accept()
+
+    # Accept token from query param (legacy) or as first message (preferred).
+    if not token:
+        try:
+            first_msg = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            msg_data = json.loads(first_msg)
+            if msg_data.get("type") == "auth":
+                token = msg_data.get("token", "")
+        except Exception:
+            pass
     if not token:
         await websocket.close(code=4001, reason="Token required")
         return
@@ -622,6 +639,17 @@ async def ws_mentions(websocket: WebSocket, project_id: int, token: str = Query(
 @v1_router.websocket("/ws/dashboard/{project_id}")
 async def ws_dashboard(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time dashboard updates: mention counts, sentiment counters, engagement."""
+    await websocket.accept()
+
+    # Accept token from query param (legacy) or as first message (preferred).
+    if not token:
+        try:
+            first_msg = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            msg_data = json.loads(first_msg)
+            if msg_data.get("type") == "auth":
+                token = msg_data.get("token", "")
+        except Exception:
+            pass
     if not token:
         await websocket.close(code=4001, reason="Token required")
         return
@@ -671,6 +699,17 @@ async def ws_dashboard(websocket: WebSocket, project_id: int, token: str = Query
 @v1_router.websocket("/ws/alerts/{project_id}")
 async def ws_alerts(websocket: WebSocket, project_id: int, token: str = Query("")):
     """Real-time alert notifications for a project."""
+    await websocket.accept()
+
+    # Accept token from query param (legacy) or as first message (preferred).
+    if not token:
+        try:
+            first_msg = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            msg_data = json.loads(first_msg)
+            if msg_data.get("type") == "auth":
+                token = msg_data.get("token", "")
+        except Exception:
+            pass
     if not token:
         await websocket.close(code=4001, reason="Token required")
         return

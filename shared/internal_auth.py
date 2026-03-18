@@ -43,6 +43,11 @@ if not INTERNAL_TOKEN:
             file=sys.stderr,
         )
 
+if os.getenv("ENVIRONMENT") == "production":
+    if INTERNAL_TOKEN == "dev-internal-token-change-in-production":
+        print("FATAL: INTERNAL_SERVICE_TOKEN must be set to a strong secret in production!", file=sys.stderr)
+        sys.exit(1)
+
 
 async def verify_internal_token(x_internal_token: str = Header(...)) -> None:
     """Validate that the caller supplied the correct internal service token."""

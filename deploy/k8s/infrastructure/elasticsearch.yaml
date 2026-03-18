@@ -18,10 +18,15 @@ spec:
         app: opensearch
         tier: infrastructure
     spec:
+      securityContext:
+        fsGroup: 1000
       initContainers:
         - name: fix-permissions
           image: busybox
           command: ["sh", "-c", "chown -R 1000:1000 /usr/share/opensearch/data"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
           volumeMounts:
             - name: es-data
               mountPath: /usr/share/opensearch/data

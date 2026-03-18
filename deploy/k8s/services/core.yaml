@@ -51,20 +51,17 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
-          # 7.18 TCP liveness probe for consumer service
-          ports:
-            - containerPort: 9092
-              name: health
+          # 7.18 Exec liveness probe for consumer service (no HTTP port)
           livenessProbe:
-            tcpSocket:
-              port: 9092
+            exec:
+              command: ["pgrep", "-f", "python"]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
-            tcpSocket:
-              port: 9092
+            exec:
+              command: ["pgrep", "-f", "python"]
             failureThreshold: 10
             periodSeconds: 5
           volumeMounts:
@@ -124,19 +121,16 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "1000m"
-          ports:
-            - containerPort: 9091
-              name: health
           livenessProbe:
-            tcpSocket:
-              port: 9091
+            exec:
+              command: ["pgrep", "-f", "python"]
             initialDelaySeconds: 45
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
-            tcpSocket:
-              port: 9091
+            exec:
+              command: ["pgrep", "-f", "python"]
             failureThreshold: 15
             periodSeconds: 5
           volumeMounts:
@@ -200,19 +194,16 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
-          ports:
-            - containerPort: 9093
-              name: health
           livenessProbe:
-            tcpSocket:
-              port: 9093
+            exec:
+              command: ["pgrep", "-f", "python"]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
-            tcpSocket:
-              port: 9093
+            exec:
+              command: ["pgrep", "-f", "python"]
             failureThreshold: 10
             periodSeconds: 5
           volumeMounts:
@@ -272,19 +263,16 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
-          ports:
-            - containerPort: 9097
-              name: health
           livenessProbe:
-            tcpSocket:
-              port: 9097
+            exec:
+              command: ["pgrep", "-f", "python"]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
-            tcpSocket:
-              port: 9097
+            exec:
+              command: ["pgrep", "-f", "python"]
             failureThreshold: 10
             periodSeconds: 5
           volumeMounts:
@@ -348,19 +336,16 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "250m"
-          ports:
-            - containerPort: 9094
-              name: health
           livenessProbe:
-            tcpSocket:
-              port: 9094
+            exec:
+              command: ["pgrep", "-f", "python"]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
-            tcpSocket:
-              port: 9094
+            exec:
+              command: ["pgrep", "-f", "python"]
             failureThreshold: 10
             periodSeconds: 5
           volumeMounts:

@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useProjects } from "@/hooks/useProjects";
 import { AppShell } from "@/components/layout/AppShell";
 import { DashboardMetrics } from "./analyticsTypes";
+import { DateRangePicker, type DateRange } from "@/components/ui/daterange";
 
 // ---------- code-split tab components (6.29 — lazy-load Recharts) ----------
 
@@ -36,13 +37,16 @@ const EngagementTab = dynamic(() => import("./EngagementTab"), {
   loading: () => <ChartLoadingPlaceholder />,
 });
 
-// ---------- constants ----------
+// ---------- helpers ----------
 
-const TIME_RANGES = [
-  { label: "7 days", value: 7 },
-  { label: "30 days", value: 30 },
-  { label: "90 days", value: 90 },
-];
+function daysInRange(range: DateRange): number {
+  return Math.max(
+    1,
+    Math.round(
+      (new Date(range.endDate).getTime() - new Date(range.startDate).getTime()) / 86400_000
+    ) + 1
+  );
+}
 
 // ---------- empty state ----------
 
@@ -82,7 +86,12 @@ function normalizeMetrics(data: any): DashboardMetrics {
 export default function AnalyticsPage() {
   const { projects, isLoading: projectsLoading } = useProjects();
   const [selectedProject, setSelectedProject] = useState<number>(0);
-  const [days, setDays] = useState(30);
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    return { startDate: start, endDate: end };
+  });
+  const days = daysInRange(dateRange);
   const [activeTab, setActiveTab] = useState("overview");
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -148,22 +157,10 @@ export default function AnalyticsPage() {
           )}
         </select>
 
-        <div className="flex items-center bg-white/[0.06] rounded-lg border border-white/[0.08] p-0.5">
-          {TIME_RANGES.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setDays(r.value)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                days === r.value
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:text-slate-200"
-              )}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker
+          defaultPreset="30d"
+          onChange={(range) => setDateRange(range)}
+        />
       </div>
 
       {/* Tabs */}

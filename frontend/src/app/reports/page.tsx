@@ -139,8 +139,8 @@ export default function ReportsPage() {
     if (!selectedProjectId) return;
     setGenerating(true);
     try {
-      await api.generateReport(selectedProjectId, scheduleFrequency, reportFormat);
-      toast.success(`${scheduleFrequency.charAt(0).toUpperCase() + scheduleFrequency.slice(1)} ${reportFormat.toUpperCase()} report generation started`);
+      await api.generateReport(selectedProjectId, reportType, reportFormat, scheduleFrequency);
+      toast.success(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} ${reportFormat.toUpperCase()} report generation started`);
       setDialogOpen(false);
       // Refresh list
       await fetchReports(selectedProjectId);

@@ -33,6 +33,10 @@ RATE_LIMITER_URL = os.getenv("RATE_LIMITER_URL", "http://rate-limiter:8014")
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMITER_TIMEOUT = float(os.getenv("RATE_LIMITER_TIMEOUT", "2.0"))
+# Set TRUSTED_PROXY=true only when the gateway is deployed behind a reverse proxy
+# (e.g. Nginx/Traefik) that sets X-Forwarded-For. When false, the direct client
+# IP is always used and X-Forwarded-For is ignored to prevent IP spoofing.
+_TRUSTED_PROXY: bool = os.getenv("TRUSTED_PROXY", "false").lower() in ("1", "true", "yes")
 
 # Paths that skip rate limiting
 SKIP_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
@@ -77,12 +81,14 @@ def _client_identifier(request: Request) -> str:
     api_key = request.headers.get("x-api-key")
     if api_key:
         return f"apikey:{api_key}"
-    # Use forwarded-for if behind a reverse proxy, else direct client IP
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        ip = forwarded.split(",")[0].strip()
-    else:
-        ip = request.client.host if request.client else "unknown"
+    # Only trust X-Forwarded-For when running behind a known reverse proxy.
+    # Trusting this header without validation allows clients to spoof their IP.
+    if _TRUSTED_PROXY:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            ip = forwarded.split(",")[0].strip()
+            return f"ip:{ip}"
+    ip = request.client.host if request.client else "unknown"
     return f"ip:{ip}"
 
 

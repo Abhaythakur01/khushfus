@@ -93,6 +93,7 @@ export default function ProjectDetailPage() {
     error,
     updateProject,
     addKeyword,
+    deleteKeyword,
     triggerCollection,
     refetch,
   } = useProject(projectId);
@@ -191,6 +192,7 @@ export default function ProjectDetailPage() {
           <KeywordsTab
             keywords={project.keywords}
             onAdd={addKeyword}
+            onDelete={deleteKeyword}
           />
         )}
         {activeTab === "settings" && (
@@ -419,14 +421,17 @@ function OverviewTab({
 function KeywordsTab({
   keywords,
   onAdd,
+  onDelete,
 }: {
   keywords: ProjectKeyword[];
   onAdd: (term: string, keywordType: string) => Promise<any>;
+  onDelete: (keywordId: number) => Promise<void>;
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newTerm, setNewTerm] = useState("");
   const [newType, setNewType] = useState("brand");
   const [isAdding, setIsAdding] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   async function handleAdd() {
     if (!newTerm.trim()) return;
@@ -441,6 +446,20 @@ function KeywordsTab({
       toast.error("Failed to add keyword");
     } finally {
       setIsAdding(false);
+    }
+  }
+
+  async function handleDelete(kw: ProjectKeyword) {
+    if (!window.confirm(`Delete keyword "${kw.term}"?`)) return;
+    setDeletingId(kw.id);
+    try {
+      await onDelete(kw.id);
+      toast.success(`Keyword "${kw.term}" deleted`);
+    } catch (err: any) {
+      console.error("Failed to delete keyword:", err);
+      toast.error("Failed to delete keyword");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -520,6 +539,9 @@ function KeywordsTab({
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Status
               </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.04]">
@@ -549,6 +571,20 @@ function KeywordsTab({
                   >
                     {kw.is_active ? "Active" : "Inactive"}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => handleDelete(kw)}
+                    disabled={deletingId === kw.id}
+                    aria-label={`Delete keyword ${kw.term}`}
+                    className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {deletingId === kw.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <X className="h-4 w-4" />
+                    )}
+                  </button>
                 </td>
               </tr>
             ))}

@@ -22,7 +22,7 @@ services:
       POSTGRES_USER: khushfus
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khushfus_dev}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +40,7 @@ services:
     command: >
       redis-server
       --appendonly yes
-      ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+      --requirepass ${REDIS_PASSWORD:-khushfus-dev-redis}
     ports:
       - "6379:6379"
     volumes:
@@ -60,7 +60,7 @@ services:
     environment:
       - discovery.type=single-node
       # WARNING: Enable security plugin in production (set DISABLE_SECURITY_PLUGIN=false)
-      - DISABLE_SECURITY_PLUGIN=${DISABLE_SECURITY_PLUGIN:-true}
+      - DISABLE_SECURITY_PLUGIN=${DISABLE_SECURITY_PLUGIN:-false}
       # Production: set OPENSEARCH_HEAP="-Xms2g -Xmx2g" or higher. 512m is for dev only.
       - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_HEAP:--Xms512m -Xmx512m}"
     ports:
@@ -97,7 +97,7 @@ services:
     build:
       context: .
       dockerfile: services/gateway/Dockerfile
-    command: uvicorn services.gateway.app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn services.gateway.app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     volumes:
@@ -323,7 +323,7 @@ services:
     build:
       context: .
       dockerfile: services/identity_service/Dockerfile
-    command: uvicorn services.identity_service.app.main:app --host 0.0.0.0 --port 8010 --reload
+    command: uvicorn services.identity_service.app.main:app --host 0.0.0.0 --port 8010
     ports:
       - "8010:8010"
     volumes:
@@ -356,7 +356,7 @@ services:
     build:
       context: .
       dockerfile: services/tenant_service/Dockerfile
-    command: uvicorn services.tenant_service.app.main:app --host 0.0.0.0 --port 8011 --reload
+    command: uvicorn services.tenant_service.app.main:app --host 0.0.0.0 --port 8011
     ports:
       - "8011:8011"
     volumes:
@@ -419,7 +419,7 @@ services:
     build:
       context: .
       dockerfile: services/search_service/Dockerfile
-    command: uvicorn services.search_service.app.main:app --host 0.0.0.0 --port 8012 --reload
+    command: uvicorn services.search_service.app.main:app --host 0.0.0.0 --port 8012
     ports:
       - "8012:8012"
     volumes:
@@ -457,7 +457,7 @@ services:
     build:
       context: .
       dockerfile: services/publishing_service/Dockerfile
-    command: uvicorn services.publishing_service.app.main:app --host 0.0.0.0 --port 8013 --reload
+    command: uvicorn services.publishing_service.app.main:app --host 0.0.0.0 --port 8013
     ports:
       - "8013:8013"
     volumes:
@@ -493,7 +493,7 @@ services:
     build:
       context: .
       dockerfile: services/rate_limiter_service/Dockerfile
-    command: uvicorn services.rate_limiter_service.app.main:app --host 0.0.0.0 --port 8014 --reload
+    command: uvicorn services.rate_limiter_service.app.main:app --host 0.0.0.0 --port 8014
     ports:
       - "8014:8014"
     volumes:
@@ -556,7 +556,7 @@ services:
     build:
       context: .
       dockerfile: services/export_service/Dockerfile
-    command: uvicorn services.export_service.app.main:app --host 0.0.0.0 --port 8015 --reload
+    command: uvicorn services.export_service.app.main:app --host 0.0.0.0 --port 8015
     ports:
       - "8015:8015"
     volumes:
@@ -594,7 +594,7 @@ services:
     build:
       context: .
       dockerfile: services/competitive_service/Dockerfile
-    command: uvicorn services.competitive_service.app.main:app --host 0.0.0.0 --port 8016 --reload
+    command: uvicorn services.competitive_service.app.main:app --host 0.0.0.0 --port 8016
     ports:
       - "8016:8016"
     volumes:
@@ -627,7 +627,7 @@ services:
     build:
       context: .
       dockerfile: services/scheduler_service/Dockerfile
-    command: uvicorn services.scheduler_service.app.main:app --host 0.0.0.0 --port 8017 --reload
+    command: uvicorn services.scheduler_service.app.main:app --host 0.0.0.0 --port 8017
     ports:
       - "8017:8017"
     volumes:
@@ -660,7 +660,7 @@ services:
     build:
       context: .
       dockerfile: services/audit_service/Dockerfile
-    command: uvicorn services.audit_service.app.main:app --host 0.0.0.0 --port 8018 --reload
+    command: uvicorn services.audit_service.app.main:app --host 0.0.0.0 --port 8018
     ports:
       - "8018:8018"
     volumes:
@@ -693,7 +693,7 @@ services:
     build:
       context: .
       dockerfile: services/realtime_service/Dockerfile
-    command: uvicorn services.realtime_service.app.main:app --host 0.0.0.0 --port 8019 --reload
+    command: uvicorn services.realtime_service.app.main:app --host 0.0.0.0 --port 8019
     ports:
       - "8019:8019"
     volumes:
@@ -725,7 +725,7 @@ services:
     build:
       context: .
       dockerfile: services/project_service/Dockerfile
-    command: uvicorn services.project_service.app.main:app --host 0.0.0.0 --port 8020 --reload
+    command: uvicorn services.project_service.app.main:app --host 0.0.0.0 --port 8020
     ports:
       - "8020:8020"
     volumes:

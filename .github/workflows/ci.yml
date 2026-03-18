@@ -90,11 +90,49 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        working-directory: .
+        run: pip install --quiet uvicorn[standard] fastapi aiosqlite sqlalchemy[asyncio] python-jose[cryptography] bcrypt pydantic-settings
+      - name: Start backend (SQLite, port 8000)
+        working-directory: .
+        run: |
+          DATABASE_URL="sqlite+aiosqlite:///./khushfus_e2e.db" \
+          JWT_SECRET_KEY="e2e-test-secret" \
+          uvicorn services.gateway.app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/backend.pid
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Backend is ready"; break
+            fi
+            echo "Waiting for backend... ($i/30)"; sleep 2
+          done
       - run: npm ci
+      - name: Build frontend for E2E
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+      - name: Start frontend (port 3000)
+        run: |
+          npm run start &
+          echo $! > /tmp/frontend.pid
+      - name: Wait for frontend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend is ready"; break
+            fi
+            echo "Waiting for frontend... ($i/30)"; sleep 2
+          done
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --project="Desktop Chrome"
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
+          BASE_URL: http://localhost:3000
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

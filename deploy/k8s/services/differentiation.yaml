@@ -21,6 +21,13 @@ spec:
       containers:
         - name: competitive
           image: registry.gitlab.com/khushfus/khushfus/competitive:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8016
           envFrom:
@@ -87,6 +94,13 @@ spec:
       containers:
         - name: scheduler
           image: registry.gitlab.com/khushfus/khushfus/scheduler:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8017
           envFrom:
@@ -153,6 +167,13 @@ spec:
       containers:
         - name: audit
           image: registry.gitlab.com/khushfus/khushfus/audit:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8018
           envFrom:
@@ -219,6 +240,13 @@ spec:
       containers:
         - name: realtime
           image: registry.gitlab.com/khushfus/khushfus/realtime:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8019
           envFrom:
@@ -285,6 +313,13 @@ spec:
       containers:
         - name: project
           image: registry.gitlab.com/khushfus/khushfus/project:REPLACE_WITH_TAG
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8020
           envFrom:

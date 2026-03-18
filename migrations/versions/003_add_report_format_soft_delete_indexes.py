@@ -77,7 +77,10 @@ def upgrade() -> None:
 
     # --- Mention: composite dedup index ---
     # Drop old unique constraint (project_id, source_id) and replace with (project_id, source_id, platform)
-    op.drop_constraint("uq_mention_source", "mentions", type_="unique")
+    try:
+        op.drop_constraint("uq_mention_source", "mentions", type_="unique")
+    except Exception:
+        pass  # Constraint may not exist if schema was created without it
     op.create_unique_constraint("uq_mention_source_platform", "mentions", ["project_id", "source_id", "platform"])
     op.create_index("ix_mention_dedup", "mentions", ["project_id", "source_id", "platform"])
 

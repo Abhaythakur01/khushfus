@@ -55,12 +55,15 @@ async def create_project(
     org_id = get_user_org_id(request)
     if data.name.strip().lower() in RESERVED_PROJECT_NAMES:
         raise HTTPException(status_code=400, detail=f"Project name '{data.name.strip()}' is reserved")
+    resolved_org_id = org_id or data.organization_id
+    if not resolved_org_id:
+        raise HTTPException(status_code=400, detail="Organization ID required")
     project = Project(
         name=data.name,
         description=data.description,
         client_name=data.client_name,
         platforms=data.platforms,
-        organization_id=org_id or data.organization_id or 0,
+        organization_id=resolved_org_id,
     )
     db.add(project)
     await db.flush()
@@ -128,13 +131,19 @@ async def update_project(
 )
 async def trigger_collection(
     project_id: int,
-    data: CollectRequest,
     request: Request,
     background_tasks: BackgroundTasks,
     user=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
-    bus: EventBus = Depends(get_event_bus),
+    bus=Depends(get_event_bus),
 ):
+    # Parse body manually to avoid BaseHTTPMiddleware body-consumption issues
+    try:
+        body = await request.json()
+        hours_back = int(body.get("hours_back", 24)) if body else 24
+    except Exception:
+        hours_back = 24
+
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -143,13 +152,13 @@ async def trigger_collection(
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Try Redis event bus first (microservice mode)
-    if bus._redis is not None:
+    if bus is not None and getattr(bus, "_redis", None) is not None:
         try:
             await bus.publish(
                 "collection:request",
                 {
                     "project_id": project_id,
-                    "hours_back": data.hours_back,
+                    "hours_back": hours_back,
                 },
             )
             return {"status": "collection_started", "project_id": project_id, "mode": "distributed"}
@@ -162,7 +171,7 @@ async def trigger_collection(
         _run_collection_async,
         session_factory,
         project_id,
-        data.hours_back,
+        hours_back,
     )
     return {"status": "collection_started", "project_id": project_id, "mode": "direct"}
 
@@ -200,3 +209,31 @@ async def add_keyword(
     await db.commit()
     await db.refresh(keyword)
     return {"id": keyword.id, "term": keyword.term, "keyword_type": keyword.keyword_type}
+
+
+@router.delete(
+    "/{project_id}/keywords/{keyword_id}",
+    status_code=204,
+    summary="Delete a keyword",
+    description="Remove a tracking keyword from a project.",
+)
+async def delete_keyword(
+    project_id: int,
+    keyword_id: int,
+    request: Request,
+    user=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    org_id = get_user_org_id(request)
+    if org_id and project.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    keyword = await db.get(Keyword, keyword_id)
+    if not keyword or keyword.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+
+    await db.delete(keyword)
+    await db.commit()

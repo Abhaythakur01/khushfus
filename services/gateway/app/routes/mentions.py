@@ -47,11 +47,19 @@ async def list_mentions(
     count_query = select(func.count(Mention.id)).where(Mention.project_id == project_id)
 
     if platform:
-        query = query.where(Mention.platform == Platform(platform))
-        count_query = count_query.where(Mention.platform == Platform(platform))
+        try:
+            platform_enum = Platform(platform)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
+        query = query.where(Mention.platform == platform_enum)
+        count_query = count_query.where(Mention.platform == platform_enum)
     if sentiment:
-        query = query.where(Mention.sentiment == Sentiment(sentiment))
-        count_query = count_query.where(Mention.sentiment == Sentiment(sentiment))
+        try:
+            sentiment_enum = Sentiment(sentiment)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid sentiment: {sentiment}")
+        query = query.where(Mention.sentiment == sentiment_enum)
+        count_query = count_query.where(Mention.sentiment == sentiment_enum)
     if keyword:
         query = query.where(Mention.matched_keywords.contains(keyword))
         count_query = count_query.where(Mention.matched_keywords.contains(keyword))
@@ -109,6 +117,12 @@ async def toggle_flag(
     mention = await db.get(Mention, mention_id)
     if not mention:
         raise HTTPException(status_code=404, detail="Mention not found")
+    # Verify mention's project belongs to user's org
+    org_id = get_user_org_id(request)
+    if org_id:
+        project = await db.get(Project, mention.project_id)
+        if not project or project.organization_id != org_id:
+            raise HTTPException(status_code=404, detail="Mention not found")
     mention.is_flagged = not mention.is_flagged
     await db.commit()
     return {"id": mention.id, "is_flagged": mention.is_flagged}
@@ -136,7 +150,11 @@ async def bulk_flag(
     db: AsyncSession = Depends(get_db),
 ):
     """Set is_flagged on multiple mentions in one request."""
-    result = await db.execute(select(Mention).where(Mention.id.in_(payload.mention_ids)))
+    org_id = get_user_org_id(request)
+    query = select(Mention).where(Mention.id.in_(payload.mention_ids))
+    if org_id:
+        query = query.join(Project, Mention.project_id == Project.id).where(Project.organization_id == org_id)
+    result = await db.execute(query)
     mentions = result.scalars().all()
     if not mentions:
         raise HTTPException(status_code=404, detail="No mentions found")
@@ -161,7 +179,11 @@ async def bulk_assign(
     db: AsyncSession = Depends(get_db),
 ):
     """Assign multiple mentions to a user in one request."""
-    result = await db.execute(select(Mention).where(Mention.id.in_(payload.mention_ids)))
+    org_id = get_user_org_id(request)
+    query = select(Mention).where(Mention.id.in_(payload.mention_ids))
+    if org_id:
+        query = query.join(Project, Mention.project_id == Project.id).where(Project.organization_id == org_id)
+    result = await db.execute(query)
     mentions = result.scalars().all()
     if not mentions:
         raise HTTPException(status_code=404, detail="No mentions found")

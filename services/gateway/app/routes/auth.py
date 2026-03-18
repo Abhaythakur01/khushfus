@@ -37,6 +37,16 @@ class AuthResponse(BaseModel):
     user: UserOut
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    avatar_url: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 @router.post(
     "/register",
     response_model=AuthResponse,
@@ -90,3 +100,48 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(user: User = Depends(require_auth)):
     """Return the profile of the currently authenticated user."""
     return user
+
+
+@router.patch(
+    "/profile",
+    response_model=UserOut,
+    summary="Update user profile",
+    description="Update the authenticated user's display name or avatar URL.",
+)
+async def update_profile(
+    data: UpdateProfileRequest,
+    user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update mutable profile fields for the authenticated user."""
+    if data.full_name is not None:
+        user.full_name = data.full_name
+    if data.avatar_url is not None:
+        user.avatar_url = data.avatar_url  # type: ignore[attr-defined]
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.post(
+    "/change-password",
+    status_code=204,
+    summary="Change user password",
+    description="Verify the current password then replace it with a new one.",
+    responses={
+        400: {"description": "Current password is incorrect"},
+    },
+)
+async def change_password(
+    data: ChangePasswordRequest,
+    user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify the current password and set a new one for the authenticated user."""
+    if not verify_password(data.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    user.hashed_password = hash_password(data.new_password)
+    await db.commit()

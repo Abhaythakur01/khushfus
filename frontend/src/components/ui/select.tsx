@@ -20,7 +20,13 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       onValueChange?.(e.target.value);
       if (onChange) {
-        (onChange as (value: string) => void)(e.target.value);
+        // The prop accepts either a native ChangeEventHandler or a value-only callback.
+        // We cannot safely distinguish the two forms at runtime after minification, so we
+        // forward the native event to native-event handlers (standard React pattern) and
+        // separately provide the extracted value via onValueChange for value-only consumers.
+        // Callers that need only the string value should use `onValueChange`; callers that
+        // pass a native event handler to `onChange` receive the full event as expected.
+        (onChange as React.ChangeEventHandler<HTMLSelectElement>)(e);
       }
     };
 

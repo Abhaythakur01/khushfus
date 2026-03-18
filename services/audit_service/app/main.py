@@ -65,7 +65,13 @@ metrics = ConsumerMetrics("audit-service")
 # ---------------------------------------------------------------------------
 
 _security = HTTPBearer(auto_error=False)
-_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
+
+# Enforce a real secret in production
+if os.getenv("ENVIRONMENT") == "production" and _JWT_SECRET in ("", "dev-secret-change-in-production"):
+    import sys
+    print("FATAL: JWT_SECRET_KEY must be set to a secure value in production", file=sys.stderr)
+    sys.exit(1)
 _JWT_ALGO = "HS256"
 
 
@@ -758,20 +764,20 @@ async def gdpr_export(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_auth),
+    current_user: dict = Depends(require_auth),
 ):
     """GDPR data export: returns all data associated with a user within an organization."""
-    # Find the user
+    # Find the target user
     user_result = await db.execute(select(User).where(User.email == user_email))
-    user = user_result.scalar_one_or_none()
-    if not user:
+    target_user = user_result.scalar_one_or_none()
+    if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Verify membership in org
     membership_result = await db.execute(
         select(OrgMember).where(
             OrgMember.organization_id == org_id,
-            OrgMember.user_id == user.id,
+            OrgMember.user_id == target_user.id,
         )
     )
     membership = membership_result.scalar_one_or_none()
@@ -783,17 +789,17 @@ async def gdpr_export(
 
     # Collect user profile data
     user_data = {
-        "id": user.id,
-        "email": user.email,
-        "full_name": user.full_name,
-        "avatar_url": user.avatar_url,
-        "is_active": user.is_active,
-        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "id": target_user.id,
+        "email": target_user.email,
+        "full_name": target_user.full_name,
+        "avatar_url": target_user.avatar_url,
+        "is_active": target_user.is_active,
+        "last_login_at": target_user.last_login_at.isoformat() if target_user.last_login_at else None,
+        "created_at": target_user.created_at.isoformat() if target_user.created_at else None,
     }
 
     # All memberships across orgs
-    memberships_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id))
+    memberships_result = await db.execute(select(OrgMember).where(OrgMember.user_id == target_user.id))
     memberships = [
         {
             "organization_id": m.organization_id,
@@ -808,7 +814,7 @@ async def gdpr_export(
         select(AuditLog)
         .where(
             AuditLog.organization_id == org_id,
-            AuditLog.user_id == user.id,
+            AuditLog.user_id == target_user.id,
         )
         .order_by(AuditLog.created_at.desc())
         .limit(10000)
@@ -847,13 +853,13 @@ async def gdpr_purge(
     org_id: int = Query(..., description="Organization ID"),
     user_email: str = Query(..., description="User email address"),
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_admin),
 ):
     """GDPR right to be forgotten: anonymize/delete all user data within the org."""
-    # Find the user
+    # Find the target user
     user_result = await db.execute(select(User).where(User.email == user_email))
-    user = user_result.scalar_one_or_none()
-    if not user:
+    target_user = user_result.scalar_one_or_none()
+    if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     records_purged = {}
@@ -861,7 +867,7 @@ async def gdpr_purge(
     # Anonymize audit logs (set user_id to None, redact IP)
     audit_q = select(AuditLog).where(
         AuditLog.organization_id == org_id,
-        AuditLog.user_id == user.id,
+        AuditLog.user_id == target_user.id,
     )
     audit_result = await db.execute(audit_q)
     audit_logs = audit_result.scalars().all()
@@ -874,23 +880,23 @@ async def gdpr_purge(
     # Remove org membership
     del_membership = delete(OrgMember).where(
         OrgMember.organization_id == org_id,
-        OrgMember.user_id == user.id,
+        OrgMember.user_id == target_user.id,
     )
     mem_result = await db.execute(del_membership)
     records_purged["memberships_deleted"] = mem_result.rowcount
 
     # Check if user has any other org memberships remaining
-    remaining = await db.execute(select(func.count(OrgMember.id)).where(OrgMember.user_id == user.id))
+    remaining = await db.execute(select(func.count(OrgMember.id)).where(OrgMember.user_id == target_user.id))
     remaining_count = remaining.scalar() or 0
 
     # If no other memberships, anonymize the user record itself
     if remaining_count == 0:
-        user.email = f"deleted-{user.id}@purged.local"
-        user.full_name = "Deleted User"
-        user.avatar_url = None
-        user.hashed_password = None
-        user.sso_subject = None
-        user.is_active = False
+        target_user.email = f"deleted-{target_user.id}@purged.local"
+        target_user.full_name = "Deleted User"
+        target_user.avatar_url = None
+        target_user.hashed_password = None
+        target_user.sso_subject = None
+        target_user.is_active = False
         records_purged["user_anonymized"] = True
     else:
         records_purged["user_anonymized"] = False

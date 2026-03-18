@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Save,
   Plus,
@@ -13,6 +14,12 @@ import {
   Trash2,
   Building2,
   Users,
+  ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
+  Info,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
@@ -80,20 +87,50 @@ interface ApiKeyData {
   last_used_at?: string;
 }
 
+type SsoProvider = "saml" | "oidc";
+
+interface SsoConfig {
+  enabled: boolean;
+  provider: SsoProvider;
+  // SAML fields
+  saml_entity_id?: string;
+  saml_sso_url?: string;
+  saml_certificate?: string;
+  // OIDC fields
+  oidc_client_id?: string;
+  oidc_client_secret?: string;
+  oidc_issuer_url?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Settings Page
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
+  const searchParams = useSearchParams();
   const canManageTeam = user ? hasPermission(user.role, "settings.team") : false;
   const canManageKeys = user ? hasPermission(user.role, "settings.apikeys") : false;
+  const canManageSso = user ? hasPermission(user.role, "settings.sso") : false;
 
-  const [activeTab, setActiveTab] = useState("general");
+  const initialTab = searchParams?.get("tab") === "profile" ? "profile" : "general";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Profile tab state
+  const [profileName, setProfileName] = useState(user?.full_name ?? "");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // General tab state
   const [orgName, setOrgName] = useState("");
   const [orgDescription, setOrgDescription] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
   const [orgLoading, setOrgLoading] = useState(true);
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgNotFound, setOrgNotFound] = useState(false);
@@ -106,6 +143,13 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState("viewer");
   const [inviting, setInviting] = useState(false);
 
+  // Remove member dialog state
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<Member | null>(null);
+  const [removingMember, setRemovingMember] = useState(false);
+
+  // Role update in-progress tracking (keyed by member id)
+  const [updatingRoles, setUpdatingRoles] = useState<Record<string | number, boolean>>({});
+
   // API Keys tab state
   const [apiKeys, setApiKeys] = useState<ApiKeyData[]>([]);
   const [keysLoading, setKeysLoading] = useState(true);
@@ -115,6 +159,34 @@ export default function SettingsPage() {
   const [newKeyValue, setNewKeyValue] = useState("");
   const [showKeyDialog, setShowKeyDialog] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Revoke API key dialog state
+  const [revokeKeyTarget, setRevokeKeyTarget] = useState<ApiKeyData | null>(null);
+  const [revokingKey, setRevokingKey] = useState(false);
+
+  // SSO tab state
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoProvider, setSsoProvider] = useState<SsoProvider>("saml");
+  const [samlEntityId, setSamlEntityId] = useState("");
+  const [samlSsoUrl, setSamlSsoUrl] = useState("");
+  const [samlCertificate, setSamlCertificate] = useState("");
+  const [oidcClientId, setOidcClientId] = useState("");
+  const [oidcClientSecret, setOidcClientSecret] = useState("");
+  const [oidcIssuerUrl, setOidcIssuerUrl] = useState("");
+  const [ssoSaving, setSsoSaving] = useState(false);
+
+  // Derive the OIDC redirect URI from current origin
+  const oidcRedirectUri =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/auth/sso/callback`
+      : "https://your-domain.com/api/auth/sso/callback";
+
+  // Sync profile name when user loads from auth context
+  useEffect(() => {
+    if (user?.full_name && !profileName) {
+      setProfileName(user.full_name);
+    }
+  }, [user?.full_name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load org, members, and API keys in parallel
   useEffect(() => {
@@ -127,10 +199,23 @@ export default function SettingsPage() {
 
       // Org
       if (orgResult.status === "fulfilled") {
-        const data = orgResult.value;
+        const data = orgResult.value as OrgData & { sso_config?: SsoConfig };
         setOrgName(data?.name || "");
         setOrgDescription(data?.description || "");
+        setOrgSlug(data?.slug || "");
         setOrgNotFound(false);
+        // Pre-populate SSO fields if org has existing sso_config
+        if (data?.sso_config) {
+          const sso = data.sso_config;
+          setSsoEnabled(sso.enabled ?? false);
+          setSsoProvider(sso.provider ?? "saml");
+          setSamlEntityId(sso.saml_entity_id ?? "");
+          setSamlSsoUrl(sso.saml_sso_url ?? "");
+          setSamlCertificate(sso.saml_certificate ?? "");
+          setOidcClientId(sso.oidc_client_id ?? "");
+          setOidcClientSecret(sso.oidc_client_secret ?? "");
+          setOidcIssuerUrl(sso.oidc_issuer_url ?? "");
+        }
       } else {
         const err = orgResult.reason;
         if (err?.status === 404) {
@@ -158,7 +243,74 @@ export default function SettingsPage() {
     })();
   }, []);
 
-  // Handlers
+  // ---------------------------------------------------------------------------
+  // Handlers — Profile
+  // ---------------------------------------------------------------------------
+
+  const handleSaveProfile = async () => {
+    if (!profileName.trim()) {
+      toast.error("Display name cannot be empty");
+      return;
+    }
+    setProfileSaving(true);
+    try {
+      const updated = await api.updateProfile({ full_name: profileName.trim() });
+      updateUser({ full_name: updated.full_name });
+      toast.success("Profile updated");
+    } catch (err: unknown) {
+      const msg = (err as { safeMessage?: string })?.safeMessage ?? "Failed to update profile";
+      toast.error(msg);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      toast.error("Enter your current password");
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await api.changePassword({ current_password: currentPassword, new_password: newPassword });
+      toast.success("Password changed successfully");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: unknown) {
+      const msg = (err as { safeMessage?: string })?.safeMessage ?? "Failed to change password";
+      toast.error(msg);
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const passwordStrength = (pwd: string): { label: string; color: string } => {
+    if (!pwd) return { label: "", color: "" };
+    if (pwd.length < 8) return { label: "Too short", color: "text-red-400" };
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasDigit = /\d/.test(pwd);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+    const strength = [hasUpper, hasDigit, hasSpecial].filter(Boolean).length;
+    if (strength === 3) return { label: "Strong", color: "text-emerald-400" };
+    if (strength === 2) return { label: "Good", color: "text-yellow-400" };
+    return { label: "Weak", color: "text-orange-400" };
+  };
+
+  const pwdStrength = passwordStrength(newPassword);
+
+  // ---------------------------------------------------------------------------
+  // Handlers — General
+  // ---------------------------------------------------------------------------
+
   const handleSaveOrg = async () => {
     setOrgSaving(true);
     try {
@@ -172,6 +324,10 @@ export default function SettingsPage() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Handlers — Team
+  // ---------------------------------------------------------------------------
+
   const handleInvite = async () => {
     setInviting(true);
     try {
@@ -180,7 +336,6 @@ export default function SettingsPage() {
       setInviteOpen(false);
       setInviteEmail("");
       setInviteRole("viewer");
-      // Refresh members
       const data = await api.getMembers();
       setMembers(data ?? []);
     } catch (err: any) {
@@ -191,19 +346,55 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRoleChange = async (member: Member, newRole: string) => {
+    const memberId = member.id as number;
+    setUpdatingRoles((prev) => ({ ...prev, [memberId]: true }));
+    try {
+      const updated = await api.updateMemberRole(memberId, newRole);
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, role: updated.role } : m)),
+      );
+      toast.success(`Role updated to ${newRole}`);
+    } catch (err: any) {
+      console.error("Failed to update role:", err);
+      toast.error("Failed to update role");
+    } finally {
+      setUpdatingRoles((prev) => ({ ...prev, [memberId]: false }));
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!removeMemberTarget) return;
+    const memberId = removeMemberTarget.id as number;
+    setRemovingMember(true);
+    try {
+      await api.removeMember(memberId);
+      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      toast.success("Member removed");
+      setRemoveMemberTarget(null);
+    } catch (err: any) {
+      console.error("Failed to remove member:", err);
+      toast.error("Failed to remove member");
+    } finally {
+      setRemovingMember(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Handlers — API Keys
+  // ---------------------------------------------------------------------------
+
   const handleCreateKey = async () => {
     setCreatingKey(true);
     try {
       const result = await api.createApiKey({ name: keyName });
       toast.success("API key created");
       setCreateKeyOpen(false);
-      // If the API returns the key value, show it
       if (result?.key || result?.api_key || result?.token) {
         setNewKeyValue(result.key || result.api_key || result.token || "");
         setShowKeyDialog(true);
       }
       setKeyName("");
-      // Refresh keys
       const data = await api.getApiKeys();
       setApiKeys(data ?? []);
     } catch (err: any) {
@@ -211,6 +402,23 @@ export default function SettingsPage() {
       toast.error("Failed to create API key");
     } finally {
       setCreatingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async () => {
+    if (!revokeKeyTarget) return;
+    const keyId = revokeKeyTarget.id as number;
+    setRevokingKey(true);
+    try {
+      await api.deleteApiKey(keyId);
+      setApiKeys((prev) => prev.filter((k) => k.id !== keyId));
+      toast.success("API key revoked");
+      setRevokeKeyTarget(null);
+    } catch (err: any) {
+      console.error("Failed to revoke API key:", err);
+      toast.error("Failed to revoke API key");
+    } finally {
+      setRevokingKey(false);
     }
   };
 
@@ -223,6 +431,42 @@ export default function SettingsPage() {
       toast.error("Failed to copy");
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Handlers — SSO
+  // ---------------------------------------------------------------------------
+
+  const handleSaveSso = async () => {
+    setSsoSaving(true);
+    try {
+      const ssoConfig: SsoConfig = {
+        enabled: ssoEnabled,
+        provider: ssoProvider,
+        ...(ssoProvider === "saml"
+          ? {
+              saml_entity_id: samlEntityId,
+              saml_sso_url: samlSsoUrl,
+              saml_certificate: samlCertificate,
+            }
+          : {
+              oidc_client_id: oidcClientId,
+              oidc_client_secret: oidcClientSecret,
+              oidc_issuer_url: oidcIssuerUrl,
+            }),
+      };
+      await api.updateOrg({ sso_config: ssoConfig } as any);
+      toast.success("SSO configuration saved");
+    } catch (err: any) {
+      console.error("Failed to save SSO config:", err);
+      toast.error("Failed to save SSO configuration");
+    } finally {
+      setSsoSaving(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   const roleBadge = (role: string) => {
     switch (role?.toLowerCase()) {
@@ -237,15 +481,187 @@ export default function SettingsPage() {
     }
   };
 
+  const isCurrentUser = (m: Member) =>
+    user && (m.email === user.email || String(m.id) === String(user.id));
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
     <AppShell title="Settings">
       <div className="space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="border-white/[0.08]">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
             {canManageTeam && <TabsTrigger value="team">Team</TabsTrigger>}
             {canManageKeys && <TabsTrigger value="apikeys">API Keys</TabsTrigger>}
+            {canManageSso && <TabsTrigger value="sso">SSO</TabsTrigger>}
           </TabsList>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Profile Tab                                                       */}
+          {/* ---------------------------------------------------------------- */}
+          <TabsContent value="profile" className="space-y-4">
+            {/* Personal info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-slate-100 flex items-center gap-2">
+                  <UserCircle className="h-5 w-5 text-slate-400" />
+                  Personal Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-1 block">
+                    Display Name
+                  </label>
+                  <Input
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    placeholder="Your full name"
+                    className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-1 block">
+                    Email
+                  </label>
+                  <Input
+                    value={user?.email ?? ""}
+                    readOnly
+                    disabled
+                    className="bg-white/[0.03] border-white/[0.06] text-slate-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-600 mt-1">Email cannot be changed here.</p>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    {profileSaving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Save Profile
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Change password */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-slate-100 flex items-center gap-2">
+                  <Key className="h-5 w-5 text-slate-400" />
+                  Change Password
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-1 block">
+                    Current Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type={showCurrent ? "text" : "password"}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter current password"
+                      className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrent((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      aria-label={showCurrent ? "Hide password" : "Show password"}
+                    >
+                      {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-1 block">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type={showNew ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNew((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      aria-label={showNew ? "Hide password" : "Show password"}
+                    >
+                      {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {newPassword && (
+                    <p className={cn("text-xs mt-1", pwdStrength.color)}>
+                      Strength: {pwdStrength.label}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-1 block">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type={showConfirm ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      className={cn(
+                        "bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500 pr-10",
+                        confirmPassword && newPassword !== confirmPassword && "border-red-500/50"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      aria-label={showConfirm ? "Hide password" : "Show password"}
+                    >
+                      {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {confirmPassword && newPassword !== confirmPassword && (
+                    <p className="text-xs mt-1 text-red-400">Passwords do not match</p>
+                  )}
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button
+                    onClick={handleChangePassword}
+                    disabled={
+                      passwordSaving ||
+                      !currentPassword ||
+                      !newPassword ||
+                      !confirmPassword ||
+                      newPassword !== confirmPassword
+                    }
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    {passwordSaving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Change Password
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* ---------------------------------------------------------------- */}
           {/* General Tab                                                       */}
@@ -283,6 +699,18 @@ export default function SettingsPage() {
                         className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
                       />
                     </div>
+                    {orgSlug && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Slug
+                        </label>
+                        <Input
+                          value={orgSlug}
+                          disabled
+                          className="bg-white/[0.04] border-white/[0.06] text-slate-500 cursor-not-allowed"
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="text-sm font-medium text-slate-300 mb-1 block">
                         Description
@@ -354,38 +782,77 @@ export default function SettingsPage() {
                           <TableHead className="text-slate-400">User</TableHead>
                           <TableHead className="text-slate-400">Role</TableHead>
                           <TableHead className="text-slate-400">Joined</TableHead>
+                          <TableHead className="text-slate-400 text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody className="divide-white/[0.06]">
-                        {members.map((m) => (
-                          <TableRow key={m.id} className="border-white/[0.06] hover:bg-white/[0.04]">
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-white/[0.06] flex items-center justify-center">
-                                  <UserCircle className="h-5 w-5 text-slate-500" />
+                        {members.map((m) => {
+                          const isSelf = isCurrentUser(m);
+                          const isUpdating = updatingRoles[m.id] ?? false;
+                          const currentRole = m.role || "viewer";
+                          return (
+                            <TableRow key={m.id} className="border-white/[0.06] hover:bg-white/[0.04]">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div className="h-8 w-8 rounded-full bg-white/[0.06] flex items-center justify-center">
+                                    <UserCircle className="h-5 w-5 text-slate-500" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-200">
+                                      {m.full_name || m.name || m.email || "Unknown"}
+                                      {isSelf && (
+                                        <span className="ml-2 text-xs text-slate-500">(you)</span>
+                                      )}
+                                    </p>
+                                    {m.email && (
+                                      <p className="text-xs text-slate-500">{m.email}</p>
+                                    )}
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="text-sm font-medium text-slate-200">
-                                    {m.full_name || m.name || m.email || "Unknown"}
-                                  </p>
-                                  {m.email && (
-                                    <p className="text-xs text-slate-500">{m.email}</p>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={cn("capitalize border", roleBadge(m.role || ""))}>
-                                {m.role || "member"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-400 whitespace-nowrap">
-                              {(m.joined_at || m.created_at)
-                                ? formatDate(m.joined_at || m.created_at || "")
-                                : "-"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              </TableCell>
+                              <TableCell>
+                                {isSelf || currentRole === "owner" ? (
+                                  <Badge className={cn("capitalize border", roleBadge(currentRole))}>
+                                    {currentRole}
+                                  </Badge>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <Select
+                                      value={currentRole}
+                                      onValueChange={(v) => handleRoleChange(m, v)}
+                                      disabled={isUpdating}
+                                      className="w-32 text-xs py-1"
+                                    >
+                                      <option value="viewer">Viewer</option>
+                                      <option value="analyst">Analyst</option>
+                                      <option value="manager">Manager</option>
+                                      <option value="admin">Admin</option>
+                                    </Select>
+                                    {isUpdating && (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400 shrink-0" />
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-slate-400 whitespace-nowrap">
+                                {(m.joined_at || m.created_at)
+                                  ? formatDate(m.joined_at || m.created_at || "")
+                                  : "-"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {!isSelf && currentRole !== "owner" && (
+                                  <button
+                                    onClick={() => setRemoveMemberTarget(m)}
+                                    className="p-1.5 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-colors"
+                                    title="Remove member"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -435,11 +902,11 @@ export default function SettingsPage() {
                           <TableHead className="text-slate-400">Key</TableHead>
                           <TableHead className="text-slate-400">Status</TableHead>
                           <TableHead className="text-slate-400">Created</TableHead>
+                          <TableHead className="text-slate-400 text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody className="divide-white/[0.06]">
                         {apiKeys.map((k) => {
-                          // 6.19 — Mask API keys: show only first 8 chars of the prefix
                           const prefix = k.key_prefix || k.prefix || "";
                           const masked = prefix.length > 8
                             ? prefix.slice(0, 8) + "..."
@@ -487,6 +954,15 @@ export default function SettingsPage() {
                               <TableCell className="text-sm text-slate-400 whitespace-nowrap">
                                 {k.created_at ? formatDate(k.created_at) : "-"}
                               </TableCell>
+                              <TableCell className="text-right">
+                                <button
+                                  onClick={() => setRevokeKeyTarget(k)}
+                                  className="p-1.5 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-colors"
+                                  title="Revoke API key"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </TableCell>
                             </TableRow>
                           );
                         })}
@@ -497,10 +973,207 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* SSO Tab                                                           */}
+          {/* ---------------------------------------------------------------- */}
+          {canManageSso && (
+            <TabsContent value="sso">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-slate-100 flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-slate-400" />
+                    Single Sign-On (SSO)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+
+                  {/* SSO Enable toggle */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.08]">
+                    <div>
+                      <p className="text-sm font-medium text-slate-200">Enable SSO</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Require team members to authenticate via your identity provider.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSsoEnabled((v) => !v)}
+                      className="text-slate-400 hover:text-indigo-400 transition-colors"
+                      aria-label={ssoEnabled ? "Disable SSO" : "Enable SSO"}
+                    >
+                      {ssoEnabled ? (
+                        <ToggleRight className="h-8 w-8 text-indigo-400" />
+                      ) : (
+                        <ToggleLeft className="h-8 w-8" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Provider type */}
+                  <div>
+                    <label className="text-sm font-medium text-slate-300 mb-1.5 block">
+                      Identity Provider Protocol
+                    </label>
+                    <Select
+                      value={ssoProvider}
+                      onValueChange={(v) => setSsoProvider(v as SsoProvider)}
+                      className="bg-white/[0.06] border-white/[0.08] text-slate-100 max-w-xs"
+                    >
+                      <option value="saml">SAML 2.0</option>
+                      <option value="oidc">OpenID Connect (OIDC)</option>
+                    </Select>
+                  </div>
+
+                  {/* SAML fields */}
+                  {ssoProvider === "saml" && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Entity ID (Service Provider)
+                        </label>
+                        <Input
+                          value={samlEntityId}
+                          onChange={(e) => setSamlEntityId(e.target.value)}
+                          placeholder="https://your-domain.com/saml/metadata"
+                          className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          SSO URL (Identity Provider)
+                        </label>
+                        <Input
+                          value={samlSsoUrl}
+                          onChange={(e) => setSamlSsoUrl(e.target.value)}
+                          placeholder="https://idp.example.com/sso/saml"
+                          className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          X.509 Certificate
+                        </label>
+                        <textarea
+                          value={samlCertificate}
+                          onChange={(e) => setSamlCertificate(e.target.value)}
+                          rows={6}
+                          placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                          className={cn(
+                            "w-full rounded-lg border border-white/[0.08] bg-white/[0.06] p-3",
+                            "text-sm text-slate-100 placeholder:text-slate-500 font-mono",
+                            "resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50",
+                            "transition-colors hover:border-white/[0.12]",
+                          )}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OIDC fields */}
+                  {ssoProvider === "oidc" && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Client ID
+                        </label>
+                        <Input
+                          value={oidcClientId}
+                          onChange={(e) => setOidcClientId(e.target.value)}
+                          placeholder="your-client-id"
+                          className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Client Secret
+                        </label>
+                        <Input
+                          type="password"
+                          value={oidcClientSecret}
+                          onChange={(e) => setOidcClientSecret(e.target.value)}
+                          placeholder="your-client-secret"
+                          className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Issuer URL
+                        </label>
+                        <Input
+                          value={oidcIssuerUrl}
+                          onChange={(e) => setOidcIssuerUrl(e.target.value)}
+                          placeholder="https://accounts.google.com"
+                          className="bg-white/[0.06] border-white/[0.08] text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-300 mb-1 block">
+                          Redirect URI
+                          <span className="ml-2 text-xs text-slate-500 font-normal">(read-only — add this to your IdP)</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={oidcRedirectUri}
+                            readOnly
+                            className="bg-white/[0.03] border-white/[0.06] text-slate-400 cursor-default"
+                          />
+                          <button
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(oidcRedirectUri);
+                                toast.success("Redirect URI copied");
+                              } catch {
+                                toast.error("Failed to copy");
+                              }
+                            }}
+                            className="p-2 rounded hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+                            title="Copy redirect URI"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Save button */}
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                    <div className="flex items-start gap-2 text-xs text-slate-500 max-w-sm">
+                      <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        Contact{" "}
+                        <a
+                          href="mailto:support@khushfus.com"
+                          className="text-indigo-400 hover:underline"
+                        >
+                          support@khushfus.com
+                        </a>{" "}
+                        to complete SSO setup and enable enforcement for your organization.
+                      </span>
+                    </div>
+                    <Button
+                      onClick={handleSaveSso}
+                      disabled={ssoSaving}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                    >
+                      {ssoSaving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save SSO Config
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
-      {/* Invite Member Dialog */}
+      {/* -------------------------------------------------------------------- */}
+      {/* Invite Member Dialog                                                  */}
+      {/* -------------------------------------------------------------------- */}
       <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} className="bg-white/[0.03] border border-white/[0.08]">
         <DialogHeader onClose={() => setInviteOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Invite Team Member</span>
@@ -549,7 +1222,54 @@ export default function SettingsPage() {
         </DialogFooter>
       </Dialog>
 
-      {/* Create API Key Dialog */}
+      {/* -------------------------------------------------------------------- */}
+      {/* Remove Member Confirmation Dialog                                     */}
+      {/* -------------------------------------------------------------------- */}
+      <Dialog
+        open={!!removeMemberTarget}
+        onClose={() => setRemoveMemberTarget(null)}
+        className="bg-white/[0.03] border border-white/[0.08]"
+      >
+        <DialogHeader onClose={() => setRemoveMemberTarget(null)} className="border-white/[0.08]">
+          <span className="text-slate-100">Remove Team Member</span>
+        </DialogHeader>
+        <DialogContent className="space-y-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-red-300">
+              Are you sure you want to remove{" "}
+              <span className="font-semibold">
+                {removeMemberTarget?.full_name ||
+                  removeMemberTarget?.name ||
+                  removeMemberTarget?.email ||
+                  "this member"}
+              </span>{" "}
+              from your organization? They will lose access immediately.
+            </p>
+          </div>
+        </DialogContent>
+        <DialogFooter className="border-white/[0.08] bg-white/[0.03]">
+          <Button
+            variant="outline"
+            onClick={() => setRemoveMemberTarget(null)}
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRemoveMember}
+            disabled={removingMember}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {removingMember && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Remove Member
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* Create API Key Dialog                                                 */}
+      {/* -------------------------------------------------------------------- */}
       <Dialog open={createKeyOpen} onClose={() => setCreateKeyOpen(false)} className="bg-white/[0.03] border border-white/[0.08]">
         <DialogHeader onClose={() => setCreateKeyOpen(false)} className="border-white/[0.08]">
           <span className="text-slate-100">Create API Key</span>
@@ -584,7 +1304,54 @@ export default function SettingsPage() {
         </DialogFooter>
       </Dialog>
 
-      {/* Key Created - Show Value Dialog */}
+      {/* -------------------------------------------------------------------- */}
+      {/* Revoke API Key Confirmation Dialog                                    */}
+      {/* -------------------------------------------------------------------- */}
+      <Dialog
+        open={!!revokeKeyTarget}
+        onClose={() => setRevokeKeyTarget(null)}
+        className="bg-white/[0.03] border border-white/[0.08]"
+      >
+        <DialogHeader onClose={() => setRevokeKeyTarget(null)} className="border-white/[0.08]">
+          <span className="text-slate-100">Revoke API Key</span>
+        </DialogHeader>
+        <DialogContent className="space-y-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm text-red-300 font-medium">This action cannot be undone.</p>
+              <p className="text-sm text-red-300">
+                Any applications using{" "}
+                <span className="font-semibold">
+                  {revokeKeyTarget?.name || "this key"}
+                </span>{" "}
+                will stop working immediately.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+        <DialogFooter className="border-white/[0.08] bg-white/[0.03]">
+          <Button
+            variant="outline"
+            onClick={() => setRevokeKeyTarget(null)}
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRevokeKey}
+            disabled={revokingKey}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {revokingKey && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Revoke Key
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* Key Created — Show Value Dialog                                       */}
+      {/* -------------------------------------------------------------------- */}
       <Dialog open={showKeyDialog} onClose={() => setShowKeyDialog(false)} className="bg-white/[0.03] border border-white/[0.08]">
         <DialogHeader onClose={() => setShowKeyDialog(false)} className="border-white/[0.08]">
           <span className="text-slate-100">API Key Created</span>

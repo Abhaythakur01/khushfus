@@ -47,7 +47,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _security = HTTPBearer(auto_error=False)
-_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
+
+# Enforce a real secret in production
+if os.getenv("ENVIRONMENT") == "production" and _JWT_SECRET in ("", "dev-secret-change-in-production"):
+    import sys
+    print("FATAL: JWT_SECRET_KEY must be set to a secure value in production", file=sys.stderr)
+    sys.exit(1)
 _JWT_ALGO = "HS256"
 
 

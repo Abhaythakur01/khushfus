@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import toast from "react-hot-toast";
 import {
@@ -16,11 +16,16 @@ import {
   Star,
   Inbox,
   Image as ImageIcon,
+  Tag,
+  ChevronDown,
+  X,
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useMentions, type Mention, type MentionFilters } from "@/hooks/useMentions";
 import { AppShell } from "@/components/layout/AppShell";
+import { DateRangePicker, type DateRange } from "@/components/ui/daterange";
+import { collectAllUsedTags, loadAllTags, TAG_CATEGORIES } from "./MentionDetail";
 
 // Debounce hook for search input
 function useDebounce<T>(value: T, delay: number): T {
@@ -30,6 +35,122 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(timer);
   }, [value, delay]);
   return debouncedValue;
+}
+
+// ---------- tag filter dropdown ----------
+
+function TagFilterDropdown({
+  selectedTags,
+  onChange,
+}: {
+  selectedTags: string[];
+  onChange: (tags: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Refresh tag pool when dropdown opens
+  useEffect(() => {
+    if (open) setAllTags(collectAllUsedTags());
+  }, [open]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggle(tag: string) {
+    if (selectedTags.includes(tag)) {
+      onChange(selectedTags.filter((t) => t !== tag));
+    } else {
+      onChange([...selectedTags, tag]);
+    }
+  }
+
+  function getTagStyle(tag: string) {
+    const lower = tag.toLowerCase();
+    if (TAG_CATEGORIES[lower]) return TAG_CATEGORIES[lower];
+    const match = Object.keys(TAG_CATEGORIES).find((k) => lower.includes(k) || k.includes(lower));
+    return match ? TAG_CATEGORIES[match] : { bg: "bg-slate-500/15", text: "text-slate-300", border: "border-slate-500/30" };
+  }
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "inline-flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border transition-colors",
+          selectedTags.length > 0
+            ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-300"
+            : "border-white/[0.08] bg-white/[0.06] text-slate-300 hover:bg-white/[0.1] hover:text-slate-100",
+        )}
+      >
+        <Tag className="h-3.5 w-3.5" />
+        Tags
+        {selectedTags.length > 0 && (
+          <span className="inline-flex items-center justify-center h-4 w-4 text-[10px] font-bold bg-indigo-500 text-white rounded-full">
+            {selectedTags.length}
+          </span>
+        )}
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-40 w-52 bg-[#141925] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Filter by tag</span>
+            {selectedTags.length > 0 && (
+              <button onClick={() => onChange([])} className="text-[10px] text-indigo-400 hover:text-indigo-300">
+                Clear all
+              </button>
+            )}
+          </div>
+          {allTags.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-slate-500">No tags applied to any mention yet.</p>
+          ) : (
+            <div className="max-h-56 overflow-y-auto py-1">
+              {allTags.map((tag) => {
+                const style = getTagStyle(tag);
+                const checked = selectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggle(tag)}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-white/[0.05] transition-colors text-left",
+                      checked && "bg-indigo-500/[0.08]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex items-center justify-center w-3.5 h-3.5 rounded border shrink-0",
+                        checked ? "bg-indigo-600 border-indigo-500" : "border-slate-600",
+                      )}
+                    >
+                      {checked && <X className="h-2 w-2 text-white" />}
+                    </span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-1.5 py-0.5 rounded-full border",
+                        style.bg, style.text, style.border,
+                      )}
+                    >
+                      {tag}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------- lazy-loaded detail panel (6.29 — code splitting) ----------
@@ -181,22 +302,27 @@ export default function MentionsPage() {
   } = useMentions(selectedProject, filters);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkFlagging, setIsBulkFlagging] = useState(false);
   const [activeMention, setActiveMention] = useState<Mention | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebounce(searchInput, 400);
 
   const [platform, setPlatform] = useState("all");
   const [sentiment, setSentiment] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   const applyFilters = useCallback((overrides?: Partial<MentionFilters>) => {
     const f: MentionFilters = {
       platform: overrides?.platform ?? platform,
       sentiment: overrides?.sentiment ?? sentiment,
       search: overrides?.search ?? searchInput,
+      dateFrom: overrides?.dateFrom ?? (dateRange?.startDate || undefined),
+      dateTo: overrides?.dateTo ?? (dateRange?.endDate || undefined),
     };
     setFilterState(f);
     setFilters(f);
-  }, [platform, sentiment, searchInput, setFilters]);
+  }, [platform, sentiment, searchInput, dateRange, setFilters]);
 
   // Auto-apply search filter after debounce
   useEffect(() => {
@@ -217,15 +343,24 @@ export default function MentionsPage() {
     }
   };
 
+  // Client-side tag filter (tags are stored locally, not on server)
+  const allMentionTags = loadAllTags();
+  const filteredMentions = selectedTags.length === 0
+    ? mentions
+    : mentions.filter((m) => {
+        const mTags = allMentionTags[m.id] ?? [];
+        return selectedTags.every((t) => mTags.includes(t));
+      });
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const endItem = Math.min(page * pageSize, total);
 
-  const allSelected = mentions.length > 0 && mentions.every((m) => selectedIds.has(m.id));
+  const allSelected = filteredMentions.length > 0 && filteredMentions.every((m) => selectedIds.has(m.id));
 
   function toggleSelectAll() {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(mentions.map((m) => m.id)));
+    else setSelectedIds(new Set(filteredMentions.map((m) => m.id)));
   }
 
   function toggleSelect(id: number) {
@@ -235,6 +370,22 @@ export default function MentionsPage() {
       else next.add(id);
       return next;
     });
+  }
+
+  async function handleBulkFlag() {
+    if (selectedIds.size === 0) return;
+    setIsBulkFlagging(true);
+    try {
+      await api.bulkFlagMentions(Array.from(selectedIds), true);
+      toast.success(`Flagged ${selectedIds.size} mention${selectedIds.size !== 1 ? "s" : ""}`);
+      setSelectedIds(new Set());
+      applyFilters();
+    } catch (err) {
+      console.error("Bulk flag failed:", err);
+      toast.error("Failed to flag mentions");
+    } finally {
+      setIsBulkFlagging(false);
+    }
   }
 
   return (
@@ -282,6 +433,14 @@ export default function MentionsPage() {
             ))}
           </select>
 
+          <DateRangePicker
+            defaultPreset="30d"
+            onChange={(range) => {
+              setDateRange(range);
+              applyFilters({ dateFrom: range.startDate, dateTo: range.endDate });
+            }}
+          />
+
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input
@@ -292,6 +451,8 @@ export default function MentionsPage() {
               className="w-full h-9 rounded-lg border border-white/[0.08] bg-white/[0.06] pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+
+          <TagFilterDropdown selectedTags={selectedTags} onChange={setSelectedTags} />
 
           <button
             onClick={() => exportMentionsToCSV(mentions)}
@@ -308,8 +469,13 @@ export default function MentionsPage() {
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3 px-3 py-2 bg-indigo-600/10 rounded-lg border border-indigo-500/30">
             <span className="text-sm font-medium text-indigo-400">{selectedIds.size} selected</span>
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.06] border border-white/[0.08] rounded-md hover:bg-white/[0.04] text-slate-300">
-              <Flag className="h-3.5 w-3.5" /> Flag
+            <button
+              onClick={handleBulkFlag}
+              disabled={isBulkFlagging}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.06] border border-white/[0.08] rounded-md hover:bg-white/[0.04] text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              {isBulkFlagging ? "Flagging..." : "Flag"}
             </button>
             <button
               onClick={() => {
@@ -362,14 +528,14 @@ export default function MentionsPage() {
           </div>
 
           {/* Loading overlay when refetching with existing data */}
-          {isLoading && mentions.length > 0 && (
+          {isLoading && filteredMentions.length > 0 && (
             <div className="flex items-center justify-center py-2 bg-indigo-600/5 border-b border-white/[0.06]">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mr-2" />
               <span className="text-xs text-slate-400">Updating...</span>
             </div>
           )}
 
-          {isLoading && mentions.length === 0 ? (
+          {isLoading && filteredMentions.length === 0 ? (
             <div className="flex items-center justify-center h-64">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
             </div>
@@ -379,15 +545,21 @@ export default function MentionsPage() {
               <p className="text-base font-medium text-slate-400">No project selected</p>
               <p className="text-sm mt-1">Select a project to view mentions</p>
             </div>
-          ) : mentions.length === 0 ? (
+          ) : filteredMentions.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-500">
               <Inbox className="h-12 w-12 mb-3 text-slate-600" />
-              <p className="text-base font-medium text-slate-400">No mentions yet</p>
-              <p className="text-sm mt-1">Create a project and add keywords to start collecting.</p>
+              <p className="text-base font-medium text-slate-400">
+                {selectedTags.length > 0 ? "No mentions match the selected tags" : "No mentions yet"}
+              </p>
+              <p className="text-sm mt-1">
+                {selectedTags.length > 0
+                  ? "Try adjusting or clearing the tag filter."
+                  : "Create a project and add keywords to start collecting."}
+              </p>
             </div>
           ) : (
             <ul className="divide-y divide-white/[0.04]">
-              {mentions.map((mention) => (
+              {filteredMentions.map((mention) => (
                 <li
                   key={mention.id}
                   onClick={() => setActiveMention(mention)}

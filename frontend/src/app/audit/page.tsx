@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Loader2,
   Download,
@@ -11,6 +11,7 @@ import {
   Filter,
 } from "lucide-react";
 import { cn, formatDateTime } from "@/lib/utils";
+import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,12 +32,6 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import type { AuditAction } from "@/lib/auditLog";
-
-// ---------------------------------------------------------------------------
-// TODO: Replace mock data with real API call when backend endpoint is ready.
-// Expected endpoint: GET /api/v1/audit/events?action=...&user=...&from=...&to=...&page=...&limit=...
-// Response shape: { items: AuditLogEntry[], total: number }
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,52 +112,6 @@ const ALL_ACTIONS: AuditAction[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Mock data — realistic audit trail entries
-// ---------------------------------------------------------------------------
-
-function generateMockData(): AuditLogEntry[] {
-  const users = [
-    { email: "admin@acme.com", name: "Alice Chen" },
-    { email: "bob@acme.com", name: "Bob Patel" },
-    { email: "carol@acme.com", name: "Carol Singh" },
-    { email: "dev@acme.com", name: "Dev Sharma" },
-    { email: "eva@acme.com", name: "Eva Martinez" },
-  ];
-
-  const entries: AuditLogEntry[] = [
-    { id: "aud_001", timestamp: "2026-03-17T09:12:33Z", user_email: users[0].email, user_name: users[0].name, action: "auth.login", resource_type: "session", resource_id: "sess_abc123", details: "Login via email/password", ip_address: "192.168.1.10" },
-    { id: "aud_002", timestamp: "2026-03-17T09:15:01Z", user_email: users[0].email, user_name: users[0].name, action: "project.create", resource_type: "project", resource_id: "42", details: "Created project 'Brand Monitor Q1'", ip_address: "192.168.1.10" },
-    { id: "aud_003", timestamp: "2026-03-17T09:22:47Z", user_email: users[1].email, user_name: users[1].name, action: "auth.login", resource_type: "session", resource_id: "sess_def456", details: "Login via SSO (SAML)", ip_address: "10.0.0.55" },
-    { id: "aud_004", timestamp: "2026-03-17T09:30:12Z", user_email: users[0].email, user_name: users[0].name, action: "member.invite", resource_type: "member", resource_id: "carol@acme.com", details: "Invited carol@acme.com as analyst", ip_address: "192.168.1.10" },
-    { id: "aud_005", timestamp: "2026-03-17T09:45:00Z", user_email: users[1].email, user_name: users[1].name, action: "report.generate", resource_type: "report", resource_id: "rpt_789", details: "Generated PDF report for project 42", ip_address: "10.0.0.55" },
-    { id: "aud_006", timestamp: "2026-03-17T10:00:33Z", user_email: users[2].email, user_name: users[2].name, action: "auth.login", resource_type: "session", resource_id: "sess_ghi789", details: "Login via email/password", ip_address: "172.16.0.22" },
-    { id: "aud_007", timestamp: "2026-03-17T10:05:19Z", user_email: users[2].email, user_name: users[2].name, action: "alert.create", resource_type: "alert_rule", resource_id: "rule_101", details: "Created volume spike alert for project 42", ip_address: "172.16.0.22" },
-    { id: "aud_008", timestamp: "2026-03-17T10:12:45Z", user_email: users[0].email, user_name: users[0].name, action: "apikey.create", resource_type: "api_key", resource_id: "key_202", details: "Created API key 'Production Bot'", ip_address: "192.168.1.10" },
-    { id: "aud_009", timestamp: "2026-03-17T10:30:00Z", user_email: users[3].email, user_name: users[3].name, action: "auth.login", resource_type: "session", resource_id: "sess_jkl012", details: "Login via email/password", ip_address: "10.0.1.100" },
-    { id: "aud_010", timestamp: "2026-03-17T10:35:22Z", user_email: users[3].email, user_name: users[3].name, action: "export.request", resource_type: "export", resource_id: "exp_303", details: "Requested CSV export of 1,247 mentions", ip_address: "10.0.1.100" },
-    { id: "aud_011", timestamp: "2026-03-17T10:45:11Z", user_email: users[0].email, user_name: users[0].name, action: "project.update", resource_type: "project", resource_id: "42", details: "Updated keywords for 'Brand Monitor Q1'", ip_address: "192.168.1.10" },
-    { id: "aud_012", timestamp: "2026-03-17T11:00:05Z", user_email: users[1].email, user_name: users[1].name, action: "report.download", resource_type: "report", resource_id: "rpt_789", details: "Downloaded PDF report rpt_789", ip_address: "10.0.0.55" },
-    { id: "aud_013", timestamp: "2026-03-17T11:15:38Z", user_email: users[4].email, user_name: users[4].name, action: "auth.login", resource_type: "session", resource_id: "sess_mno345", details: "Login via email/password", ip_address: "203.0.113.42" },
-    { id: "aud_014", timestamp: "2026-03-17T11:20:00Z", user_email: users[4].email, user_name: users[4].name, action: "post.create", resource_type: "scheduled_post", resource_id: "post_404", details: "Scheduled post on Twitter for 2026-03-18", ip_address: "203.0.113.42" },
-    { id: "aud_015", timestamp: "2026-03-17T11:30:29Z", user_email: users[0].email, user_name: users[0].name, action: "settings.update", resource_type: "organization", resource_id: "org_1", details: "Updated organization name to 'Acme Corp'", ip_address: "192.168.1.10" },
-    { id: "aud_016", timestamp: "2026-03-17T11:45:10Z", user_email: users[2].email, user_name: users[2].name, action: "alert.delete", resource_type: "alert_rule", resource_id: "rule_99", details: "Deleted inactive alert rule 'Old Volume Alert'", ip_address: "172.16.0.22" },
-    { id: "aud_017", timestamp: "2026-03-17T12:00:00Z", user_email: users[0].email, user_name: users[0].name, action: "apikey.revoke", resource_type: "api_key", resource_id: "key_101", details: "Revoked API key 'Staging Bot'", ip_address: "192.168.1.10" },
-    { id: "aud_018", timestamp: "2026-03-17T12:10:33Z", user_email: users[1].email, user_name: users[1].name, action: "auth.logout", resource_type: "session", resource_id: "sess_def456", details: "User logged out", ip_address: "10.0.0.55" },
-    { id: "aud_019", timestamp: "2026-03-17T12:15:45Z", user_email: users[3].email, user_name: users[3].name, action: "project.archive", resource_type: "project", resource_id: "38", details: "Archived project 'Legacy Campaign'", ip_address: "10.0.1.100" },
-    { id: "aud_020", timestamp: "2026-03-17T12:25:00Z", user_email: users[0].email, user_name: users[0].name, action: "member.remove", resource_type: "member", resource_id: "user_55", details: "Removed user dev-intern@acme.com from org", ip_address: "192.168.1.10" },
-    { id: "aud_021", timestamp: "2026-03-17T12:30:18Z", user_email: users[4].email, user_name: users[4].name, action: "post.delete", resource_type: "scheduled_post", resource_id: "post_390", details: "Deleted scheduled post for Facebook", ip_address: "203.0.113.42" },
-    { id: "aud_022", timestamp: "2026-03-17T12:45:55Z", user_email: users[2].email, user_name: users[2].name, action: "auth.password_reset_request", resource_type: "user", resource_id: "carol@acme.com", details: "Requested password reset", ip_address: "172.16.0.22" },
-    { id: "aud_023", timestamp: "2026-03-17T13:00:02Z", user_email: users[2].email, user_name: users[2].name, action: "auth.password_reset_complete", resource_type: "user", resource_id: "carol@acme.com", details: "Password reset completed", ip_address: "172.16.0.22" },
-    { id: "aud_024", timestamp: "2026-03-17T13:05:30Z", user_email: users[0].email, user_name: users[0].name, action: "project.delete", resource_type: "project", resource_id: "35", details: "Deleted project 'Test Campaign'", ip_address: "192.168.1.10" },
-    { id: "aud_025", timestamp: "2026-03-17T13:15:44Z", user_email: users[3].email, user_name: users[3].name, action: "auth.register", resource_type: "user", resource_id: "newuser@acme.com", details: "New user registration", ip_address: "10.0.1.100" },
-  ];
-
-  return entries;
-}
-
-const MOCK_ENTRIES = generateMockData();
-
-// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -190,81 +139,84 @@ export default function AuditPage() {
   // Pagination
   const [page, setPage] = useState(1);
 
-  // Simulated loading state
+  // API data state
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Sort direction (newest first by default)
   const [sortAsc, setSortAsc] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // Filtering + sorting + pagination
+  // Fetch from real API
   // ---------------------------------------------------------------------------
 
-  const filteredEntries = useMemo(() => {
-    let results = [...MOCK_ENTRIES];
+  const fetchLogs = useCallback(async (
+    filters: typeof appliedFilters,
+    currentPage: number,
+    abortSignal?: AbortSignal,
+  ) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params: Record<string, string | number> = {
+        page: currentPage,
+        limit: PAGE_SIZE,
+      };
+      if (filters.action) params.action = filters.action;
+      if (filters.user) params.user_id = filters.user;
+      if (filters.dateFrom) params.start_date = filters.dateFrom;
+      if (filters.dateTo) params.end_date = filters.dateTo + "T23:59:59Z";
 
-    // Filter by action
-    if (appliedFilters.action) {
-      results = results.filter((e) => e.action === appliedFilters.action);
+      const data = await api.getAuditLogs(params, abortSignal);
+      setEntries((data.items as unknown as AuditLogEntry[]) ?? []);
+      setTotal(data.total ?? 0);
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError("Failed to load audit logs. Please try again.");
+      setEntries([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    // Filter by user search (name or email)
-    if (appliedFilters.user) {
-      const q = appliedFilters.user.toLowerCase();
-      results = results.filter(
-        (e) =>
-          e.user_name.toLowerCase().includes(q) ||
-          e.user_email.toLowerCase().includes(q),
-      );
-    }
+  // Fetch on mount and whenever applied filters or page change
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchLogs(appliedFilters, page, controller.signal);
+    return () => controller.abort();
+  }, [appliedFilters, page, fetchLogs]);
 
-    // Filter by date range
-    if (appliedFilters.dateFrom) {
-      const from = new Date(appliedFilters.dateFrom);
-      results = results.filter((e) => new Date(e.timestamp) >= from);
-    }
-    if (appliedFilters.dateTo) {
-      const to = new Date(appliedFilters.dateTo + "T23:59:59Z");
-      results = results.filter((e) => new Date(e.timestamp) <= to);
-    }
+  // ---------------------------------------------------------------------------
+  // Derived values
+  // ---------------------------------------------------------------------------
 
-    // Sort by timestamp
-    results.sort((a, b) => {
-      const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-      return sortAsc ? diff : -diff;
-    });
+  const sortedEntries = [...entries].sort((a, b) => {
+    const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    return sortAsc ? diff : -diff;
+  });
 
-    return results;
-  }, [appliedFilters, sortAsc]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
-  const paginatedEntries = filteredEntries.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE,
-  );
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
   const handleApplyFilters = useCallback(() => {
-    setLoading(true);
     setPage(1);
-    // Simulate network delay for realism
-    setTimeout(() => {
-      setAppliedFilters({
-        action: actionFilter,
-        user: userSearch,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
-      });
-      setLoading(false);
-    }, 300);
+    setAppliedFilters({
+      action: actionFilter,
+      user: userSearch,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+    });
   }, [actionFilter, userSearch, dateFrom, dateTo]);
 
   const handleExportCsv = useCallback(() => {
     const headers = ["Timestamp", "User", "Email", "Action", "Resource Type", "Resource ID", "Details", "IP Address"];
-    const rows = filteredEntries.map((e) => [
+    const rows = sortedEntries.map((e) => [
       e.timestamp,
       e.user_name,
       e.user_email,
@@ -283,7 +235,7 @@ export default function AuditPage() {
     link.download = `audit-log-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [filteredEntries]);
+  }, [sortedEntries]);
 
   const toggleSort = useCallback(() => {
     setSortAsc((prev) => !prev);
@@ -400,14 +352,14 @@ export default function AuditPage() {
               <ClipboardList className="h-5 w-5 text-slate-400" />
               Audit Trail
               <span className="text-sm font-normal text-slate-500 ml-2">
-                {filteredEntries.length} {filteredEntries.length === 1 ? "entry" : "entries"}
+                {total} {total === 1 ? "entry" : "entries"}
               </span>
             </CardTitle>
             <Button
               onClick={handleExportCsv}
               variant="outline"
               size="sm"
-              disabled={filteredEntries.length === 0}
+              disabled={entries.length === 0}
               className="border-white/[0.08] text-slate-300 hover:bg-white/[0.04] hover:text-slate-100"
             >
               <Download className="mr-2 h-4 w-4" />
@@ -415,7 +367,20 @@ export default function AuditPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {error ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <ClipboardList className="mb-3 h-10 w-10 text-slate-600" />
+                <p className="text-sm text-red-400">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchLogs(appliedFilters, page)}
+                  className="mt-4 border-white/[0.08] text-slate-300 hover:bg-white/[0.04]"
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : loading ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader className="bg-white/[0.04] border-white/[0.08]">
@@ -431,7 +396,7 @@ export default function AuditPage() {
                   <TableBody className="divide-white/[0.06]">{skeletonRows}</TableBody>
                 </Table>
               </div>
-            ) : paginatedEntries.length === 0 ? (
+            ) : sortedEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <ClipboardList className="mb-3 h-10 w-10 text-slate-600" />
                 <p className="text-sm text-slate-500">No audit log entries found</p>
@@ -462,7 +427,7 @@ export default function AuditPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody className="divide-white/[0.06]">
-                      {paginatedEntries.map((entry) => {
+                      {sortedEntries.map((entry) => {
                         const category = getActionCategory(entry.action);
                         return (
                           <TableRow
@@ -520,8 +485,8 @@ export default function AuditPage() {
                   <div className="flex items-center justify-between pt-4 border-t border-white/[0.06] mt-4">
                     <p className="text-sm text-slate-500">
                       Showing {(page - 1) * PAGE_SIZE + 1}–
-                      {Math.min(page * PAGE_SIZE, filteredEntries.length)} of{" "}
-                      {filteredEntries.length}
+                      {Math.min(page * PAGE_SIZE, total)} of{" "}
+                      {total}
                     </p>
                     <div className="flex items-center gap-2">
                       <Button

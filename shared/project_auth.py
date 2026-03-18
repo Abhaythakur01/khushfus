@@ -48,7 +48,13 @@ async def verify_project_access(db, project_id: int, user: dict):
     if user.get("is_superadmin"):
         return project
 
-    if user_org_id and project.organization_id != int(user_org_id):
+    if not user_org_id:
+        logger.warning(
+            "Project access denied: user has no org_id, project=%d", project_id,
+        )
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if project.organization_id != int(user_org_id):
         logger.warning(
             "Project access denied: user_org=%s project_org=%s project=%d",
             user_org_id, project.organization_id, project_id,

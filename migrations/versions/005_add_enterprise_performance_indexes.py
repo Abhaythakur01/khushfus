@@ -32,7 +32,6 @@ def upgrade() -> None:
         "ix_mentions_project_sentiment_published",
         "mentions",
         ["project_id", "sentiment", "published_at"],
-        postgresql_concurrently=True,
     )
 
     # --- Mentions: influencer sorting index ---
@@ -40,7 +39,6 @@ def upgrade() -> None:
         "ix_mentions_project_influence",
         "mentions",
         ["project_id", "author_influence_score"],
-        postgresql_concurrently=True,
     )
 
     # --- Projects: partial index on active (non-deleted) projects per org ---
@@ -49,15 +47,13 @@ def upgrade() -> None:
         "projects",
         ["organization_id"],
         postgresql_where=text("is_deleted = FALSE"),
-        postgresql_concurrently=True,
     )
 
     # --- Audit log: user trail queries ---
     op.create_index(
         "ix_audit_log_user_created",
-        "audit_log",
+        "audit_logs",
         ["user_id", "created_at"],
-        postgresql_concurrently=True,
     )
 
     # --- Export jobs: status + date for cleanup queries ---
@@ -65,7 +61,6 @@ def upgrade() -> None:
         "ix_export_jobs_status_created",
         "export_jobs",
         ["status", "created_at"],
-        postgresql_concurrently=True,
     )
 
     # --- Mentions: platform-specific analytics ---
@@ -73,7 +68,6 @@ def upgrade() -> None:
         "ix_mentions_project_platform_published",
         "mentions",
         ["project_id", "platform", "published_at"],
-        postgresql_concurrently=True,
     )
 
     # --- API keys: org lookups for active keys ---
@@ -81,7 +75,6 @@ def upgrade() -> None:
         "ix_api_keys_org_active",
         "api_keys",
         ["organization_id", "is_active"],
-        postgresql_concurrently=True,
     )
 
 
@@ -89,7 +82,7 @@ def downgrade() -> None:
     op.drop_index("ix_api_keys_org_active", "api_keys")
     op.drop_index("ix_mentions_project_platform_published", "mentions")
     op.drop_index("ix_export_jobs_status_created", "export_jobs")
-    op.drop_index("ix_audit_log_user_created", "audit_log")
+    op.drop_index("ix_audit_log_user_created", "audit_logs")
     op.drop_index("ix_projects_org_active", "projects")
     op.drop_index("ix_mentions_project_influence", "mentions")
     op.drop_index("ix_mentions_project_sentiment_published", "mentions")

@@ -34,6 +34,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { api } from "./api";
 import type { User, Organization } from "./api";
 import { canAccessRoute } from "./rbac";
+import { clearFetchCache } from "@/hooks/useFetch";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -153,6 +154,8 @@ interface AuthContextValue extends AuthState {
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => void;
+  /** Update the cached user object (e.g. after a profile update). */
+  updateUser: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -202,6 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearAuth = useCallback(() => {
     api.clearToken();
     clearStoredToken();
+    clearFetchCache();
     setState({
       user: null,
       org: null,
@@ -354,6 +358,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearAuth();
   }, [clearAuth]);
 
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setState((s) => ({
+      ...s,
+      user: s.user ? { ...s.user, ...updates } : s.user,
+    }));
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -361,6 +372,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         logout,
+        updateUser,
       }}
     >
       {children}

@@ -35,9 +35,10 @@ const isDev = process.env.NODE_ENV !== "production";
 
 const cspDirectives = [
   "default-src 'self'",
+  // TODO: implement nonce-based CSP to remove 'unsafe-inline' in production
   isDev
     ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
-    : "script-src 'self'",
+    : "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   `connect-src 'self' ${API_DOMAIN} ${SENTRY_DOMAIN} wss: ws:`.trim(),

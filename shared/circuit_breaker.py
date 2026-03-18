@@ -44,6 +44,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time: float = 0
         self._lock = asyncio.Lock()
+        self._half_open_permitted: bool = False
 
     async def call(self, func, *args, **kwargs):
         """Execute a function through the circuit breaker.
@@ -63,9 +64,17 @@ class CircuitBreaker:
             if self.state == CircuitState.OPEN:
                 if time.monotonic() - self.last_failure_time >= self.recovery_timeout:
                     self.state = CircuitState.HALF_OPEN
+                    self._half_open_permitted = True
                     logger.info(f"Circuit {self.name}: OPEN -> HALF_OPEN")
                 else:
                     raise CircuitBreakerError(f"Circuit {self.name} is OPEN")
+
+            if self.state == CircuitState.HALF_OPEN:
+                if self._half_open_permitted:
+                    # Only one probe call allowed; block all others until probe completes
+                    self._half_open_permitted = False
+                else:
+                    raise CircuitBreakerError(f"Circuit {self.name} is HALF_OPEN, probe already in flight")
 
         try:
             result = await func(*args, **kwargs)

@@ -122,12 +122,12 @@ migration-dry-run:
     - pip install --cache-dir $PIP_CACHE_DIR -e .
   script:
     - echo "Generating migration SQL (dry-run)..."
-    - alembic upgrade head --sql > /tmp/migration-dry-run.sql
-    - echo "Migration SQL generated successfully ($(wc -l < /tmp/migration-dry-run.sql) lines)"
-    - head -50 /tmp/migration-dry-run.sql
+    - alembic upgrade head --sql > migration-dry-run.sql
+    - echo "Migration SQL generated successfully ($(wc -l < migration-dry-run.sql) lines)"
+    - head -50 migration-dry-run.sql
   artifacts:
     paths:
-      - /tmp/migration-dry-run.sql
+      - migration-dry-run.sql
     expire_in: 7 days
   allow_failure: true
 

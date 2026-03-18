@@ -61,8 +61,17 @@ async def trigger_report(
     report_type: str = Query(default="daily"),
     format: str = Query(default="pdf"),
     user=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
 ):
     """Publish a report generation request to the Report Service."""
+    # Verify project belongs to user's org
+    org_id = get_user_org_id(request)
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if org_id and project.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
     if report_type not in VALID_REPORT_TYPES:
         valid = ", ".join(VALID_REPORT_TYPES)
         raise HTTPException(status_code=400, detail=f"Invalid report_type. Must be one of: {valid}")

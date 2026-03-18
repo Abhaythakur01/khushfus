@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.cors import get_cors_origins
 from shared.database import create_db, init_tables
 from shared.events import STREAM_AUDIT, AuditEvent, EventBus
+from shared.internal_auth import verify_internal_token
 from shared.models import (
     ApiKey,
     Organization,
@@ -1152,6 +1153,7 @@ async def increment_mentions_used(
     org_id: int,
     count: int = Query(1, ge=1),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_internal_token),
 ):
     """
     Increment the mentions_used counter for an org.
@@ -1224,6 +1226,7 @@ async def reset_mentions_used(
 async def check_project_quota(
     org_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_internal_token),
 ):
     """
     Check whether the org can create a new project.

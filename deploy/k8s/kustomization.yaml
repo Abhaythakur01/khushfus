@@ -4,7 +4,7 @@ namespace: khushfus
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secrets.yaml
+  # secrets.yaml removed — secrets should be managed externally (e.g., Sealed Secrets, SOPS, or a secrets manager)
   - infrastructure/postgres.yaml
   - infrastructure/redis.yaml
   - infrastructure/elasticsearch.yaml

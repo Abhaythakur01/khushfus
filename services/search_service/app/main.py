@@ -59,8 +59,14 @@ ES_INDEX = "khushfus-mentions"
 # ---------------------------------------------------------------------------
 
 _security = HTTPBearer(auto_error=False)
-_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "")
+_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
 _JWT_ALGO = "HS256"
+
+# Enforce a real secret in production
+if os.getenv("ENVIRONMENT") == "production" and _JWT_SECRET in ("", "dev-secret-change-in-production"):
+    import sys
+    print("FATAL: JWT_SECRET_KEY must be set to a secure value in production", file=sys.stderr)
+    sys.exit(1)
 
 
 async def require_auth(cred: HTTPAuthorizationCredentials | None = Depends(_security)) -> dict:
@@ -325,7 +331,9 @@ async def _postgres_text_search(req: SearchRequest, session_factory) -> SearchRe
         count_result = await db.execute(select(func.count(Mention.id)).where(where_clause))
         total = count_result.scalar() or 0
 
-        sort_col = getattr(Mention, req.sort_by, Mention.published_at)
+        _SORT_ALLOWLIST = {"published_at", "created_at", "sentiment_score", "reach", "likes"}
+        sort_attr = req.sort_by if req.sort_by in _SORT_ALLOWLIST else "published_at"
+        sort_col = getattr(Mention, sort_attr)
         order = sort_col.desc() if req.sort_order == "desc" else sort_col.asc()
 
         stmt = (

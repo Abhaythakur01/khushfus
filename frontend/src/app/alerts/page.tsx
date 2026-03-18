@@ -9,6 +9,8 @@ import {
   Mail,
   MessageSquare,
   Webhook,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn, formatDate } from "@/lib/utils";
@@ -110,6 +112,7 @@ export default function AlertsPage() {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const [saving, setSaving] = useState(false);
   const [formName, setFormName] = useState("");
   const [formType, setFormType] = useState("volume_spike");
@@ -117,6 +120,10 @@ export default function AlertsPage() {
   const [formWindow, setFormWindow] = useState("");
   const [formChannels, setFormChannels] = useState<Channel[]>([]);
   const [formWebhookUrl, setFormWebhookUrl] = useState("");
+
+  // Delete confirmation state
+  const [deleteConfirmRule, setDeleteConfirmRule] = useState<AlertRule | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Auto-select first project
   useEffect(() => {
@@ -158,7 +165,11 @@ export default function AlertsPage() {
     }
   }, [selectedProjectId, fetchRules, fetchLogs]);
 
+  const getRuleType = (r: AlertRule) => r.rule_type || r.type || "unknown";
+  const getRuleWindow = (r: AlertRule) => r.window_minutes ?? r.windowMinutes ?? 0;
+
   const openCreateDialog = () => {
+    setEditingRule(null);
     setFormName("");
     setFormType("volume_spike");
     setFormThreshold("");
@@ -168,37 +179,67 @@ export default function AlertsPage() {
     setDialogOpen(true);
   };
 
+  const openEditDialog = (rule: AlertRule) => {
+    setEditingRule(rule);
+    setFormName(rule.name);
+    setFormType(getRuleType(rule));
+    setFormThreshold(String(rule.threshold ?? ""));
+    setFormWindow(String(getRuleWindow(rule)));
+    setFormChannels((rule.channels ?? []) as Channel[]);
+    setFormWebhookUrl(rule.webhook_url ?? "");
+    setDialogOpen(true);
+  };
+
   const toggleChannel = (ch: Channel) => {
     setFormChannels((prev) =>
       prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
     );
   };
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!selectedProjectId) return;
     setSaving(true);
+    const payload = {
+      name: formName,
+      rule_type: formType,
+      threshold: Number(formThreshold),
+      window_minutes: Number(formWindow),
+      channels: formChannels,
+      webhook_url: formChannels.includes("webhook") ? formWebhookUrl : undefined,
+    };
     try {
-      await api.createAlertRule(selectedProjectId, {
-        name: formName,
-        rule_type: formType,
-        threshold: Number(formThreshold),
-        window_minutes: Number(formWindow),
-        channels: formChannels,
-        webhook_url: formChannels.includes("webhook") ? formWebhookUrl : undefined,
-      });
-      toast.success("Alert rule created");
+      if (editingRule) {
+        await api.updateAlertRule(selectedProjectId, editingRule.id, payload);
+        toast.success("Alert rule updated");
+      } else {
+        await api.createAlertRule(selectedProjectId, payload);
+        toast.success("Alert rule created");
+      }
       setDialogOpen(false);
       fetchRules(selectedProjectId);
     } catch (err: any) {
-      console.error("Failed to create alert rule:", err);
-      toast.error("Failed to create alert rule");
+      console.error("Failed to save alert rule:", err);
+      toast.error(editingRule ? "Failed to update alert rule" : "Failed to create alert rule");
     } finally {
       setSaving(false);
     }
   };
 
-  const getRuleType = (r: AlertRule) => r.rule_type || r.type || "unknown";
-  const getRuleWindow = (r: AlertRule) => r.window_minutes ?? r.windowMinutes ?? 0;
+  const handleDelete = async () => {
+    if (!selectedProjectId || !deleteConfirmRule) return;
+    setDeleting(true);
+    try {
+      await api.deleteAlertRule(selectedProjectId, deleteConfirmRule.id);
+      toast.success("Alert rule deleted");
+      setDeleteConfirmRule(null);
+      fetchRules(selectedProjectId);
+    } catch (err: any) {
+      console.error("Failed to delete alert rule:", err);
+      toast.error("Failed to delete alert rule");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <AppShell title="Alerts">
@@ -273,6 +314,7 @@ export default function AlertsPage() {
                           <TableHead className="text-slate-400">Threshold</TableHead>
                           <TableHead className="text-slate-400">Window</TableHead>
                           <TableHead className="text-slate-400">Channels</TableHead>
+                          <TableHead className="text-slate-400 w-20">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody className="divide-white/[0.06]">
@@ -298,6 +340,24 @@ export default function AlertsPage() {
                                     <span key={ch} className="text-xs text-slate-500">{ch}</span>
                                   );
                                 })}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => openEditDialog(rule)}
+                                  title="Edit rule"
+                                  className="p-1.5 rounded-md hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirmRule(rule)}
+                                  title="Delete rule"
+                                  className="p-1.5 rounded-md hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -364,10 +424,10 @@ export default function AlertsPage() {
         </Tabs>
       </div>
 
-      {/* Create Rule Dialog */}
+      {/* Create / Edit Rule Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} className="bg-[#111827]/70 border border-white/[0.08]">
         <DialogHeader onClose={() => setDialogOpen(false)} className="border-white/[0.08]">
-          <span className="text-slate-100">Create Alert Rule</span>
+          <span className="text-slate-100">{editingRule ? "Edit Alert Rule" : "Create Alert Rule"}</span>
         </DialogHeader>
         <DialogContent className="space-y-4">
           <div>
@@ -450,12 +510,41 @@ export default function AlertsPage() {
             Cancel
           </Button>
           <Button
-            onClick={handleCreate}
+            onClick={handleSave}
             disabled={saving || !formName || !formThreshold || !formWindow}
             className="bg-indigo-600 hover:bg-indigo-700 text-white"
           >
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Rule
+            {editingRule ? "Save Changes" : "Create Rule"}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmRule} onClose={() => setDeleteConfirmRule(null)} className="bg-[#111827]/70 border border-white/[0.08]">
+        <DialogHeader onClose={() => setDeleteConfirmRule(null)} className="border-white/[0.08]">
+          <span className="text-slate-100">Delete Alert Rule</span>
+        </DialogHeader>
+        <DialogContent>
+          <p className="text-sm text-slate-300">
+            Are you sure you want to delete <span className="font-semibold text-slate-100">{deleteConfirmRule?.name}</span>? This action cannot be undone.
+          </p>
+        </DialogContent>
+        <DialogFooter className="border-white/[0.08] bg-[#111827]/70">
+          <Button
+            variant="outline"
+            onClick={() => setDeleteConfirmRule(null)}
+            className="border-slate-600 text-slate-300 hover:bg-white/[0.06]"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Delete
           </Button>
         </DialogFooter>
       </Dialog>

@@ -61,7 +61,7 @@ export function useWebSocket(projectId: number | null): UseWebSocketResult {
     const token = localStorage.getItem("khushfus_token");
     if (!token) return;
 
-    const url = `${WS_BASE}/ws/mentions/${projectId}?token=${encodeURIComponent(token)}`;
+    const url = `${WS_BASE}/ws/mentions/${projectId}`;
 
     setConnectionState("connecting");
 
@@ -79,6 +79,10 @@ export function useWebSocket(projectId: number | null): UseWebSocketResult {
         ws.close();
         return;
       }
+
+      // Send token as first message instead of query param to avoid leaking in logs/referrer.
+      ws.send(JSON.stringify({ type: "auth", token }));
+
       setConnectionState("connected");
       reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
 

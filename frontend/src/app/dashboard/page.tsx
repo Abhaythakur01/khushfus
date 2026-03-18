@@ -30,6 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { DateRangePicker, type DateRange } from "@/components/ui/daterange";
 import {
   type DashboardData,
   type MentionItem,
@@ -95,16 +96,28 @@ export default function DashboardPage() {
   const router = useRouter();
   const { projects, isLoading: projectsLoading } = useProjects();
 
-  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Date range state (replaces the old 7d/30d/90d toggle)
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    return { startDate: start, endDate: end };
+  });
+
+  // Derive `days` from the custom date range for backward-compat with API call
+  const days = Math.max(
+    1,
+    Math.round(
+      (new Date(dateRange.endDate).getTime() - new Date(dateRange.startDate).getTime()) / 86400_000
+    ) + 1
+  );
+
   // Data state
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [recentMentions, setRecentMentions] = useState<MentionItem[]>([]);
-
-  const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
 
   // Auto-select first project when projects load
   useEffect(() => {
@@ -183,11 +196,13 @@ export default function DashboardPage() {
   const avgSentiment = dashboard?.sentiment?.average_score ?? 0;
   const totalReach = dashboard?.engagement?.total_reach ?? 0;
 
+  const sentimentBreakdown = dashboard?.sentiment?.breakdown ?? dashboard?.sentiment_breakdown ?? null;
+
   const mentionTimeSeries = useMemo(
-    () => dashboard?.daily_trend
-      ? transformDailyTrend(dashboard.daily_trend, dashboard.sentiment.breakdown)
+    () => dashboard?.daily_trend && sentimentBreakdown
+      ? transformDailyTrend(dashboard.daily_trend, sentimentBreakdown)
       : [],
-    [dashboard?.daily_trend, dashboard?.sentiment?.breakdown]
+    [dashboard?.daily_trend, sentimentBreakdown]
   );
 
   const sentimentDistribution = useMemo(
@@ -347,22 +362,10 @@ export default function DashboardPage() {
             </option>
           ))}
         </Select>
-        <div className="flex rounded-lg border border-white/[0.06] bg-white/[0.03] overflow-hidden">
-          {(["7d", "30d", "90d"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setTimeRange(r)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium transition-all duration-200",
-                timeRange === r
-                  ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
-                  : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
-              )}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker
+          defaultPreset="30d"
+          onChange={(range) => setDateRange(range)}
+        />
       </div>
 
       <div className="space-y-6">
@@ -380,7 +383,7 @@ export default function DashboardPage() {
                     {totalMentions.toLocaleString()}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {totalMentions === 0 ? "No data yet" : `Last ${days} days`}
+                    {totalMentions === 0 ? "No data yet" : `${dateRange.startDate} – ${dateRange.endDate}`}
                   </p>
                 </div>
                 <Sparkline data={sparkMentions} color="#6366f1" />

@@ -30,7 +30,7 @@ from shared.request_size_limit import RequestSizeLimitMiddleware
 from shared.tracing import setup_tracing
 
 from .middleware import RateLimitMiddleware, close_http_client
-from .routes import alerts, auth, dashboard, mentions, projects, reports
+from .routes import alerts, auth, dashboard, mentions, notifications, projects, reports
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +157,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Request logging (outermost — captures all requests)
-app.add_middleware(RequestLoggingMiddleware)
-
 # Request correlation ID
 app.add_middleware(RequestIDMiddleware)
 
@@ -174,11 +171,9 @@ app.add_middleware(
 # Request body size limit (default 10 MB, configurable via MAX_REQUEST_BODY_SIZE env)
 app.add_middleware(RequestSizeLimitMiddleware)
 
-# Rate limiting via centralized Rate Limiter service (fail-open if unreachable)
-app.add_middleware(RateLimitMiddleware)
-
-# Idempotency: deduplicate POST/PUT/PATCH requests with Idempotency-Key header (Redis-backed)
-app.add_middleware(IdempotencyMiddleware, redis_url=REDIS_URL)
+# Rate limiting and idempotency disabled in local dev (require Redis)
+# app.add_middleware(RateLimitMiddleware)
+# app.add_middleware(IdempotencyMiddleware, redis_url=REDIS_URL)
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -213,6 +208,7 @@ app.include_router(mentions.router, prefix="/api/v1/mentions", tags=["Mentions"]
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 
 # --- API v2 routes (future) ---
 # When v2 endpoints are ready, create route modules under routes/v2/ and mount them here.

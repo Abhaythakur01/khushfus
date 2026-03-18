@@ -179,8 +179,13 @@ class ConsumerMetrics:
         if self._prom_dlq:
             self._prom_dlq.labels(service=self.service_name).inc(count)
 
+    _MAX_DURATION_SAMPLES: int = 1000
+
     def record_batch_duration(self, seconds: float):
         self._batch_durations.append(seconds)
+        if len(self._batch_durations) > self._MAX_DURATION_SAMPLES:
+            # Remove oldest entries to cap memory usage
+            del self._batch_durations[: len(self._batch_durations) - self._MAX_DURATION_SAMPLES]
         if self._prom_duration:
             self._prom_duration.labels(service=self.service_name).observe(seconds)
 
